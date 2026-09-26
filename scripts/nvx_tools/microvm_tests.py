@@ -41,7 +41,11 @@ from .build_constants import (
     BuildConstants,
     KernelBuildConstants,
 )
-from .ci import OPENVMM_TEST_BACKENDS, validate_openvmm_test_backend
+from .ci import validate_openvmm_test_backend
+
+# Backends that support the NVX microVM machine profile. HVF is excluded:
+# the microVM profile is x86-only (MP-table boot, fixed x86 APIC topology).
+MICROVM_TEST_BACKENDS = ("kvm", "mshv", "whp")
 from .common import (
     ScriptError,
     artifact_path,
@@ -166,7 +170,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--backend",
-        choices=OPENVMM_TEST_BACKENDS,
+        choices=MICROVM_TEST_BACKENDS,
         required=True,
     )
     parser.add_argument("--guest", choices=GUEST_NAMES, default="alpine")
@@ -3589,6 +3593,11 @@ def run_snapshot_tiers(
 
 def run(args: argparse.Namespace) -> int:
     validate_openvmm_test_backend(args.backend)
+    if args.backend == "hvf":
+        raise ScriptError(
+            "microVM tests require the microVM machine profile, which is "
+            "x86-only and unsupported with the hvf backend"
+        )
     descriptor = guest_descriptor(args.guest)
     if args.memory_mib is None:
         args.memory_mib = descriptor.default_memory_mib

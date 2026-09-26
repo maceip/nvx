@@ -1,5 +1,20 @@
 typedef unsigned long u64;
 
+#if defined(__aarch64__)
+#define SYS_READ 63
+#define SYS_WRITE 64
+#define SYS_CLOSE 57
+#define SYS_POLL 73
+#define SYS_PREAD64 67
+#define SYS_PWRITE64 68
+#define SYS_SOCKET 198
+#define SYS_CONNECT 203
+#define SYS_FSYNC 82
+#define SYS_FTRUNCATE 46
+#define SYS_CLOCK_GETTIME 113
+#define SYS_OPENAT 56
+#define SYS_EXIT_GROUP 94
+#else
 #define SYS_READ 0
 #define SYS_WRITE 1
 #define SYS_CLOSE 3
@@ -13,6 +28,7 @@ typedef unsigned long u64;
 #define SYS_CLOCK_GETTIME 228
 #define SYS_OPENAT 257
 #define SYS_EXIT_GROUP 231
+#endif
 
 #define AT_FDCWD -100
 #define O_RDONLY 0
@@ -57,6 +73,22 @@ static long syscall6(
     long argument5,
     long argument6
 ) {
+#if defined(__aarch64__)
+    register long x0 __asm__("x0") = argument1;
+    register long x1 __asm__("x1") = argument2;
+    register long x2 __asm__("x2") = argument3;
+    register long x3 __asm__("x3") = argument4;
+    register long x4 __asm__("x4") = argument5;
+    register long x5 __asm__("x5") = argument6;
+    register long x8 __asm__("x8") = number;
+    __asm__ volatile(
+        "svc #0"
+        : "+r"(x0)
+        : "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5), "r"(x8)
+        : "memory", "cc"
+    );
+    return x0;
+#else
     register long register10 __asm__("r10") = argument4;
     register long register8 __asm__("r8") = argument5;
     register long register9 __asm__("r9") = argument6;
@@ -69,6 +101,7 @@ static long syscall6(
         : "rcx", "r11", "memory"
     );
     return result;
+#endif
 }
 
 static long syscall4(long number, long a1, long a2, long a3, long a4) {
@@ -365,6 +398,18 @@ void nvx_device_io_start(long *stack) {
     }
 }
 
+#if defined(__aarch64__)
+__asm__(
+    ".global _start\n"
+    ".type _start,%function\n"
+    "_start:\n"
+    "mov x0, sp\n"
+    "bic x9, x0, #15\n"
+    "mov sp, x9\n"
+    "bl nvx_device_io_start\n"
+    "brk #0\n"
+);
+#else
 __asm__(
     ".global _start\n"
     ".type _start,@function\n"
@@ -374,3 +419,4 @@ __asm__(
     "call nvx_device_io_start\n"
     "ud2\n"
 );
+#endif

@@ -35,8 +35,21 @@ class KernelBuildConstants:
     BUILD_STAMP_NAME: Final = ".nvx-build.json"
     BUILD_CONFIG_NAME: Final = ".config"
     INPUT_CONFIG: Final = Path("kernel") / "config-microvm"
+    # ARM64 microVM kernel config for Apple Silicon hosts (aarch64). The file
+    # does not exist yet; it must provide the ARM64 equivalents of the
+    # REQUIRED_* settings below (virtio-mmio, hvc console, EROFS/ext4,
+    # seccomp/cgroup) without the x86-only MP-table/APIC entries.
+    INPUT_CONFIG_AARCH64: Final = Path("kernel") / "config-microvm-aarch64"
     PATCH_DIRECTORY: Final = Path("kernel") / "patches"
+    # aarch64 kernels build from pristine upstream plus this (possibly empty)
+    # directory: all x86 microVM patches are architecture-specific.
+    PATCH_DIRECTORY_AARCH64: Final = Path("kernel") / "patches-aarch64"
     BINARY_NAME: Final = "vmlinux"
+    # aarch64 boots the flat kernel Image (the OpenVMM aarch64 loader reads
+    # the ARM64 Image header at file offset 0, not ELF). build-kernel still
+    # produces build/vmlinux (ELF, keeps existing names working) alongside
+    # build/Image (the bootable artifact).
+    BINARY_NAME_AARCH64: Final = "Image"
     CONFIG_NAME: Final = f"{BINARY_NAME}.config"
     PROVENANCE_NAME: Final = "vmlinux.provenance.json"
     PROVENANCE_FORMAT: Final = 1
@@ -54,6 +67,14 @@ class KernelBuildConstants:
         "CONFIG_X86_MPPARSE=y",
         "CONFIG_X86_LOCAL_APIC=y",
         "CONFIG_X86_IO_APIC=y",
+        "CONFIG_VIRTIO_MMIO=y",
+        "CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y",
+    )
+    # aarch64 standard Linux direct boot (default ACPI mode with EFI stub).
+    REQUIRED_AARCH64_DIRECT_BOOT_CONFIG: Final = (
+        "CONFIG_ACPI=y",
+        "CONFIG_ARM64=y",
+        "CONFIG_EFI=y",
         "CONFIG_VIRTIO_MMIO=y",
         "CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y",
     )
@@ -85,17 +106,20 @@ class OpenVMMBuildConstants:
     GNU_RUST_TARGET: Final = "x86_64-unknown-linux-gnu"
     MUSL_RUST_TARGET: Final = "x86_64-unknown-linux-musl"
     WINDOWS_RUST_TARGET: Final = "x86_64-pc-windows-msvc"
+    MACOS_RUST_TARGET: Final = "aarch64-apple-darwin"
     GUEST_RUST_TARGET: Final = "x86_64-unknown-none"
     UEFI_RUST_TARGET: Final = "x86_64-unknown-uefi"
     BUILD_TARGETS: Final[dict[str, str]] = {
         "linux-gnu": GNU_RUST_TARGET,
         "linux-musl": MUSL_RUST_TARGET,
         "windows-msvc": WINDOWS_RUST_TARGET,
+        "macos-hvf": MACOS_RUST_TARGET,
     }
     TEST_RUST_TARGETS: Final[dict[str, tuple[str, ...]]] = {
         "kvm": (GUEST_RUST_TARGET, UEFI_RUST_TARGET, MUSL_RUST_TARGET),
         "mshv": (GUEST_RUST_TARGET, UEFI_RUST_TARGET, MUSL_RUST_TARGET),
         "whp": (GUEST_RUST_TARGET, UEFI_RUST_TARGET),
+        "hvf": (),
     }
     RUSTUP_DIRECTORY_NAME: Final = "openvmm-rustup"
     CACHE_DIRECTORY_NAME: Final = "openvmm-cache"
@@ -124,6 +148,23 @@ class AlpineBuildConstants:
     )
     MINIROOTFS_SHA256: Final = (
         "41f73e3cf5fa919b8aa5ca6b30dc48f0da2720776d7423e2a7748211456fe081"
+    )
+    # ARM64 (aarch64) guest image inputs for Apple Silicon hosts. The x86_64
+    # constants above remain the default; aarch64 artifacts require an ARM64
+    # kernel config plus an Alpine aarch64 minirootfs built from this tarball.
+    # The SHA256 was pinned from the official Alpine CDN; the fetch channel
+    # was verified by re-downloading the x86_64 tarball over the same channel
+    # and reproducing MINIROOTFS_SHA256 exactly.
+    AARCH64_ARCHITECTURE: Final = "aarch64"
+    MINIROOTFS_AARCH64_NAME: Final = (
+        f"alpine-minirootfs-{VERSION}-{AARCH64_ARCHITECTURE}.tar.gz"
+    )
+    MINIROOTFS_AARCH64_URL: Final = (
+        f"https://dl-cdn.alpinelinux.org/alpine/{BRANCH}/releases/"
+        f"{AARCH64_ARCHITECTURE}/{MINIROOTFS_AARCH64_NAME}"
+    )
+    MINIROOTFS_AARCH64_SHA256: Final = (
+        "f55a90f69052c5bd6f92cb09a8f47065970830b194c917a006fb94028e721259"
     )
     INITRAMFS_NAME: Final = "initramfs.cpio.gz"
     PACKAGE_MANIFEST_NAME: Final = (
@@ -164,6 +205,17 @@ class UbuntuBuildConstants:
         "a496a960472ce474a59590b8987d3a1135d3cbef1991f3b1abe8cacfea8bf85a"
     )
     BASE_ARCHIVE_NAME: Final = f"ubuntu-base-{VERSION}-base-{ARCHITECTURE}.tar.gz"
+    # ARM64 (arm64) Ubuntu Base inputs for Apple Silicon hosts. The amd64
+    # constants above remain the default; arm64 artifacts require pinning the
+    # upstream base tarball SHA256 before use.
+    ARM64_ARCHITECTURE: Final = "arm64"
+    BASE_ARM64_URL: Final = (
+        "https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release/"
+        "ubuntu-base-26.04.1-base-arm64.tar.gz"
+    )
+    BASE_ARM64_ARCHIVE_NAME: Final = (
+        f"ubuntu-base-{VERSION}-base-{ARM64_ARCHITECTURE}.tar.gz"
+    )
     PACKAGE_LOCK_RELATIVE_PATH: Final = Path("ubuntu") / "packages.lock.json"
     PACKAGE_LOCK: Final = BuildConstants.REPO_ROOT / PACKAGE_LOCK_RELATIVE_PATH
     PACKAGE_LOCK_FORMAT: Final = 1

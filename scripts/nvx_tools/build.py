@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shlex
 import shutil
 import ssl
@@ -116,12 +117,25 @@ def _assert_shared_status_kernel_config(path: Path) -> None:
     )
 
 
+def _assert_aarch64_direct_boot_kernel_config(path: Path) -> None:
+    _assert_kernel_config(
+        path,
+        KernelBuildConstants.REQUIRED_AARCH64_DIRECT_BOOT_CONFIG,
+        "kernel configuration cannot boot the aarch64 direct-boot guest: ",
+    )
+
+
 def assert_required_kernel_config(path: Path) -> None:
     """Validate the generated configuration required by the NVX platform."""
-    _assert_direct_boot_kernel_config(path)
+    if host_guest_arch() == "aarch64":
+        # The x86 MP-table microVM profile does not exist on aarch64;
+        # standard direct boot uses ACPI/EFI with virtio-mmio discovery.
+        _assert_aarch64_direct_boot_kernel_config(path)
+    else:
+        _assert_direct_boot_kernel_config(path)
+        _assert_shared_status_kernel_config(path)
     _assert_virtio_console_kernel_config(path)
     _assert_sandbox_kernel_config(path)
-    _assert_shared_status_kernel_config(path)
 
 
 def _require_linux(workflow: str) -> None:
@@ -131,25 +145,97 @@ def _require_linux(workflow: str) -> None:
         )
 
 
+def host_guest_arch() -> str:
+    """Return the native guest architecture: x86_64 or aarch64."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    if machine in ("aarch64", "arm64"):
+        return "aarch64"
+    raise ScriptError(f"unsupported build host architecture {machine!r}")
+
+
 def _alpine_tarball(config: InitramfsBuildConfig) -> Path:
+    if host_guest_arch() == "aarch64":
+        return config.work / AlpineBuildConstants.MINIROOTFS_AARCH64_NAME
     return config.work / AlpineBuildConstants.MINIROOTFS_NAME
 
 
+def _alpine_minirootfs_url() -> str:
+    if host_guest_arch() == "aarch64":
+        return AlpineBuildConstants.MINIROOTFS_AARCH64_URL
+    return AlpineBuildConstants.MINIROOTFS_URL
+
+
+def _alpine_minirootfs_sha256() -> str:
+    if host_guest_arch() == "aarch64":
+        return AlpineBuildConstants.MINIROOTFS_AARCH64_SHA256
+    return AlpineBuildConstants.MINIROOTFS_SHA256
+
+
+def _alpine_musl_loader() -> str:
+    if host_guest_arch() == "aarch64":
+        return "ld-musl-aarch64.so.1"
+    return "ld-musl-x86_64.so.1"
+
+
+def _alpine_architecture() -> str:
+    if host_guest_arch() == "aarch64":
+        return AlpineBuildConstants.AARCH64_ARCHITECTURE
+    return AlpineBuildConstants.ARCHITECTURE
+
+
+def _kernel_patch_directory() -> Path:
+    if host_guest_arch() == "aarch64":
+        return KernelBuildConstants.PATCH_DIRECTORY_AARCH64
+    return KernelBuildConstants.PATCH_DIRECTORY
+
+
 def _kernel_patch_files() -> tuple[Path, ...]:
-    patches = tuple(
-        sorted(
-            (BuildConstants.REPO_ROOT / KernelBuildConstants.PATCH_DIRECTORY).glob(
-                "*.patch"
-            )
-        )
-    )
-    if not patches:
+    directory = BuildConstants.REPO_ROOT / _kernel_patch_directory()
+    patches = tuple(sorted(directory.glob("*.patch"))) if directory.is_dir() else ()
+    if not patches and host_guest_arch() != "aarch64":
         raise ScriptError("no kernel patches were found")
     return patches
 
 
+def _kernel_input_config() -> Path:
+    if host_guest_arch() == "aarch64":
+        return KernelBuildConstants.INPUT_CONFIG_AARCH64
+    return KernelBuildConstants.INPUT_CONFIG
+
+
+def kernel_binary_name() -> str:
+    """Return the bootable kernel artifact name for the native guest arch."""
+    if host_guest_arch() == "aarch64":
+        return KernelBuildConstants.BINARY_NAME_AARCH64
+    return KernelBuildConstants.BINARY_NAME
+
+
+def _kernel_make_targets() -> tuple[str, ...]:
+    # aarch64 also builds the ELF vmlinux so existing artifact names
+    # (vmlinux, vmlinux.config, provenance) keep working; the flat Image
+    # is the bootable artifact.
+    if host_guest_arch() == "aarch64":
+        return (
+            KernelBuildConstants.BINARY_NAME,
+            KernelBuildConstants.BINARY_NAME_AARCH64,
+        )
+    return (KernelBuildConstants.BINARY_NAME,)
+
+
+def _kernel_work_binary(work: Path) -> Path:
+    if host_guest_arch() == "aarch64":
+        return (
+            work / "arch" / "arm64" / "boot" / KernelBuildConstants.BINARY_NAME_AARCH64
+        )
+    return work / KernelBuildConstants.BINARY_NAME
+
+
 def materialize_kernel_provenance_inputs() -> None:
     """Write kernel provenance inputs from immutable run-head blobs."""
+    input_config = _kernel_input_config()
+    patch_directory = _kernel_patch_directory()
     tracked = run_capture(
         [
             "git",
@@ -159,8 +245,8 @@ def materialize_kernel_provenance_inputs() -> None:
             "--name-only",
             "HEAD",
             "--",
-            KernelBuildConstants.INPUT_CONFIG.as_posix(),
-            KernelBuildConstants.PATCH_DIRECTORY.as_posix(),
+            input_config.as_posix(),
+            patch_directory.as_posix(),
         ],
         cwd=BuildConstants.REPO_ROOT,
     )
@@ -168,24 +254,22 @@ def materialize_kernel_provenance_inputs() -> None:
     tree_paths = tuple(
         path for path in tracked.stdout.decode("utf-8").split("\0") if path
     )
-    config_path = KernelBuildConstants.INPUT_CONFIG.as_posix()
+    config_path = input_config.as_posix()
     patch_paths = tuple(
         path
         for path in tree_paths
-        if path.startswith(f"{KernelBuildConstants.PATCH_DIRECTORY.as_posix()}/")
+        if path.startswith(f"{patch_directory.as_posix()}/")
         and path.endswith(".patch")
     )
     if config_path not in tree_paths:
         raise ScriptError("kernel config is missing from the run head")
-    if not patch_paths:
+    if not patch_paths and host_guest_arch() != "aarch64":
         raise ScriptError("kernel patches are missing from the run head")
 
     head_patch_paths = set(patch_paths)
     worktree_patch_paths = {
         path.relative_to(BuildConstants.REPO_ROOT).as_posix(): path
-        for path in (
-            BuildConstants.REPO_ROOT / KernelBuildConstants.PATCH_DIRECTORY
-        ).glob("*.patch")
+        for path in (BuildConstants.REPO_ROOT / patch_directory).glob("*.patch")
     }
     for relative in sorted(worktree_patch_paths.keys() - head_patch_paths):
         worktree_patch_paths[relative].unlink()
@@ -226,7 +310,7 @@ def _kernel_provenance_inputs(
     return {
         "source": json.loads(source_fingerprint),
         "input_config": {
-            "path": KernelBuildConstants.INPUT_CONFIG.as_posix(),
+            "path": _kernel_input_config().as_posix(),
             "sha256": input_config_sha256,
         },
     }
@@ -236,7 +320,7 @@ def kernel_provenance_inputs() -> dict[str, object]:
     """Return the current source and input-config identity for a kernel build."""
     return _kernel_provenance_inputs(
         _kernel_source_fingerprint(),
-        sha256_file(BuildConstants.REPO_ROOT / KernelBuildConstants.INPUT_CONFIG),
+        sha256_file(BuildConstants.REPO_ROOT / _kernel_input_config()),
     )
 
 
@@ -269,7 +353,7 @@ def initramfs_provenance_inputs() -> dict[str, object]:
         "alpine": {
             "version": AlpineBuildConstants.VERSION,
             "branch": AlpineBuildConstants.BRANCH,
-            "minirootfs_sha256": AlpineBuildConstants.MINIROOTFS_SHA256,
+            "minirootfs_sha256": _alpine_minirootfs_sha256(),
         },
         "source_files": [
             {
@@ -309,6 +393,10 @@ def record_openvmm_provenance(config: OpenVmmBuildConfig) -> None:
     path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
 
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and os.uname().machine in ("arm64", "aarch64")
+
+
 def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPlatform:
     """Select a build target without requiring runtime hypervisor access."""
     if sys.platform == "win32":
@@ -319,6 +407,13 @@ def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPla
             return "linux-gnu"
         if backend == "mshv":
             return "linux-musl"
+    elif sys.platform == "darwin":
+        if backend in (None, "hvf", "hypervisor-framework"):
+            if not _is_apple_silicon():
+                raise ScriptError(
+                    "OpenVMM macOS builds require Apple Silicon (arm64)"
+                )
+            return "macos-hvf"
     else:
         raise ScriptError(f"OpenVMM builds are unsupported on {sys.platform}")
     raise ScriptError(f"OpenVMM backend {backend!r} is unsupported on {sys.platform}")
@@ -467,9 +562,9 @@ def _prepare_alpine_root(config: InitramfsBuildConfig) -> Path:
     config.work.mkdir(parents=True, exist_ok=True)
     tarball = _alpine_tarball(config)
     download_verified(
-        AlpineBuildConstants.MINIROOTFS_URL,
+        _alpine_minirootfs_url(),
         tarball,
-        AlpineBuildConstants.MINIROOTFS_SHA256,
+        _alpine_minirootfs_sha256(),
     )
     root = config.work / InitramfsBuildConstants.ROOT_DIRECTORY_NAME
     shutil.rmtree(root, ignore_errors=True)
@@ -539,7 +634,7 @@ def _build_device_io_helper(work: Path, destination: Path) -> dict[str, str]:
 
 
 def _apk_add(root: Path, *packages: str) -> None:
-    loader = root / "lib" / "ld-musl-x86_64.so.1"
+    loader = root / "lib" / _alpine_musl_loader()
     environment = os.environ.copy()
     environment["LD_LIBRARY_PATH"] = f"{root / 'lib'}:{root / 'usr' / 'lib'}"
     host_ca_file = ssl.get_default_verify_paths().cafile
@@ -672,7 +767,7 @@ def _write_apk_manifest(
                 "format": AlpineBuildConstants.PACKAGE_MANIFEST_VERSION,
                 "alpine_version": AlpineBuildConstants.VERSION,
                 "alpine_branch": AlpineBuildConstants.BRANCH,
-                "architecture": AlpineBuildConstants.ARCHITECTURE,
+                "architecture": _alpine_architecture(),
                 "packages": packages,
                 "helpers": helpers,
             },
@@ -772,6 +867,8 @@ def _prepare_guest_root(
     config: InitramfsBuildConfig,
     descriptor: GuestDescriptor,
 ) -> Path:
+    if host_guest_arch() == "aarch64" and descriptor.name == "ubuntu":
+        raise ScriptError("Ubuntu guest builds are x86_64-only for now")
     if descriptor.name == "alpine":
         return _prepare_alpine_root(config)
     if descriptor.name == "ubuntu":
@@ -1033,7 +1130,7 @@ def build_kernel(config: KernelBuildConfig) -> None:
     for tool in ("make",):
         require_tool(tool)
     source, source_fingerprint = prepare_kernel_source(config)
-    input_config = BuildConstants.REPO_ROOT / KernelBuildConstants.INPUT_CONFIG
+    input_config = BuildConstants.REPO_ROOT / _kernel_input_config()
     input_config_sha256 = sha256_file(input_config)
     provenance_inputs = _kernel_provenance_inputs(
         source_fingerprint,
@@ -1064,10 +1161,14 @@ def build_kernel(config: KernelBuildConfig) -> None:
     run_checked([*make, "olddefconfig"])
     assert_required_kernel_config(kernel_config)
     jobs = os.cpu_count() or 1
-    print(f">> building vmlinux with {jobs} jobs")
-    run_checked([*make, f"-j{jobs}", KernelBuildConstants.BINARY_NAME])
+    print(f">> building {kernel_binary_name()} with {jobs} jobs")
+    run_checked([*make, f"-j{jobs}", *_kernel_make_targets()])
     config.output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(config.work / KernelBuildConstants.BINARY_NAME, config.output)
+    if host_guest_arch() == "aarch64":
+        boot_image = config.output.with_name(kernel_binary_name())
+        shutil.copy2(_kernel_work_binary(config.work), boot_image)
+        print(f">> built {boot_image}")
     generated_config = config.output.with_name(f"{config.output.name}.config")
     shutil.copy2(kernel_config, generated_config)
     print(f">> built {config.output}")

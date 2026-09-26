@@ -536,11 +536,14 @@ class CliTests(unittest.TestCase):
             nvx.command_run(args)
 
     def test_sandbox_rejects_systemd_entrypoint(self):
+        backend = "whp" if os.name == "nt" else "kvm"
         for entrypoint in nvx.SYSTEMD_ENTRYPOINTS:
             with self.subTest(entrypoint=entrypoint):
                 args = nvx.parse_args(
                     [
                         "sandbox",
+                        "--hypervisor",
+                        backend,
                         "--entrypoint",
                         entrypoint,
                         "--layer",
@@ -562,9 +565,12 @@ class CliTests(unittest.TestCase):
             scratch = root / "scratch.ext4"
             layer.write_bytes(b"distro")
             scratch.write_bytes(b"scratch")
+            backend = "whp" if os.name == "nt" else "kvm"
             args = nvx.parse_args(
                 [
                     "sandbox",
+                    "--hypervisor",
+                    backend,
                     "--entrypoint",
                     "/sbin/init",
                     "--layer",
@@ -602,9 +608,12 @@ class CliTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            backend = "whp" if os.name == "nt" else "kvm"
             args = nvx.parse_args(
                 [
                     "sandbox",
+                    "--hypervisor",
+                    backend,
                     "--entrypoint",
                     "/sbin/init",
                     "--layer",
@@ -728,7 +737,17 @@ class CliTests(unittest.TestCase):
         )
 
     def test_run_forwards_bounded_outcome_report(self):
-        args = nvx.parse_args(["run", "--outcome-report", "outcome.json", "--dry-run"])
+        backend = "whp" if os.name == "nt" else "kvm"
+        args = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                backend,
+                "--outcome-report",
+                "outcome.json",
+                "--dry-run",
+            ]
+        )
         with (
             patch.object(nvx, "require_file", return_value=Path("artifact")),
             patch.object(
@@ -742,6 +761,209 @@ class CliTests(unittest.TestCase):
             command[command.index("--microvm-report") + 1],
             "outcome.json",
         )
+
+    def test_hvf_run_uses_direct_boot_without_microvm_machine(self):
+        for hypervisor in ("hvf", "hypervisor-framework"):
+            with self.subTest(hypervisor=hypervisor):
+                args = nvx.parse_args(
+                    ["run", "--hypervisor", hypervisor, "--dry-run"]
+                )
+
+                def require(path: Path, _description: str) -> Path:
+                    return path
+
+                with (
+                    patch.object(nvx.sys, "platform", "darwin"),
+                    patch.object(
+                        nvx.os,
+                        "uname",
+                        return_value=argparse.Namespace(machine="arm64"),
+                        create=True,
+                    ),
+                    patch.object(nvx, "require_file", side_effect=require),
+                    patch.object(
+                        nvx, "_format_command", return_value="formatted"
+                    ) as format_command,
+                ):
+                    nvx.command_run(args)
+
+                command = format_command.call_args.args[0]
+                self.assertNotIn("--machine", command)
+                self.assertNotIn("microvm", command)
+                self.assertEqual(
+                    command[command.index("--hypervisor") + 1], "hvf"
+                )
+                # HVF boots the flat Image, not the ELF vmlinux.
+                self.assertEqual(
+                    Path(command[command.index("--kernel") + 1]).name, "Image"
+                )
+                self.assertIn("--initrd", command)
+                # The PL011 console keeps `run` output visible.
+                self.assertEqual(
+                    command[command.index("--com1") + 1], "console"
+                )
+                # HVF floors the Alpine 128M default to a bootable 256M.
+                self.assertEqual(command[command.index("--memory") + 1], "256M")
+
+    def test_hvf_run_rejects_microvm_only_options(self):
+        option_sets = (
+            ["--mount", "target,host,ro"],
+            ["--net", "10.0.0.2/24", "--network-profile", "portable"],
+            ["--memory-capacity-mib", "512"],
+            ["--outcome-report", "outcome.json"],
+            ["--restore-snapshot", "snapshot"],
+        )
+        for options in option_sets:
+            with self.subTest(options=options):
+                args = nvx.parse_args(
+                    ["run", "--hypervisor", "hvf", *options, "--dry-run"]
+                )
+                with (
+                    patch.object(nvx.sys, "platform", "darwin"),
+                    patch.object(
+                        nvx.os,
+                        "uname",
+                        return_value=argparse.Namespace(machine="arm64"),
+                        create=True,
+                    ),
+                    patch.object(nvx, "require_file", return_value=Path("artifact")),
+                    self.assertRaisesRegex(common.ScriptError, "microVM"),
+                ):
+                    nvx.command_run(args)
+
+    def test_hvf_hypervisor_selection_and_release_platform(self):
+        with (
+            patch.object(nvx.sys, "platform", "darwin"),
+            patch.object(nvx.os, "name", "posix"),
+        ):
+            self.assertEqual(nvx._hypervisor("auto"), "hvf")
+            self.assertEqual(nvx._hypervisor("hypervisor-framework"), "hvf")
+            self.assertEqual(nvx._hypervisor("hvf"), "hvf")
+            self.assertEqual(nvx._release_platform("auto"), "macos-hvf")
+            self.assertEqual(nvx._release_platform("hypervisor-framework"), "macos-hvf")
+            with self.assertRaisesRegex(common.ScriptError, "not supported"):
+                nvx._release_platform("kvm")
+
+    def test_alpine_aarch64_inputs_are_pinned(self):
+        self.assertEqual(
+            AlpineBuildConstants.MINIROOTFS_AARCH64_NAME,
+            f"alpine-minirootfs-{AlpineBuildConstants.VERSION}-aarch64.tar.gz",
+        )
+        self.assertIn("aarch64", AlpineBuildConstants.MINIROOTFS_AARCH64_URL)
+        self.assertTrue(
+            AlpineBuildConstants.MINIROOTFS_AARCH64_URL.endswith(
+                AlpineBuildConstants.MINIROOTFS_AARCH64_NAME
+            )
+        )
+        for sha in (
+            AlpineBuildConstants.MINIROOTFS_SHA256,
+            AlpineBuildConstants.MINIROOTFS_AARCH64_SHA256,
+        ):
+            self.assertRegex(sha, r"\A[0-9a-f]{64}\Z")
+        self.assertNotEqual(
+            AlpineBuildConstants.MINIROOTFS_SHA256,
+            AlpineBuildConstants.MINIROOTFS_AARCH64_SHA256,
+        )
+
+    def test_host_guest_arch_maps_machine_names(self):
+        for machine, expected in (
+            ("x86_64", "x86_64"),
+            ("amd64", "x86_64"),
+            ("aarch64", "aarch64"),
+            ("arm64", "aarch64"),
+        ):
+            with (
+                self.subTest(machine=machine),
+                patch.object(build.platform, "machine", return_value=machine),
+            ):
+                self.assertEqual(build.host_guest_arch(), expected)
+        with (
+            patch.object(build.platform, "machine", return_value="riscv64"),
+            self.assertRaisesRegex(common.ScriptError, "unsupported build host"),
+        ):
+            build.host_guest_arch()
+
+    def test_kernel_binary_name_matches_boot_format(self):
+        with patch.object(build.platform, "machine", return_value="x86_64"):
+            self.assertEqual(build.kernel_binary_name(), "vmlinux")
+            self.assertEqual(
+                build._kernel_make_targets(),
+                (KernelBuildConstants.BINARY_NAME,),
+            )
+        with patch.object(build.platform, "machine", return_value="arm64"):
+            self.assertEqual(
+                build.kernel_binary_name(),
+                KernelBuildConstants.BINARY_NAME_AARCH64,
+            )
+            self.assertEqual(
+                build._kernel_make_targets(),
+                (
+                    KernelBuildConstants.BINARY_NAME,
+                    KernelBuildConstants.BINARY_NAME_AARCH64,
+                ),
+            )
+            work = Path("work")
+            self.assertEqual(
+                build._kernel_work_binary(work),
+                work / "arch" / "arm64" / "boot" / "Image",
+            )
+
+    def test_aarch64_kernel_uses_dedicated_config_without_x86_patches(self):
+        with patch.object(build.platform, "machine", return_value="aarch64"):
+            self.assertEqual(build.host_guest_arch(), "aarch64")
+            self.assertEqual(
+                build._kernel_input_config(),
+                KernelBuildConstants.INPUT_CONFIG_AARCH64,
+            )
+            self.assertEqual(
+                build._kernel_patch_directory(),
+                KernelBuildConstants.PATCH_DIRECTORY_AARCH64,
+            )
+
+    def test_aarch64_kernel_config_requires_direct_boot_symbols(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / ".config"
+            config.write_text(
+                "\n".join(
+                    (
+                        *KernelBuildConstants.REQUIRED_AARCH64_DIRECT_BOOT_CONFIG,
+                        *KernelBuildConstants.REQUIRED_VIRTIO_CONSOLE_CONFIG,
+                        *KernelBuildConstants.REQUIRED_SANDBOX_CONFIG,
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch.object(build.platform, "machine", return_value="aarch64"):
+                build.assert_required_kernel_config(config)
+            incomplete = Path(temporary) / "incomplete.config"
+            incomplete.write_text("CONFIG_ARM64=y\n", encoding="utf-8")
+            with (
+                patch.object(build.platform, "machine", return_value="aarch64"),
+                self.assertRaisesRegex(common.ScriptError, "aarch64 direct-boot"),
+            ):
+                build.assert_required_kernel_config(incomplete)
+
+    def test_aarch64_guest_rejects_ubuntu_rootfs(self):
+        config = build_config.InitramfsBuildConfig(guest="ubuntu")
+        descriptor = guests.guest_descriptor("ubuntu")
+        with patch.object(build.platform, "machine", return_value="aarch64"):
+            with self.assertRaisesRegex(common.ScriptError, "x86_64-only"):
+                build._prepare_guest_root(config, descriptor)
+
+    def test_sandbox_rejects_hvf_backend(self):
+        args = nvx.parse_args(["sandbox", "--hypervisor", "hvf"])
+        with (
+            patch.object(nvx.sys, "platform", "darwin"),
+            patch.object(
+                nvx.os,
+                "uname",
+                return_value=argparse.Namespace(machine="arm64"),
+                create=True,
+            ),
+            self.assertRaisesRegex(common.ScriptError, "microVM"),
+        ):
+            nvx.command_sandbox(args)
 
     def test_run_exposes_restore_readiness(self):
         args = nvx.parse_args(
@@ -823,7 +1045,17 @@ class CliTests(unittest.TestCase):
         with self.assertRaisesRegex(common.ScriptError, "cannot exceed"):
             nvx.command_run(invalid_restore_capacity)
 
-        legacy = nvx.parse_args(["run", "--restore-snapshot", "snapshot", "--dry-run"])
+        backend = "whp" if os.name == "nt" else "kvm"
+        legacy = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                backend,
+                "--restore-snapshot",
+                "snapshot",
+                "--dry-run",
+            ]
+        )
         with (
             patch.object(nvx, "require_file", return_value=Path("openvmm")),
             patch.object(
@@ -837,6 +1069,8 @@ class CliTests(unittest.TestCase):
         capture_memory = nvx.parse_args(
             [
                 "run",
+                "--hypervisor",
+                backend,
                 "--memory-mib",
                 "512",
                 "--memory-capacity-mib",
@@ -858,6 +1092,8 @@ class CliTests(unittest.TestCase):
         restore_memory = nvx.parse_args(
             [
                 "run",
+                "--hypervisor",
+                backend,
                 "--restore-snapshot",
                 "snapshot",
                 "--restore-memory-mib",
@@ -901,7 +1137,7 @@ class CliTests(unittest.TestCase):
 
     def test_build_commands_pass_backend_choice_in_config(self):
         for command in ("build-openvmm", "build"):
-            for backend in (None, "kvm", "mshv", "whp"):
+            for backend in (None, "kvm", "mshv", "whp", "hvf"):
                 with self.subTest(command=command, backend=backend):
                     arguments = [command, "--skip-restore"]
                     if backend is not None:
@@ -1349,7 +1585,13 @@ class CiTests(unittest.TestCase):
                 ci.OPENVMM_MSHV_TEST_FILTER,
             )
         self.assertNotIn("!test(openvmm_pcat_x64)", ci.OPENVMM_MSHV_TEST_FILTER)
+        # The microVM profile is x86-only, so the hvf filter selects aarch64
+        # Linux direct-boot configurations instead of the microVM tests.
         for backend, test_filter in ci.OPENVMM_TEST_FILTERS.items():
+            if backend == "hvf":
+                self.assertEqual(test_filter, ci.OPENVMM_HVF_TEST_FILTER)
+                self.assertIn("linux_direct_aarch64", test_filter)
+                continue
             for required_test in ci.OPENVMM_REQUIRED_MICROVM_TESTS:
                 with self.subTest(backend=backend, required_test=required_test):
                     self.assertIn(
@@ -3152,9 +3394,11 @@ class BuildTests(unittest.TestCase):
     def test_rejects_unsupported_openvmm_build_platforms(self):
         cases: tuple[tuple[str, build_config.OpenVmmBackend | None], ...] = (
             ("linux", "whp"),
+            ("linux", "hvf"),
+            ("linux", "hypervisor-framework"),
             ("win32", "kvm"),
             ("win32", "mshv"),
-            ("darwin", None),
+            ("win32", "hvf"),
             ("darwin", "kvm"),
             ("darwin", "mshv"),
             ("darwin", "whp"),
@@ -3171,6 +3415,42 @@ class BuildTests(unittest.TestCase):
                 ):
                     build.detect_openvmm_platform(backend)
                 access.assert_not_called()
+
+    def test_detects_macos_hvf_build_platform_on_apple_silicon(self):
+        for backend in (None, "hvf", "hypervisor-framework"):
+            with self.subTest(backend=backend):
+                with (
+                    patch.object(build.sys, "platform", "darwin"),
+                    patch.object(
+                        build.os,
+                        "uname",
+                        return_value=argparse.Namespace(machine="arm64"),
+                        create=True,
+                    ),
+                    patch.object(build.os, "access") as access,
+                ):
+                    config = build_config.OpenVmmBuildConfig()
+                    platform = build.detect_openvmm_platform(backend)
+
+                self.assertEqual(platform, "macos-hvf")
+                self.assertEqual(
+                    config.openvmm_target(platform), "aarch64-apple-darwin"
+                )
+                self.assertEqual(config.openvmm_build_mode(platform), "native")
+                access.assert_not_called()
+
+    def test_rejects_macos_hvf_build_on_intel_mac(self):
+        with (
+            patch.object(build.sys, "platform", "darwin"),
+            patch.object(
+                build.os,
+                "uname",
+                return_value=argparse.Namespace(machine="x86_64"),
+                create=True,
+            ),
+            self.assertRaisesRegex(common.ScriptError, "Apple Silicon"),
+        ):
+            build.detect_openvmm_platform("hvf")
 
     def test_linux_openvmm_builds_do_not_require_hypervisor_devices(self):
         for devices_usable in (False, True):
@@ -3230,6 +3510,7 @@ class BuildTests(unittest.TestCase):
                 Path("target") / "x86_64-unknown-linux-musl" / "release" / "openvmm",
             ),
             ("windows-msvc", Path("target") / "release" / "openvmm.exe"),
+            ("macos-hvf", Path("target") / "release" / "openvmm"),
         )
         for platform, relative_output in cases:
             with self.subTest(platform=platform):
@@ -3573,7 +3854,10 @@ class BuildTests(unittest.TestCase):
             prior_provenance.parent.mkdir()
             prior_provenance.write_text("stale", encoding="utf-8")
 
-            with patch.object(BuildConstants, "REPO_ROOT", root):
+            with (
+                patch.object(BuildConstants, "REPO_ROOT", root),
+                patch.object(build, "host_guest_arch", return_value="x86_64"),
+            ):
                 source_fingerprint = build._kernel_source_fingerprint()
 
             def run_build(command: object, **_kwargs: object) -> None:
@@ -3583,6 +3867,7 @@ class BuildTests(unittest.TestCase):
 
             with (
                 patch.object(BuildConstants, "REPO_ROOT", root),
+                patch.object(build, "host_guest_arch", return_value="x86_64"),
                 patch.object(build, "_require_linux"),
                 patch.object(build, "require_tool", return_value="tool"),
                 patch.object(
@@ -3724,6 +4009,7 @@ class BuildTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, git_environment, clear=True),
                 patch.object(BuildConstants, "REPO_ROOT", root),
+                patch.object(build, "host_guest_arch", return_value="x86_64"),
             ):
                 build.materialize_kernel_provenance_inputs()
 
@@ -3732,6 +4018,10 @@ class BuildTests(unittest.TestCase):
             self.assertFalse(stale_patch.exists())
 
     def test_manifest_tracks_every_kernel_patch(self):
+        with patch.object(build, "host_guest_arch", return_value="x86_64"):
+            self._check_manifest_tracks_every_kernel_patch()
+
+    def _check_manifest_tracks_every_kernel_patch(self):
         manifest = json.loads(
             (BuildConstants.REPO_ROOT / "SOURCE-MANIFEST.json").read_text(
                 encoding="utf-8"
@@ -7229,7 +7519,12 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_download_command_selects_host_release(self):
         args = nvx.parse_args(["download", "--repository", "example/nvx"])
-        expected_platform = "windows-whp" if os.name == "nt" else "linux-kvm"
+        if os.name == "nt":
+            expected_platform = "windows-whp"
+        elif sys.platform == "darwin":
+            expected_platform = "macos-hvf"
+        else:
+            expected_platform = "linux-kvm"
 
         with patch.object(nvx, "download_latest_release") as download_release:
             args.handler(args)
@@ -7238,7 +7533,12 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_download_command_defaults_to_integration_repository(self):
         args = nvx.parse_args(["download"])
-        expected_platform = "windows-whp" if os.name == "nt" else "linux-kvm"
+        if os.name == "nt":
+            expected_platform = "windows-whp"
+        elif sys.platform == "darwin":
+            expected_platform = "macos-hvf"
+        else:
+            expected_platform = "linux-kvm"
 
         with patch.object(nvx, "download_latest_release") as download_release:
             args.handler(args)
@@ -7576,7 +7876,8 @@ class ReleaseTests(unittest.TestCase):
     def test_binary_package_stages_files_and_checksums(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            paths, kernel_inputs, revision = _write_release_fixture(root)
+            with patch.object(build, "host_guest_arch", return_value="x86_64"):
+                paths, kernel_inputs, revision = _write_release_fixture(root)
             build_dir = paths["build"]
             source_dir = paths["source"]
             openvmm_dir = paths["openvmm"]
@@ -7590,6 +7891,7 @@ class ReleaseTests(unittest.TestCase):
             with (
                 patch.object(BuildConstants, "REPO_ROOT", root),
                 patch.object(BuildConstants, "SOURCE_DIR", source_dir),
+                patch.object(build, "host_guest_arch", return_value="x86_64"),
                 patch.object(
                     UbuntuBuildConstants,
                     "PACKAGE_LOCK",
@@ -7823,7 +8125,8 @@ class ReleaseTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as temporary,
             ):
                 root = Path(temporary)
-                paths, kernel_inputs, revision = _write_release_fixture(root)
+                with patch.object(build, "host_guest_arch", return_value="x86_64"):
+                    paths, kernel_inputs, revision = _write_release_fixture(root)
                 fixture_build_dir = paths["build"]
                 manifest_path = root / "SOURCE-MANIFEST.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -7847,6 +8150,7 @@ class ReleaseTests(unittest.TestCase):
                 with (
                     patch.object(BuildConstants, "REPO_ROOT", root),
                     patch.object(BuildConstants, "SOURCE_DIR", paths["source"]),
+                    patch.object(build, "host_guest_arch", return_value="x86_64"),
                     patch.object(
                         UbuntuBuildConstants,
                         "PACKAGE_LOCK",
@@ -7894,7 +8198,8 @@ class ReleaseTests(unittest.TestCase):
     def test_failed_staged_verification_preserves_existing_release(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            paths, kernel_inputs, revision = _write_release_fixture(root)
+            with patch.object(build, "host_guest_arch", return_value="x86_64"):
+                paths, kernel_inputs, revision = _write_release_fixture(root)
             build_dir = paths["build"]
             destination = root / "dist" / "1.0.0"
             destination.mkdir(parents=True)
@@ -7914,6 +8219,7 @@ class ReleaseTests(unittest.TestCase):
             with (
                 patch.object(BuildConstants, "REPO_ROOT", root),
                 patch.object(BuildConstants, "SOURCE_DIR", paths["source"]),
+                patch.object(build, "host_guest_arch", return_value="x86_64"),
                 patch.object(
                     UbuntuBuildConstants,
                     "PACKAGE_LOCK",

@@ -78,7 +78,17 @@ from nvx_tools.release import (
 from nvx_tools.sandbox import SandboxLaunch, SandboxLayer, parse_workload_identity
 
 DEFAULT_RELEASE_REPOSITORY = "microsoft/nvx"
-HYPERVISORS = ("auto", "whp", "kvm", "mshv")
+HYPERVISORS = ("auto", "whp", "kvm", "mshv", "hvf", "hypervisor-framework")
+# Canonical name for each --hypervisor choice. hypervisor-framework is an
+# alias for hvf (macOS Hypervisor.framework).
+_HYPERVISOR_CANONICAL = {
+    "auto": "auto",
+    "whp": "whp",
+    "kvm": "kvm",
+    "mshv": "mshv",
+    "hvf": "hvf",
+    "hypervisor-framework": "hvf",
+}
 NETWORK_PROFILES = ("portable",)
 SYSTEMD_ENTRYPOINTS = frozenset(("/usr/lib/systemd/systemd", "/lib/systemd/systemd"))
 
@@ -234,10 +244,31 @@ def command_build(args: argparse.Namespace) -> None:
     build_all(_build_config(args))
 
 
+def _canonical_hypervisor(selected: str) -> str:
+    try:
+        return _HYPERVISOR_CANONICAL[selected]
+    except KeyError:
+        raise ScriptError(
+            f"unsupported hypervisor {selected!r}; choose {', '.join(HYPERVISORS)}"
+        ) from None
+
+
 def _hypervisor(selected: str) -> str:
     if selected != "auto":
-        return selected
-    return "whp" if os.name == "nt" else "kvm"
+        return _canonical_hypervisor(selected)
+    if os.name == "nt":
+        return "whp"
+    if sys.platform == "darwin":
+        return "hvf"
+    return "kvm"
+
+
+def _require_apple_silicon(hypervisor: str) -> None:
+    if hypervisor != "hvf":
+        return
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    if machine not in ("arm64", "aarch64"):
+        raise ScriptError("the hvf hypervisor requires Apple Silicon (arm64)")
 
 
 def _release_platform(hypervisor: str) -> str:
@@ -248,6 +279,9 @@ def _release_platform(hypervisor: str) -> str:
     elif sys.platform.startswith("linux"):
         host = "linux"
         supported = ("kvm", "mshv")
+    elif sys.platform == "darwin":
+        host = "macos"
+        supported = ("hvf",)
     else:
         raise ScriptError(f"release downloads are unsupported on {sys.platform}")
     if selected not in supported:
@@ -261,6 +295,40 @@ def command_download(args: argparse.Namespace) -> None:
 
 def _format_command(command: list[str]) -> str:
     return subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+
+
+def _require_hvf_run_args(args: argparse.Namespace) -> None:
+    # The microVM machine profile is x86-only (MP-table boot, fixed x86 APIC
+    # topology, KVM/MSHV/WHP hypervisors). On macOS/HVF, run uses standard
+    # Linux direct boot: OpenVMM synthesizes the boot tables (default ACPI
+    # mode with stub DT + EFI on aarch64) from --kernel/--initrd/--cmdline.
+    # MicroVM-only options are rejected with an actionable message.
+    rejected = (
+        ("mount", args.mount),
+        ("mount-deny", args.mount_deny or None),
+        ("net", args.net),
+        ("network-profile", args.network_profile),
+        ("network-egress", args.network_egress),
+        ("network-ingress", args.network_ingress),
+        ("network-egress-allow", args.network_egress_allow or None),
+        ("network-egress-deny", args.network_egress_deny or None),
+        ("host-loopback", args.host_loopback),
+        ("network-proxy", args.network_proxy),
+        ("host-loopback-forward", args.host_loopback_forward or None),
+        ("outcome-report", args.outcome_report),
+        ("memory-capacity-mib", args.memory_capacity_mib),
+        ("restore-snapshot", args.restore_snapshot),
+        ("restore-processors", args.restore_processors),
+        ("restore-memory-mib", args.restore_memory_mib),
+        ("restore-ready-path", args.restore_ready_path),
+    )
+    for name, value in rejected:
+        if value is not None and value is not False and value != []:
+            raise ScriptError(
+                f"--{name} requires the microVM machine profile, which is "
+                "x86-only and unsupported with --hypervisor hvf; "
+                "hvf uses standard Linux direct boot (--kernel/--initrd/--cmdline)"
+            )
 
 
 def command_run(args: argparse.Namespace) -> None:
@@ -289,17 +357,37 @@ def command_run(args: argparse.Namespace) -> None:
             raise ScriptError(
                 "--restore-processors cannot exceed --processors capacity"
             )
+    hypervisor = _hypervisor(args.hypervisor)
+    _require_apple_silicon(hypervisor)
+    if hypervisor == "hvf" and args.memory_mib is None:
+        # The aarch64 debug kernel and initramfs do not fit in the 128M
+        # Alpine default (verified: 128M fails, 256M boots).
+        memory_mib = max(memory_mib, 256)
     executable = require_file(openvmm_binary_path(), "OpenVMM release binary")
-    command = [
-        str(executable),
-        "--single-process",
-        "--machine",
-        args.machine,
-        "--processors",
-        str(args.processors),
-        "--hypervisor",
-        _hypervisor(args.hypervisor),
-    ]
+    if hypervisor == "hvf":
+        _require_hvf_run_args(args)
+        command = [
+            str(executable),
+            "--single-process",
+            "--processors",
+            str(args.processors),
+            "--hypervisor",
+            hypervisor,
+            # PL011 ttyAMA0 on aarch64; OpenVMM adds console= automatically.
+            "--com1",
+            "console",
+        ]
+    else:
+        command = [
+            str(executable),
+            "--single-process",
+            "--machine",
+            args.machine,
+            "--processors",
+            str(args.processors),
+            "--hypervisor",
+            hypervisor,
+        ]
     if args.restore_snapshot is not None:
         command.extend(
             ["--restore-snapshot", str(args.restore_snapshot), "--restore-entropy"]
@@ -311,9 +399,12 @@ def command_run(args: argparse.Namespace) -> None:
         if args.restore_ready_path is not None:
             command.extend(["--restore-ready-path", str(args.restore_ready_path)])
     else:
-        kernel = require_file(
-            artifact_path(KernelBuildConstants.BINARY_NAME), "Linux direct kernel"
+        kernel_name = (
+            KernelBuildConstants.BINARY_NAME_AARCH64
+            if hypervisor == "hvf"
+            else KernelBuildConstants.BINARY_NAME
         )
+        kernel = require_file(artifact_path(kernel_name), "Linux direct kernel")
         initrd = require_file(
             artifact_path(descriptor.initramfs_name),
             f"{descriptor.distribution} initramfs",
@@ -363,6 +454,13 @@ def command_run(args: argparse.Namespace) -> None:
 
 def command_sandbox(args: argparse.Namespace) -> None:
     operation = args.sandbox_operation
+    if _hypervisor(args.hypervisor) == "hvf":
+        _require_apple_silicon("hvf")
+        raise ScriptError(
+            "sandbox workloads require the microVM machine profile, which is "
+            "x86-only and unsupported with --hypervisor hvf; "
+            "use `run` for standard Linux direct boot on macOS"
+        )
     if operation in ("run", "provision", "exec") and (
         args.entrypoint in SYSTEMD_ENTRYPOINTS
     ):

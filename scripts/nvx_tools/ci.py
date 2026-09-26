@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 import zipfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -26,7 +27,7 @@ from .common import (
     run_checked,
 )
 
-OPENVMM_TEST_BACKENDS = ("kvm", "mshv", "whp")
+OPENVMM_TEST_BACKENDS = ("kvm", "mshv", "whp", "hvf")
 REQUIRED_CI_RESULT_ENVIRONMENTS = {
     "quality": "QUALITY_RESULT",
     "openvmm-changes": "CHANGES_RESULT",
@@ -253,10 +254,16 @@ def _join_openvmm_tests(
     return f"({test_filter}){exclusions}"
 
 
+# HVF runs aarch64 Linux guests via Hypervisor.framework. The NVX microVM
+# profile is x86-only, so the filter selects aarch64 Linux direct-boot
+# configurations instead of the x86 microVM lifecycle tests.
+OPENVMM_HVF_TEST_FILTER = "test(linux_direct_aarch64)"
+
 OPENVMM_TEST_FILTERS = {
     "kvm": OPENVMM_KVM_TEST_FILTER,
     "mshv": OPENVMM_MSHV_TEST_FILTER,
     "whp": _join_openvmm_tests(OPENVMM_WHP_TESTS, OPENVMM_WHP_EXCLUDED_TESTS),
+    "hvf": OPENVMM_HVF_TEST_FILTER,
 }
 
 
@@ -270,6 +277,12 @@ def validate_openvmm_test_backend(backend: str) -> None:
     if backend == "whp":
         if os.name != "nt":
             raise ScriptError("WHP OpenVMM tests require Windows")
+    elif backend == "hvf":
+        if sys.platform != "darwin":
+            raise ScriptError("HVF OpenVMM tests require macOS")
+        machine = os.uname().machine if hasattr(os, "uname") else ""
+        if machine not in ("arm64", "aarch64"):
+            raise ScriptError("HVF OpenVMM tests require Apple Silicon (arm64)")
     else:
         if os.name == "nt":
             raise ScriptError(f"{backend.upper()} OpenVMM tests require Linux")
@@ -397,13 +410,19 @@ def run_openvmm_tests(backend: str) -> None:
     )
     cargo = require_tool("cargo")
     rustup = require_tool("rustup")
+    # HVF boots the flat aarch64 Image; the microVM backends boot ELF vmlinux.
+    kernel_name = (
+        KernelBuildConstants.BINARY_NAME_AARCH64
+        if backend == "hvf"
+        else KernelBuildConstants.BINARY_NAME
+    )
     kernel = require_file(
-        artifact_path(KernelBuildConstants.BINARY_NAME),
-        "microVM Linux direct kernel",
+        artifact_path(kernel_name),
+        "microVM Linux direct kernel" if backend != "hvf" else "Linux direct kernel",
     )
     initrd = require_file(
         artifact_path(AlpineBuildConstants.INITRAMFS_NAME),
-        "microVM Alpine initramfs",
+        "microVM Alpine initramfs" if backend != "hvf" else "Alpine initramfs",
     )
 
     rust_environment = _prepare_openvmm_test_environment(backend, rustup)
