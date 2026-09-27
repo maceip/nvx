@@ -360,9 +360,10 @@ def command_run(args: argparse.Namespace) -> None:
     hypervisor = _hypervisor(args.hypervisor)
     _require_apple_silicon(hypervisor)
     if hypervisor == "hvf" and args.memory_mib is None:
-        # The aarch64 debug kernel and initramfs do not fit in the 128M
-        # Alpine default (verified: 128M fails, 256M boots).
-        memory_mib = max(memory_mib, 256)
+        # The aarch64 debug kernel and node-bearing initramfs do not fit
+        # below this (verified: 256M fails once nodejs is installed, 512M
+        # boots and serves).
+        memory_mib = max(memory_mib, 512)
     executable = require_file(openvmm_binary_path(), "OpenVMM release binary")
     if hypervisor == "hvf":
         _require_hvf_run_args(args)
@@ -443,6 +444,12 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--network-proxy", args.network_proxy])
     for forward in args.host_loopback_forward:
         command.extend(["--host-loopback-forward", forward])
+    for spec in args.virtio_net:
+        command.extend(["--virtio-net", spec])
+    if hypervisor == "hvf" and args.virtio_net:
+        # On macOS/HVF the guest configures the virtio NIC via DHCP served
+        # by the backend (e.g. consomme).
+        command.extend(["--cmdline", "virtnet_dhcp=1"])
     if args.outcome_report is not None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     if args.cmdline:
@@ -825,6 +832,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     run.add_argument("--host-loopback", choices=("allow", "deny"))
     run.add_argument("--network-proxy", metavar="IPV4:TCP-PORT")
     run.add_argument("--host-loopback-forward", action="append", default=[])
+    run.add_argument(
+        "--virtio-net",
+        action="append",
+        default=[],
+        metavar="BACKEND",
+        help="expose a virtio NIC (e.g. 'consomme' or "
+        "'consomme:192.168.127.0/24,hostfwd=tcp::18080-:3000'; "
+        "on hvf the guest configures it via DHCP)",
+    )
     run.add_argument(
         "--outcome-report",
         type=Path,
