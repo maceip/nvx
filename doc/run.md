@@ -290,6 +290,22 @@ the virtual timer resumes ticking from the saved control state. Snapshots
 from before the GIC/timer/thread-register state elements existed restore
 with those elements skipped (same behavior as a fresh boot for that state).
 
+A restored VM can itself be re-snapshotted, so snapshots chain
+(save, restore, save, restore): on restore, openvmm materializes a
+process-private writable copy of the snapshot's RAM (under `TMPDIR`, same
+size as guest RAM) and maps that, leaving the source snapshot pristine for
+repeated restores. The copy is deleted with the VM; a crash can leave an
+`openvmm-restore-ram-*` directory behind. Point `TMPDIR` at a roomy
+filesystem before restoring large guests.
+
+Validate a snapshot directory before restoring it (checks the manifest
+parses, the version is supported, and the recorded memory/state lengths
+match the files on disk):
+
+```bash
+python3 scripts/nvx.py snapshot verify /var/lib/nvx/snapshot
+```
+
 ## virtio-fs host mapping
 
 The microVM reserves one mapping slot with a fixed `microvm` tag. On a cold

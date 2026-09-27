@@ -42,6 +42,7 @@ from nvx_tools import (  # noqa: E402
     release,
     sandbox,
     sandbox_lifecycle,
+    snapshot,
     ubuntu,
 )
 from nvx_tools.build_constants import (  # noqa: E402
@@ -1383,6 +1384,158 @@ class CliTests(unittest.TestCase):
     def test_record_openvmm_provenance_command_is_exposed(self):
         args = nvx.parse_args(["record-openvmm-provenance"])
         self.assertIs(args.handler, nvx.command_record_openvmm_provenance)
+
+
+def _encode_varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        bits = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(bits | 0x80)
+        else:
+            out.append(bits)
+            return bytes(out)
+
+
+def _encode_manifest(
+    *,
+    version: int = 5,
+    memory_size: int,
+    state_size: int,
+    architecture: str = "aarch64",
+    linux_direct_boot: bool | None = True,
+) -> bytes:
+    out = bytearray()
+
+    def varint_field(number: int, value: int) -> None:
+        out.extend(_encode_varint((number << 3) | 0))
+        out.extend(_encode_varint(value))
+
+    def string_field(number: int, value: str) -> None:
+        raw = value.encode("utf-8")
+        out.extend(_encode_varint((number << 3) | 2))
+        out.extend(_encode_varint(len(raw)))
+        out.extend(raw)
+
+    varint_field(1, version)
+    string_field(3, "0.0.0")
+    varint_field(4, memory_size)
+    varint_field(5, 1)
+    varint_field(6, 16384)
+    string_field(7, architecture)
+    varint_field(8, state_size)
+    string_field(14, "openvmm.SavedState")
+    if linux_direct_boot is not None:
+        varint_field(18, int(linux_direct_boot))
+    return bytes(out)
+
+
+def _write_snapshot(
+    root: Path,
+    *,
+    memory_size: int = 4096,
+    state_size: int = 128,
+    manifest_kwargs: dict | None = None,
+    record_sizes: bool = True,
+) -> Path:
+    snap = root / "snap"
+    snap.mkdir()
+    (snap / "memory.bin").write_bytes(b"\0" * memory_size)
+    (snap / "state.bin").write_bytes(b"\0" * state_size)
+    manifest = _encode_manifest(
+        memory_size=memory_size if record_sizes else 999,
+        state_size=state_size if record_sizes else 999,
+        **(manifest_kwargs or {}),
+    )
+    (snap / "manifest.bin").write_bytes(manifest)
+    return snap
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_verify_accepts_well_formed_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            report = snapshot.verify_snapshot(snap)
+            self.assertEqual(report.version, 5)
+            self.assertEqual(report.memory_size_bytes, 4096)
+            self.assertEqual(report.state_size_bytes, 128)
+            self.assertEqual(report.architecture, "aarch64")
+            self.assertTrue(report.linux_direct_boot)
+            self.assertEqual(report.saved_state_root_type, "openvmm.SavedState")
+
+    def test_verify_reports_absent_boot_mode_as_firmware(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(
+                Path(temporary), manifest_kwargs={"linux_direct_boot": None}
+            )
+            report = snapshot.verify_snapshot(snap)
+            self.assertFalse(report.linux_direct_boot)
+
+    def test_verify_rejects_missing_memory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            (snap / "memory.bin").unlink()
+            with self.assertRaisesRegex(common.ScriptError, "memory"):
+                snapshot.verify_snapshot(snap)
+
+    def test_verify_rejects_memory_size_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary), record_sizes=False)
+            with self.assertRaisesRegex(common.ScriptError, "memory.bin"):
+                snapshot.verify_snapshot(snap)
+
+    def test_verify_rejects_state_size_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            with (snap / "state.bin").open("ab") as handle:
+                handle.write(b"\0")
+            with self.assertRaisesRegex(common.ScriptError, "state.bin"):
+                snapshot.verify_snapshot(snap)
+
+    def test_verify_rejects_unsupported_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary), manifest_kwargs={"version": 9})
+            with self.assertRaisesRegex(common.ScriptError, "version 9"):
+                snapshot.verify_snapshot(snap)
+
+    def test_verify_rejects_symlinked_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snap = _write_snapshot(root)
+            real = root / "real-memory.bin"
+            (snap / "memory.bin").unlink()
+            real.write_bytes(b"\0" * 4096)
+            (snap / "memory.bin").symlink_to(real)
+            with self.assertRaisesRegex(common.ScriptError, "symlink"):
+                snapshot.verify_snapshot(snap)
+
+    def test_verify_rejects_truncated_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            (snap / "manifest.bin").write_bytes(b"\x08")
+            with self.assertRaisesRegex(common.ScriptError, "truncated"):
+                snapshot.verify_snapshot(snap)
+
+    def test_snapshot_verify_command_is_exposed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            args = nvx.parse_args(["snapshot", "verify", str(snap)])
+            self.assertIs(args.handler, nvx.command_snapshot_verify)
+            with (
+                patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
+                nvx.command_snapshot_verify(args)
+            self.assertIn("snapshot OK", stdout.getvalue())
+            self.assertIn("linux-direct", stdout.getvalue())
+
+    def test_snapshot_verify_command_fails_on_broken_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            snap = _write_snapshot(Path(temporary))
+            (snap / "state.bin").unlink()
+            args = nvx.parse_args(["snapshot", "verify", str(snap)])
+            with self.assertRaises(common.ScriptError):
+                nvx.command_snapshot_verify(args)
 
 
 class CiTests(unittest.TestCase):

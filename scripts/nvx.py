@@ -76,6 +76,7 @@ from nvx_tools.release import (
     verify_source_tree,
 )
 from nvx_tools.sandbox import SandboxLaunch, SandboxLayer, parse_workload_identity
+from nvx_tools.snapshot import format_report, verify_snapshot
 
 DEFAULT_RELEASE_REPOSITORY = "microsoft/nvx"
 HYPERVISORS = ("auto", "whp", "kvm", "mshv", "hvf", "hypervisor-framework")
@@ -690,6 +691,12 @@ def command_verify(_: argparse.Namespace) -> None:
     verify_source_tree()
 
 
+def command_snapshot_verify(args: argparse.Namespace) -> None:
+    report = verify_snapshot(args.snapshot_dir)
+    print(format_report(report))
+    print("snapshot OK")
+
+
 def _add_guest_options(
     parser: argparse.ArgumentParser,
     *,
@@ -1069,6 +1076,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     verify = subparsers.add_parser("verify", help="verify source and submodule inputs")
     verify.set_defaults(handler=command_verify)
+
+    snapshot = subparsers.add_parser(
+        "snapshot", help="inspect and validate saved VM snapshots"
+    )
+    snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_command", required=True)
+    snapshot_verify = snapshot_subparsers.add_parser(
+        "verify", help="validate a snapshot directory before restoring it"
+    )
+    snapshot_verify.add_argument("snapshot_dir", type=Path)
+    snapshot_verify.set_defaults(handler=command_snapshot_verify)
     return parser.parse_args(argv)
 
 

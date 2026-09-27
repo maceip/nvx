@@ -47,6 +47,7 @@ python3 scripts/nvx.py performance gate --help
 | `package` | Stage a binary distribution. |
 | `archive-release` | Create a deterministic archive from a staged distribution. |
 | `verify` | Verify source and submodule inputs. |
+| `snapshot` | Inspect and validate saved VM snapshots. |
 
 ## Initialization and verification
 
@@ -368,6 +369,19 @@ python3 scripts/nvx.py sandbox
 
 See [Run](run.md) for artifact preparation, the security boundary, and current
 snapshot/configuration limitations.
+
+### `snapshot`
+
+```text
+python3 scripts/nvx.py snapshot verify SNAPSHOT_DIR
+```
+
+| Subcommand | Description |
+| --- | --- |
+| `verify SNAPSHOT_DIR` | Validate a snapshot directory before restoring it: all three artifacts are present as regular files (never symlinks), the manifest parses with a supported version, and the recorded memory/state lengths match the files on disk. Prints the manifest summary (version, architecture, guest RAM, vCPU count, boot mode, device-state root) and `snapshot OK`. |
+
+See [Run](run.md) for the macOS/HVF save/restore flow, snapshot chaining,
+and restore-time disk requirements.
 
 ## Benchmarking
 
