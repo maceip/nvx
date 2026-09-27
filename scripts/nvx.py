@@ -297,6 +297,28 @@ def _format_command(command: list[str]) -> str:
     return subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
 
 
+def parse_share_spec(value: str) -> tuple[int, str, str]:
+    """Parse `--share PORT:MNTPOINT[:ro|rw]` into (port, mountpoint, mode)."""
+    parts = value.split(":")
+    if len(parts) not in (2, 3):
+        raise ScriptError(
+            f"--share must be PORT:MNTPOINT[:ro|rw], got {value!r}"
+        )
+    try:
+        port = int(parts[0])
+    except ValueError:
+        raise ScriptError(f"--share port must be an integer, got {parts[0]!r}") from None
+    if not 1 <= port <= 65535:
+        raise ScriptError(f"--share port must be 1-65535, got {port}")
+    mountpoint = parts[1]
+    if not mountpoint.startswith("/"):
+        raise ScriptError(f"--share mountpoint must be absolute, got {mountpoint!r}")
+    mode = parts[2] if len(parts) == 3 else "ro"
+    if mode not in ("ro", "rw"):
+        raise ScriptError(f"--share mode must be ro or rw, got {mode!r}")
+    return port, mountpoint, mode
+
+
 def _require_hvf_run_args(args: argparse.Namespace) -> None:
     # The microVM machine profile is x86-only (MP-table boot, fixed x86 APIC
     # topology, KVM/MSHV/WHP hypervisors). On macOS/HVF, run uses standard
@@ -444,12 +466,29 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--network-proxy", args.network_proxy])
     for forward in args.host_loopback_forward:
         command.extend(["--host-loopback-forward", forward])
-    for spec in args.virtio_net:
+    virtio_specs = list(args.virtio_net)
+    if args.share:
+        consomme = [spec for spec in virtio_specs if spec.startswith("consomme")]
+        if not consomme:
+            raise ScriptError(
+                "--share requires --virtio-net with a consomme backend "
+                "so the guest can reach the host 9P server"
+            )
+        # The guest reaches the host server through the gateway address, so
+        # the gateway-to-loopback mapping must be on.
+        virtio_specs = [
+            spec if not spec.startswith("consomme") or "gwloopback" in spec else spec + ",gwloopback"
+            for spec in virtio_specs
+        ]
+    for spec in virtio_specs:
         command.extend(["--virtio-net", spec])
     if hypervisor == "hvf" and args.virtio_net:
         # On macOS/HVF the guest configures the virtio NIC via DHCP served
         # by the backend (e.g. consomme).
         command.extend(["--cmdline", "virtnet_dhcp=1"])
+    for spec in args.share:
+        port, mountpoint, mode = parse_share_spec(spec)
+        command.extend(["--cmdline", f"virt9p={port}:{mountpoint}:{mode}"])
     if args.outcome_report is not None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     if args.cmdline:
@@ -840,6 +879,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="expose a virtio NIC (e.g. 'consomme' or "
         "'consomme:192.168.127.0/24,hostfwd=tcp::18080-:3000'; "
         "on hvf the guest configures it via DHCP)",
+    )
+    run.add_argument(
+        "--share",
+        action="append",
+        default=[],
+        metavar="PORT:MNTPOINT[:ro|rw]",
+        help="mount a host 9P server (see scripts/nvx_tools/nvx_9p.py) in the "
+        "guest; requires a consomme --virtio-net (gwloopback is added "
+        "automatically). Example: --share 5564:/mnt/host",
     )
     run.add_argument(
         "--outcome-report",

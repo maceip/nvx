@@ -765,6 +765,63 @@ class CliTests(unittest.TestCase):
             "outcome.json",
         )
 
+    def test_share_adds_gwloopback_and_virt9p_cmdline(self):
+        args = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                "hvf",
+                "--virtio-net",
+                "consomme:192.168.127.0/24",
+                "--share",
+                "5564:/mnt/host",
+                "--share",
+                "5565:/mnt/rw:rw",
+                "--dry-run",
+            ]
+        )
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        with (
+            patch.object(nvx, "require_file", side_effect=require),
+            patch.object(
+                nvx,
+                "_format_command",
+                return_value="formatted",
+            ) as format_command,
+        ):
+            nvx.command_run(args)
+
+        command = format_command.call_args.args[0]
+        nic = command[command.index("--virtio-net") + 1]
+        self.assertIn("gwloopback", nic)
+        cmdlines = [
+            command[i + 1] for i, part in enumerate(command[:-1]) if part == "--cmdline"
+        ]
+        self.assertIn("virt9p=5564:/mnt/host:ro", cmdlines)
+        self.assertIn("virt9p=5565:/mnt/rw:rw", cmdlines)
+
+    def test_share_without_consomme_is_rejected(self):
+        args = nvx.parse_args(
+            ["run", "--hypervisor", "hvf", "--share", "5564:/mnt/host", "--dry-run"]
+        )
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        with patch.object(nvx, "require_file", side_effect=require):
+            with self.assertRaisesRegex(common.ScriptError, "consomme"):
+                nvx.command_run(args)
+
+    def test_share_spec_validation(self):
+        self.assertEqual(nvx.parse_share_spec("5564:/mnt/host"), (5564, "/mnt/host", "ro"))
+        self.assertEqual(nvx.parse_share_spec("1:/a:rw"), (1, "/a", "rw"))
+        for bad in ("5564", "abc:/mnt", "0:/mnt", "70000:/mnt", "5564:relative", "5564:/mnt:xx"):
+            with self.subTest(spec=bad), self.assertRaises(common.ScriptError):
+                nvx.parse_share_spec(bad)
+
     def test_hvf_run_uses_direct_boot_without_microvm_machine(self):
         for hypervisor in ("hvf", "hypervisor-framework"):
             with self.subTest(hypervisor=hypervisor):

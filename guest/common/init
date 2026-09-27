@@ -210,6 +210,29 @@ elif [ -n "$ndhcp" ]; then
         fi
     fi
 fi
+# virt9p: mount a host 9P file server reachable through the default gateway
+# (see `scripts/nvx.py run --share`, spec PORT:MNTPOINT[:ro|rw]).
+v9p=$(sed -n 's/.*virt9p=\([^ ]*\).*/\1/p' /proc/cmdline)
+if [ -n "$v9p" ]; then
+    v9port=${v9p%%:*}; v9rest=${v9p#*:}
+    v9mnt=${v9rest%%:*}; v9mode=${v9rest#*:}
+    [ "$v9mnt" = "$v9rest" ] && v9mode=ro
+    [ "$v9mode" = rw ] || v9mode=ro
+    v9gw=$(route -n 2>/dev/null | awk '$1 == "0.0.0.0" { print $2; exit }')
+    if [ -z "$v9gw" ]; then
+        echo "virt9p: no default route, cannot reach host share" >&2
+    else
+        mkdir -p "$v9mnt"
+        v9opts="trans=tcp,version=9p2000.L,port=$v9port"
+        [ "$v9mode" = ro ] && v9opts="$v9opts,ro"
+        if mount -t 9p -o "$v9opts" "$v9gw" "$v9mnt" 2>/tmp/virt9p-mount.log; then
+            echo "VIRT9P-OK: $v9gw:$v9port at $v9mnt ($v9mode)"
+        else
+            cat /tmp/virt9p-mount.log >&2
+            echo "virt9p: failed to mount $v9gw:$v9port at $v9mnt" >&2
+        fi
+    fi
+fi
 if [ "$sandbox_mode" = true ]; then
     [ -x /sbin/nvx-init-agent ] ||
         workload_fatal "selected guest cannot act as sandbox control"
