@@ -156,6 +156,9 @@ class AlpineBuildConstants:
     # was verified by re-downloading the x86_64 tarball over the same channel
     # and reproducing MINIROOTFS_SHA256 exactly.
     AARCH64_ARCHITECTURE: Final = "aarch64"
+    # Extra packages installed only into the aarch64 guest image (kept out
+    # of the x86_64 microVM image, which is size-sensitive at 128M).
+    AARCH64_EXTRA_PACKAGES: Final = ("nodejs",)
     MINIROOTFS_AARCH64_NAME: Final = (
         f"alpine-minirootfs-{VERSION}-{AARCH64_ARCHITECTURE}.tar.gz"
     )

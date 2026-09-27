@@ -572,7 +572,12 @@ def _prepare_alpine_root(config: InitramfsBuildConfig) -> Path:
     require_tool("tar")
     run_checked(["tar", "-xzf", tarball, "-C", root])
     print(">> installing sandbox utilities into the Alpine rootfs")
-    _apk_add(root, *AlpineBuildConstants.PACKAGES)
+    extra = (
+        AlpineBuildConstants.AARCH64_EXTRA_PACKAGES
+        if host_guest_arch() == "aarch64"
+        else ()
+    )
+    _apk_add(root, *AlpineBuildConstants.PACKAGES, *extra)
     resolver = root / "etc" / "resolv.conf"
     resolver.unlink(missing_ok=True)
     resolver.touch()
@@ -843,6 +848,17 @@ def _install_guest_files(
                 / UbuntuBuildConstants.GUEST_DIRECTORY
                 / "nvx-bashrc",
                 root / "etc" / "nvx-bashrc",
+            )
+        )
+    if descriptor.name == "alpine" and host_guest_arch() == "aarch64":
+        # Demo workload for the HVF direct-boot path (needs nodejs, which
+        # is only installed into the aarch64 image).
+        alpine = BuildConstants.REPO_ROOT / AlpineBuildConstants.GUEST_DIRECTORY
+        scripts.append(
+            (
+                "nvx-node-demo",
+                alpine / "nvx-node-demo",
+                root / "sbin" / "nvx-node-demo",
             )
         )
     for name, source, destination in scripts:

@@ -1,0 +1,32 @@
+#!/bin/sh
+# Demo workload: serve HTTP with Node.js on loopback and prove it with a
+# client fetch. Runs as init via nvx_exec (which execs, so this waits on
+# the server instead of returning).
+set -u
+app=/tmp/nvx-node-hello.js
+cat >"$app" <<'EOF'
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('hello from NVX guest: node ' + process.version + ' ' + process.arch + '\n');
+}).listen(3000, '127.0.0.1', () => console.log('node listening on 127.0.0.1:3000'));
+EOF
+node "$app" &
+server=$!
+code=1
+i=0
+while [ "$i" -lt 50 ]; do
+    if node -e "fetch('http://127.0.0.1:3000/').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))" 2>/dev/null; then
+        code=0
+        break
+    fi
+    sleep 0.2
+    i=$((i+1))
+done
+if [ "$code" != 0 ]; then
+    echo "NVX-NODE-FAIL: node server did not answer on 127.0.0.1:3000" >&2
+    kill "$server" 2>/dev/null
+    exit 1
+fi
+node -e "fetch('http://127.0.0.1:3000/').then(r=>r.text()).then(t=>console.log('NVX-NODE-OK: ' + t.trim())).catch(e=>{console.error(e.message);process.exit(1)})"
+wait "$server"

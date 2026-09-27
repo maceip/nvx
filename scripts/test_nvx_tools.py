@@ -499,7 +499,10 @@ class CliTests(unittest.TestCase):
             nvx.parse_args(["run", "--guest", "all"])
 
     def test_ubuntu_run_selects_artifact_and_default_memory(self):
-        args = nvx.parse_args(["run", "--guest", "ubuntu", "--dry-run"])
+        backend = "whp" if os.name == "nt" else "kvm"
+        args = nvx.parse_args(
+            ["run", "--hypervisor", backend, "--guest", "ubuntu", "--dry-run"]
+        )
 
         def require(path: Path, _description: str) -> Path:
             return path
@@ -802,8 +805,8 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(
                     command[command.index("--com1") + 1], "console"
                 )
-                # HVF floors the Alpine 128M default to a bootable 256M.
-                self.assertEqual(command[command.index("--memory") + 1], "256M")
+                # HVF floors the Alpine 128M default to a bootable 512M.
+                self.assertEqual(command[command.index("--memory") + 1], "512M")
 
     def test_hvf_run_rejects_microvm_only_options(self):
         option_sets = (
@@ -864,6 +867,10 @@ class CliTests(unittest.TestCase):
             AlpineBuildConstants.MINIROOTFS_SHA256,
             AlpineBuildConstants.MINIROOTFS_AARCH64_SHA256,
         )
+        # The demo server dependency stays out of the size-sensitive x86
+        # microVM image.
+        self.assertEqual(AlpineBuildConstants.AARCH64_EXTRA_PACKAGES, ("nodejs",))
+        self.assertNotIn("nodejs", AlpineBuildConstants.PACKAGES)
 
     def test_host_guest_arch_maps_machine_names(self):
         for machine, expected in (
