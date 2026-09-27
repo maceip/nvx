@@ -871,7 +871,6 @@ class CliTests(unittest.TestCase):
             ["--net", "10.0.0.2/24", "--network-profile", "portable"],
             ["--memory-capacity-mib", "512"],
             ["--outcome-report", "outcome.json"],
-            ["--restore-snapshot", "snapshot"],
         )
         for options in option_sets:
             with self.subTest(options=options):
@@ -890,6 +889,125 @@ class CliTests(unittest.TestCase):
                     self.assertRaisesRegex(common.ScriptError, "microVM"),
                 ):
                     nvx.command_run(args)
+
+    def test_hvf_run_rejects_unverified_restore_companions(self):
+        for options in (
+            ["--restore-snapshot", "snapshot", "--restore-processors", "1"],
+            ["--restore-snapshot", "snapshot", "--restore-memory-mib", "512"],
+        ):
+            with self.subTest(options=options):
+                args = nvx.parse_args(
+                    ["run", "--hypervisor", "hvf", *options, "--dry-run"]
+                )
+                with (
+                    patch.object(nvx.sys, "platform", "darwin"),
+                    patch.object(
+                        nvx.os,
+                        "uname",
+                        return_value=argparse.Namespace(machine="arm64"),
+                        create=True,
+                    ),
+                    patch.object(nvx, "require_file", return_value=Path("artifact")),
+                    self.assertRaisesRegex(common.ScriptError, "not verified"),
+                ):
+                    nvx.command_run(args)
+
+    def _hvf_run_command(self, extra_args):
+        args = nvx.parse_args(
+            ["run", "--hypervisor", "hvf", *extra_args, "--dry-run"]
+        )
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        with (
+            patch.object(nvx.sys, "platform", "darwin"),
+            patch.object(
+                nvx.os,
+                "uname",
+                return_value=argparse.Namespace(machine="arm64"),
+                create=True,
+            ),
+            patch.object(nvx, "require_file", side_effect=require),
+            patch.object(
+                nvx, "_format_command", return_value="formatted"
+            ) as format_command,
+        ):
+            nvx.command_run(args)
+        return format_command.call_args.args[0]
+
+    def test_hvf_restore_builds_direct_boot_restore_command(self):
+        command = self._hvf_run_command(
+            [
+                "--restore-snapshot",
+                "snapshot",
+                "--restore-ready-path",
+                "ready.sock",
+                "--virtio-net",
+                "consomme:10.0.0.0/24,gwloopback,snapshot",
+            ]
+        )
+        self.assertEqual(
+            command[command.index("--restore-snapshot") + 1], "snapshot"
+        )
+        self.assertEqual(
+            command[command.index("--restore-ready-path") + 1], "ready.sock"
+        )
+        # The NIC must be present so restore can match its saved inventory,
+        # and the serial console stays attached.
+        self.assertIn("consomme:10.0.0.0/24,gwloopback,snapshot", command)
+        self.assertEqual(command[command.index("--com1") + 1], "console")
+        # No x86-only flags, no fresh-boot flags: cmdline is baked into the
+        # snapshot and entropy restore does not exist on this CLI.
+        self.assertNotIn("--restore-entropy", command)
+        self.assertNotIn("--machine", command)
+        self.assertNotIn("--kernel", command)
+        self.assertNotIn("--initrd", command)
+        self.assertNotIn("--memory", command)
+        self.assertFalse(
+            [arg for arg in command if arg.startswith("virtnet_dhcp")]
+            + [c for c in command if c == "--cmdline"],
+            f"fresh-boot cmdline leaked into restore: {command}",
+        )
+
+    def test_hvf_fresh_run_passes_memory_backing_file(self):
+        command = self._hvf_run_command(
+            ["--memory-backing-file", "ram.bin",
+             "--virtio-net", "consomme:10.0.0.0/24,snapshot"]
+        )
+        self.assertEqual(
+            command[command.index("--memory-backing-file") + 1], "ram.bin"
+        )
+        self.assertIn("--cmdline", command)
+
+    def test_memory_backing_file_rejected_on_restore_and_non_hvf(self):
+        args = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                "hvf",
+                "--memory-backing-file",
+                "ram.bin",
+                "--restore-snapshot",
+                "snapshot",
+                "--dry-run",
+            ]
+        )
+        with self.assertRaisesRegex(common.ScriptError, "fresh boot"):
+            nvx.command_run(args)
+        backend = "whp" if os.name == "nt" else "kvm"
+        args = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                backend,
+                "--memory-backing-file",
+                "ram.bin",
+                "--dry-run",
+            ]
+        )
+        with self.assertRaisesRegex(common.ScriptError, "hvf"):
+            nvx.command_run(args)
 
     def test_hvf_hypervisor_selection_and_release_platform(self):
         with (

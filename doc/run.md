@@ -249,6 +249,47 @@ For restore-time memory expansion, capture a fresh snapshot with
 remains exactly 512 MiB; selected expansion ranges receive fresh per-launch
 backing and are onlined before restore readiness.
 
+## Snapshots on macOS/HVF
+
+On Apple Silicon, `nvx.py run --hypervisor hvf` uses standard Linux direct
+boot (no microVM profile) and supports snapshot save/restore with two
+extra requirements: file-backed RAM on the fresh boot, and the `snapshot`
+option on the virtio NIC so the device can be recreated on restore:
+
+```bash
+python3 scripts/nvx.py run \
+  --hypervisor hvf \
+  --memory-backing-file /var/lib/nvx/ram.bin \
+  --virtio-net "consomme:10.0.0.0/24,gwloopback,snapshot"
+```
+
+While the guest runs, switch the console to the `openvmm>` REPL with
+Ctrl-Q and capture a snapshot (the VM pauses; resume is blocked to prevent
+corruption, so end the session with `quit` afterwards):
+
+```text
+openvmm> snap /var/lib/nvx/snapshot
+openvmm> quit
+```
+
+Restore with the same NIC spec so the saved device inventory matches; the
+kernel, initrd, and cmdline are baked into the snapshot and must not be
+re-supplied (`--restore-processors` and `--restore-memory-mib` are not
+verified on hvf and are rejected):
+
+```bash
+python3 scripts/nvx.py run \
+  --hypervisor hvf \
+  --restore-snapshot /var/lib/nvx/snapshot \
+  --restore-ready-path /run/nvx/restore-ready.sock \
+  --virtio-net "consomme:10.0.0.0/24,gwloopback,snapshot"
+```
+
+The restored guest keeps its pre-save IP address and network identity, and
+the virtual timer resumes ticking from the saved control state. Snapshots
+from before the GIC/timer/thread-register state elements existed restore
+with those elements skipped (same behavior as a fresh boot for that state).
+
 ## virtio-fs host mapping
 
 The microVM reserves one mapping slot with a fixed `microvm` tag. On a cold

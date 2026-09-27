@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for Hypervisor.framework (hv_vm_create) on Apple Silicon.
+         Applied ad-hoc by the nvx build after compiling OpenVMM; every
+         rebuild relinks the binary and drops the signature, so signing must
+         be part of the build, not a one-time step. -->
+    <key>com.apple.security.hypervisor</key>
+    <true/>
+</dict>
+</plist>

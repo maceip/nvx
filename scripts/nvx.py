@@ -339,10 +339,6 @@ def _require_hvf_run_args(args: argparse.Namespace) -> None:
         ("host-loopback-forward", args.host_loopback_forward or None),
         ("outcome-report", args.outcome_report),
         ("memory-capacity-mib", args.memory_capacity_mib),
-        ("restore-snapshot", args.restore_snapshot),
-        ("restore-processors", args.restore_processors),
-        ("restore-memory-mib", args.restore_memory_mib),
-        ("restore-ready-path", args.restore_ready_path),
     )
     for name, value in rejected:
         if value is not None and value is not False and value != []:
@@ -350,6 +346,18 @@ def _require_hvf_run_args(args: argparse.Namespace) -> None:
                 f"--{name} requires the microVM machine profile, which is "
                 "x86-only and unsupported with --hypervisor hvf; "
                 "hvf uses standard Linux direct boot (--kernel/--initrd/--cmdline)"
+            )
+    # Snapshot restore itself works on hvf, but these restore companions are
+    # not verified there yet.
+    unverified = (
+        ("restore-processors", args.restore_processors),
+        ("restore-memory-mib", args.restore_memory_mib),
+    )
+    for name, value in unverified:
+        if value is not None and value is not False and value != []:
+            raise ScriptError(
+                f"--{name} is not verified with --hypervisor hvf; "
+                "restore with --restore-snapshot (and --restore-ready-path) only"
             )
 
 
@@ -364,6 +372,8 @@ def command_run(args: argparse.Namespace) -> None:
         raise ScriptError("--restore-memory-mib requires --restore-snapshot")
     if args.memory_capacity_mib is not None and args.restore_snapshot is not None:
         raise ScriptError("--memory-capacity-mib is only valid for a fresh boot")
+    if args.memory_backing_file is not None and args.restore_snapshot is not None:
+        raise ScriptError("--memory-backing-file is only valid for a fresh boot")
     descriptor = guest_descriptor(args.guest)
     if args.restore_snapshot is not None and descriptor.name != "alpine":
         raise ScriptError(
@@ -380,6 +390,11 @@ def command_run(args: argparse.Namespace) -> None:
                 "--restore-processors cannot exceed --processors capacity"
             )
     hypervisor = _hypervisor(args.hypervisor)
+    if args.memory_backing_file is not None and hypervisor != "hvf":
+        raise ScriptError(
+            "--memory-backing-file is only valid with --hypervisor hvf; "
+            "snapshot save on the microVM profile uses its own memory file scheme"
+        )
     _require_apple_silicon(hypervisor)
     if hypervisor == "hvf" and args.memory_mib is None:
         # The aarch64 debug kernel and node-bearing initramfs do not fit
@@ -412,9 +427,10 @@ def command_run(args: argparse.Namespace) -> None:
             hypervisor,
         ]
     if args.restore_snapshot is not None:
-        command.extend(
-            ["--restore-snapshot", str(args.restore_snapshot), "--restore-entropy"]
-        )
+        command.extend(["--restore-snapshot", str(args.restore_snapshot)])
+        if hypervisor != "hvf":
+            # x86-only: the aarch64/HVF CLI has no entropy-restore flag.
+            command.append("--restore-entropy")
         if args.restore_processors is not None:
             command.extend(["--restore-processors", str(args.restore_processors)])
         if args.restore_memory_mib is not None:
@@ -442,6 +458,10 @@ def command_run(args: argparse.Namespace) -> None:
                 str(initrd),
             ]
         )
+        if hypervisor == "hvf" and args.memory_backing_file is not None:
+            # File-backed RAM: enables `snap <dir>` from the openvmm REPL.
+            # The NIC also needs the `snapshot` option to be restorable.
+            command.extend(["--memory-backing-file", str(args.memory_backing_file)])
         if args.memory_capacity_mib is not None:
             command.extend(["--memory-capacity", f"{args.memory_capacity_mib}M"])
     if args.mount is not None:
@@ -482,9 +502,14 @@ def command_run(args: argparse.Namespace) -> None:
         ]
     for spec in virtio_specs:
         command.extend(["--virtio-net", spec])
-    if hypervisor == "hvf" and args.virtio_net:
+    if (
+        hypervisor == "hvf"
+        and args.virtio_net
+        and args.restore_snapshot is None
+    ):
         # On macOS/HVF the guest configures the virtio NIC via DHCP served
-        # by the backend (e.g. consomme).
+        # by the backend (e.g. consomme). Fresh boot only: the cmdline is
+        # baked into the snapshot and must not be re-supplied on restore.
         command.extend(["--cmdline", "virtnet_dhcp=1"])
     for spec in args.share:
         port, mountpoint, mode = parse_share_spec(spec)
@@ -895,6 +920,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="write a bounded local JSON outcome report",
     )
     run.add_argument("--cmdline", default="")
+    run.add_argument(
+        "--memory-backing-file",
+        type=Path,
+        help="file-backed guest RAM for a fresh hvf boot; required to save "
+        "a snapshot later from the openvmm REPL (`snap <dir>`). "
+        "Only valid with --hypervisor hvf on a fresh boot.",
+    )
     run.add_argument("--restore-snapshot", type=Path)
     run.add_argument("--restore-processors", type=int, choices=(1, 2, 4, 8))
     run.add_argument("--restore-memory-mib", type=int)

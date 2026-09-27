@@ -290,10 +290,11 @@ is authorized for the organization when it enforces single sign-on.
 ```text
 python3 scripts/nvx.py run
     [--guest {alpine,ubuntu}]
-    [--hypervisor {auto,whp,kvm,mshv}]
+    [--hypervisor {auto,whp,kvm,mshv,hvf}]
     [--machine {microvm}]
     [--memory-mib MIB]
     [--memory-capacity-mib MIB]
+    [--memory-backing-file PATH]
     [--processors {1,2,4,8}]
     [--mount GUEST_TARGET,HOST_PATH[,ro|rw]]
     [--net IPV4/PREFIX]
@@ -318,6 +319,7 @@ python3 scripts/nvx.py run
 | `--net IPV4/PREFIX` | none | Enable virtio-net with the static guest IPv4 address and prefix. |
 | `--network-profile {portable}` | none | Select the required cross-platform network behavior contract; must be specified with `--net`. |
 | `--cmdline TEXT` | empty | Append kernel parameters; `nvx_*` and `tsc=` tokens are reserved. |
+| `--memory-backing-file PATH` | none | Fresh hvf boot only: file-backed guest RAM, required to save a snapshot later from the openvmm REPL. The NIC also needs the `snapshot` option. |
 | `--restore-snapshot PATH` | none | Restore the immutable machine contract and saved state from a snapshot directory. |
 | `--restore-processors {1,2,4,8}` | none | Bring this contiguous processor prefix online before restore readiness. Requires an opt-in microVM snapshot and cannot exceed `--processors` capacity. |
 | `--restore-memory-mib MIB` | none | Select the 128 MiB-aligned RAM target for an expansion-capable snapshot restore. |
