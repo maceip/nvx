@@ -213,6 +213,7 @@ def _latest_release_asset(
                 and asset_pattern.fullmatch(name) is not None
                 and isinstance(asset_url, str)
                 and isinstance(size, int)
+                and not isinstance(size, bool)
             ):
                 return _ReleaseAsset(tag, name, asset_url, size)
     raise ScriptError(f"no GitHub release contains an NVX package for {platform}")
