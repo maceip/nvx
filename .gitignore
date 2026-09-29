@@ -6,6 +6,8 @@
 /.cache/
 /.venv/
 /.ruff_cache/
+showcase/.build/
+showcase/dist/
 /.nvx-hosts.json
 __pycache__/
 *.py[cod]
