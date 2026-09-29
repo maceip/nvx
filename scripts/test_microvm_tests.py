@@ -1017,6 +1017,21 @@ class MicrovmTests(unittest.TestCase):
         console.close()
         peer.close()
 
+    def test_tcp_console_connect_closes_failed_connection(self):
+        failed = MagicMock()
+        failed.setsockopt.side_effect = OSError("configuration failed")
+        connected = MagicMock()
+        with patch.object(
+            openvmm_process.socket,
+            "create_connection",
+            side_effect=(failed, connected),
+        ):
+            console = openvmm_process.TcpConsole.connect(("127.0.0.1", 1), 1.0)
+
+        failed.close.assert_called_once_with()
+        console.close()
+        connected.close.assert_called_once_with()
+
     def test_snapshot_core_script_selects_backend_clocksource(self):
         kvm = microvm_tests._snapshot_core_script("kvm")
         whp = microvm_tests._snapshot_core_script("whp")

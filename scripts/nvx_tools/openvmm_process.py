@@ -224,7 +224,11 @@ class TcpConsole:
         while True:
             try:
                 connection = socket.create_connection(address, timeout=0.25)
-                connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                try:
+                    connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except BaseException:
+                    connection.close()
+                    raise
                 return cls(connection)
             except OSError as error:
                 if time.monotonic() >= deadline:
