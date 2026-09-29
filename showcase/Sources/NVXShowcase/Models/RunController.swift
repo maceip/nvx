@@ -23,9 +23,8 @@ final class RunController {
     private var process: Process?
     private var timer: Timer?
     private var logURL: URL?
-    private var logOffset = 0
-
-    static let repoRoot = URL(fileURLWithPath: "/Users/mac/nvx")
+    private var logReader: FileHandle?
+    private var logOffset: UInt64 = 0
 
     var runsRoot: URL {
         FileManager.default.urls(for: .applicationSupportDirectory,
@@ -38,12 +37,23 @@ final class RunController {
         reset()
         phase = .launching
 
+        guard let repo = RepoRoot.resolve() else {
+            events.append(GuestEvent(
+                kind: .info,
+                text: "launch failed: no nvx checkout found " +
+                    "(set NVX_REPO or the repoRoot default)"))
+            phase = .done
+            verdict = .failed
+            return
+        }
+
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let dir = runsRoot.appending(path: "\(payload.id)-\(stamp)",
                                      directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: dir,
                                                  withIntermediateDirectories: true)
+        pruneRuns(keeping: 20)
         let log = dir.appending(path: "console.log")
         FileManager.default.createFile(atPath: log.path, contents: nil)
         logURL = log
@@ -53,12 +63,12 @@ final class RunController {
         // resolve the modern interpreter off PATH instead.
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python3",
-                          Self.repoRoot.appending(path: "scripts/nvx.py").path,
+                          repo.appending(path: "scripts/nvx.py").path,
                           "run", "--hypervisor", "hvf"] + payload.arguments
         proc.standardInput = FileHandle.nullDevice
         proc.standardOutput = try? FileHandle(forWritingTo: log)
         proc.standardError = proc.standardOutput
-        proc.currentDirectoryURL = Self.repoRoot
+        proc.currentDirectoryURL = repo
         do {
             try proc.run()
         } catch {
@@ -68,6 +78,7 @@ final class RunController {
             return
         }
         process = proc
+        logReader = try? FileHandle(forReadingFrom: log)
         phase = .live
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) {
@@ -77,14 +88,18 @@ final class RunController {
     }
 
     func stop() {
-        process?.terminate()
+        if let proc = process { RepoRoot.killProcessTree(proc) }
+        process = nil
         finish()
     }
 
     private func reset() {
+        if let proc = process { RepoRoot.killProcessTree(proc, graceSeconds: 0) }
         process = nil
         timer?.invalidate()
         timer = nil
+        try? logReader?.close()
+        logReader = nil
         consoleLines = []
         events = []
         attempted = 0
@@ -93,12 +108,37 @@ final class RunController {
         logOffset = 0
     }
 
+    /// Drop all but the newest `keeping` run directories so repeated
+    /// detonations don't fill Application Support.
+    private func pruneRuns(keeping: Int) {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(
+            at: runsRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        func mtime(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        }
+        let ordered = dirs.sorted { mtime($0) < mtime($1) }
+        for stale in ordered.dropLast(keeping) {
+            try? fm.removeItem(at: stale)
+        }
+    }
+
     private func drain() {
-        guard let logURL,
-              let data = try? Data(contentsOf: logURL),
-              data.count > logOffset else { return }
-        let chunk = data[logOffset...]
-        logOffset = data.count
+        guard let reader = logReader else { return }
+        do {
+            let end = try reader.seekToEnd()
+            guard end > logOffset else { return }
+            try reader.seek(toOffset: logOffset)
+            let chunk = reader.readData(ofLength: Int(end - logOffset))
+            logOffset = end
+            ingest(chunk)
+        } catch {
+            return
+        }
+    }
+
+    private func ingest(_ chunk: Data) {
         guard let text = String(data: chunk, encoding: .utf8) else { return }
         for raw in text.components(separatedBy: "\n") {
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,7 +163,12 @@ final class RunController {
             consoleLines.removeFirst(consoleLines.count - 4000)
         }
         updateVerdict()
-        if process?.isRunning == false { finish() }
+        if let proc = process, !proc.isRunning {
+            // The shim exited; make sure no openvmm child lingers.
+            RepoRoot.killProcessTree(proc, graceSeconds: 0)
+            process = nil
+            finish()
+        }
     }
 
     private func updateVerdict() {
@@ -139,6 +184,9 @@ final class RunController {
         timer?.invalidate()
         timer = nil
         drain()
+        try? logReader?.close()
+        logReader = nil
+        process = nil
         if phase == .live {
             phase = .done
             if verdict == .running {

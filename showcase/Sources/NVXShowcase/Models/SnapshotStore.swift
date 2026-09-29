@@ -8,9 +8,11 @@ struct SnapshotFile: Identifiable, Hashable {
     let modified: Date
 }
 
-/// One snapshot generation directory on disk.
+/// One snapshot generation directory on disk. Identity is the directory
+/// so selection survives rescans (a fresh UUID per scan would force a
+/// full row reload and drop selection).
 struct SnapshotInfo: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { url.path }
     let url: URL
     let files: [SnapshotFile]
 
@@ -52,8 +54,6 @@ final class SnapshotStore {
         case failed = "Failed"
     }
 
-    static let repoRoot = URL(fileURLWithPath: "/Users/mac/nvx")
-
     init() {
         if let path = UserDefaults.standard.string(forKey: "snapshotRoot") {
             rootURL = URL(fileURLWithPath: path)
@@ -61,14 +61,36 @@ final class SnapshotStore {
         }
     }
 
+    /// Directory enumeration runs off the main thread; a busy root
+    /// (e.g. /tmp with thousands of entries) must not hitch the UI.
+    /// Selection is preserved by directory across rescans.
     func rescan() {
-        snapshots = []
-        selection = nil
-        guard let rootURL else { return }
+        guard let rootURL else {
+            snapshots = []
+            selection = nil
+            return
+        }
+        let previousSelection = selection?.url
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let found = Self.scan(root: rootURL)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.snapshots = found
+                if let prev = previousSelection,
+                   let match = found.first(where: { $0.url == prev }) {
+                    self.selection = match
+                } else {
+                    self.selection = found.first
+                }
+            }
+        }
+    }
+
+    nonisolated private static func scan(root: URL) -> [SnapshotInfo] {
         let fm = FileManager.default
         // Resolve first: isDirectoryKey reports false for symlink roots
         // such as /tmp -> /private/tmp, which would skip enumeration.
-        let resolved = rootURL.resolvingSymlinksInPath()
+        let resolved = root.resolvingSymlinksInPath()
         var candidates = [resolved]
         if let children = try? fm.contentsOfDirectory(at: resolved,
                                                       includingPropertiesForKeys: [.isDirectoryKey]) {
@@ -81,6 +103,7 @@ final class SnapshotStore {
         let generationDirs = candidates.filter { dir in
             (try? dir.appending(path: "manifest.bin").checkResourceIsReachable()) == true
         }.prefix(256)
+        var infos: [SnapshotInfo] = []
         for dir in generationDirs {
             let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? [])
                 .compactMap { url -> SnapshotFile? in
@@ -91,49 +114,94 @@ final class SnapshotStore {
                                         modified: vals.contentModificationDate ?? .distantPast)
                 }
                 .sorted { $0.name < $1.name }
-            snapshots.append(SnapshotInfo(url: dir, files: files))
+            infos.append(SnapshotInfo(url: dir, files: files))
         }
-        snapshots.sort { $0.url.path < $1.url.path }
-        selection = snapshots.first
+        infos.sort { $0.url.path < $1.url.path }
+        return infos
     }
 
     func verify(_ snapshot: SnapshotInfo) {
+        guard let repo = RepoRoot.resolve() else {
+            verifyOutput = "verify failed: no nvx checkout found " +
+                "(set NVX_REPO or the repoRoot default)"
+            verifyState = .failed
+            return
+        }
         verifyState = .running
         verifyOutput = ""
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = ["python3",
-                          Self.repoRoot.appending(path: "scripts/nvx.py").path,
-                          "snapshot", "verify", snapshot.url.path]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = pipe
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            verifyOutput = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
-                                  encoding: .utf8) ?? ""
-            verifyState = proc.terminationStatus == 0 ? .ok : .failed
-        } catch {
-            verifyOutput = "verify failed to launch: \(error)"
-            verifyState = .failed
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let (text, ok) = Self.runNVX(repo: repo,
+                                         args: ["snapshot", "verify",
+                                                snapshot.url.path])
+            Task { @MainActor [weak self] in
+                self?.verifyOutput = text
+                self?.verifyState = ok ? .ok : .failed
+            }
         }
     }
 
+    /// Runs `nvx.py` with piped output on a background queue.
+    /// Returns (combined output, exited zero).
+    nonisolated private static func runNVX(repo: URL,
+                                           args: [String]) -> (String, Bool) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = ["python3",
+                          repo.appending(path: "scripts/nvx.py").path] + args
+        proc.standardInput = FileHandle.nullDevice
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        proc.currentDirectoryURL = repo
+        do {
+            try proc.run()
+        } catch {
+            return ("failed to launch nvx.py: \(error)", false)
+        }
+        proc.waitUntilExit()
+        let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
+                          encoding: .utf8) ?? ""
+        return (text, proc.terminationStatus == 0)
+    }
+
+    /// Guest arch recorded by the last verify run, e.g. "aarch64".
+    private var verifiedArch: String? {
+        for line in verifyOutput.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("architecture:") {
+                return trimmed.dropFirst("architecture:".count)
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
     func resume(_ snapshot: SnapshotInfo) {
+        guard let repo = RepoRoot.resolve() else {
+            resumeOutput = "resume failed: no nvx checkout found " +
+                "(set NVX_REPO or the repoRoot default)"
+            return
+        }
+        // An x86_64 guest cannot boot under HVF on Apple Silicon; refuse
+        // early instead of launching a doomed restore.
+        if let arch = verifiedArch, arch != "aarch64" {
+            resumeOutput = "resume refused: snapshot architecture is " +
+                "\(arch); this Mac can only restore aarch64 under HVF."
+            return
+        }
         resumeRunning = true
         resumeOutput = ""
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python3",
-                          Self.repoRoot.appending(path: "scripts/nvx.py").path,
+                          repo.appending(path: "scripts/nvx.py").path,
                           "run", "--hypervisor", "hvf",
                           "--restore-snapshot", snapshot.url.path]
         proc.standardInput = FileHandle.nullDevice
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
-        proc.currentDirectoryURL = Self.repoRoot
+        proc.currentDirectoryURL = repo
         do {
             try proc.run()
         } catch {
@@ -141,8 +209,14 @@ final class SnapshotStore {
             resumeRunning = false
             return
         }
+        // If the shim exits while openvmm lingers, the VM would orphan;
+        // sweep the tree on the way out. (A restore boot that stays up
+        // keeps running until the next resume/stop kills it.)
         DispatchQueue.global().async { [weak self] in
             proc.waitUntilExit()
+            if proc.terminationStatus != 0 {
+                RepoRoot.killProcessTree(proc, graceSeconds: 0)
+            }
             let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
                               encoding: .utf8) ?? ""
             Task { @MainActor [weak self] in
