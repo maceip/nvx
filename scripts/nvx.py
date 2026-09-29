@@ -7,9 +7,12 @@ import argparse
 import ipaddress
 import json
 import os
+import select
 import shlex
 import subprocess
 import sys
+import threading
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
@@ -321,6 +324,265 @@ def parse_share_spec(value: str) -> tuple[int, str, str]:
     return port, mountpoint, mode
 
 
+DEFAULT_DISK_NAME = "nvx-disk.raw"
+DEFAULT_DISK_MIB = 4096
+REPL_SAVE_OK = b"snapshot saved"
+REPL_SAVE_FAILED = b"error: save-snapshot failed"
+
+
+def parse_serve_spec(value: str) -> tuple[Path, str, str]:
+    """Parse `--serve HOSTDIR:MNTPOINT[:ro|rw]` into (hostdir, mountpoint, mode)."""
+    parts = value.split(":")
+    if len(parts) not in (2, 3):
+        raise ScriptError(
+            f"--serve must be HOSTDIR:MNTPOINT[:ro|rw], got {value!r}"
+        )
+    hostdir = Path(parts[0])
+    if not hostdir.is_dir():
+        raise ScriptError(f"--serve host directory is missing: {parts[0]!r}")
+    mountpoint = parts[1]
+    if not mountpoint.startswith("/"):
+        raise ScriptError(f"--serve mountpoint must be absolute, got {mountpoint!r}")
+    mode = parts[2] if len(parts) == 3 else "ro"
+    if mode not in ("ro", "rw"):
+        raise ScriptError(f"--serve mode must be ro or rw, got {mode!r}")
+    return hostdir, mountpoint, mode
+
+
+def _start_serve_servers(
+    specs: list[str],
+) -> list[tuple[object, int, str, str]]:
+    """Serve each `--serve` tree in-process on an ephemeral loopback port.
+
+    Returns (server, port, mountpoint, mode) tuples; the caller shuts the
+    servers down after the run. Reuses the 9P server from nvx_9p.py instead
+    of requiring a hand-started process.
+    """
+    from nvx_tools.nvx_9p import Server, Share
+
+    started = []
+    for spec in specs:
+        hostdir, mountpoint, mode = parse_serve_spec(spec)
+        server = Server(
+            Share(str(hostdir), read_write=(mode == "rw")), ("127.0.0.1", 0)
+        )
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        print(
+            f"NVX-9P-SERVE-OK: 127.0.0.1:{port} root={hostdir} mode={mode}",
+            flush=True,
+        )
+        started.append((server, port, mountpoint, mode))
+    return started
+
+
+def _stop_serve_servers(servers: list[tuple[object, int, str, str]]) -> None:
+    for server, _port, _mountpoint, _mode in servers:
+        try:
+            server.shutdown()  # type: ignore[attr-defined]
+            server.server_close()  # type: ignore[attr-defined]
+        except OSError:
+            pass
+
+
+def _ensure_disk_image(path: Path, size_mib: int = DEFAULT_DISK_MIB) -> Path:
+    """Return a raw disk image at path, creating a sparse one if missing."""
+    if path.exists():
+        if not path.is_file():
+            raise ScriptError(f"--disk path is not a file: {path}")
+        return path
+    size = size_mib * 1024 * 1024
+    try:
+        with open(path, "wb") as handle:
+            handle.truncate(size)
+    except OSError as error:
+        raise ScriptError(f"--disk could not create {path}: {error}") from error
+    print(f">> created sparse {size_mib} MiB raw disk at {path}", flush=True)
+    return path
+
+
+def _forward_stdin(
+    proc: subprocess.Popen[bytes], stdin_lock: threading.Lock
+) -> None:
+    """Forward our stdin to the child (openvmm REPL); hold the pipe open.
+
+    The REPL lives on openvmm's stdin (`snap`, `i <text>`, `shutdown`),
+    so an interactive terminal keeps working and piped input reaches the
+    guest/REPL. The pipe is never closed early: an EOF on our side must
+    not look like a REPL hangup to the child. Writes take stdin_lock so
+    scripted REPL commands never interleave with forwarded bytes.
+    """
+    assert proc.stdin is not None
+    try:
+        stdin = sys.stdin.buffer
+    except AttributeError:
+        return
+    while True:
+        try:
+            chunk = stdin.read(65536)
+        except (OSError, ValueError):
+            return
+        if not chunk:
+            return
+        try:
+            with stdin_lock:
+                proc.stdin.write(chunk)
+                proc.stdin.flush()
+        except (OSError, ValueError):
+            return
+
+
+REPL_ESCAPE = b"\x11"  # Ctrl-Q: guest-forward mode -> `openvmm>` prompt
+REPL_PROBE = b"nvx-repl-probe"
+REPL_PROBE_HIT = b"unrecognized subcommand"
+
+
+def _repl_write(
+    proc: subprocess.Popen[bytes], stdin_lock: threading.Lock, data: bytes
+) -> None:
+    assert proc.stdin is not None
+    with stdin_lock:
+        proc.stdin.write(data)
+        proc.stdin.flush()
+
+
+def _repl_enter_sync(proc, buf, stdin_lock, timeout) -> None:
+    """Switch openvmm's stdin from guest-forward mode to the REPL prompt.
+
+    The escape byte and the following line must arrive in separate reads:
+    bytes after Ctrl-Q in the same 32-byte read are consumed as guest
+    input and dropped. Sync is a probe line: the REPL parser answers
+    unknown input with `unrecognized subcommand` on the output, while a
+    probe that lands pre-escape just annoys the guest shell.
+    """
+    _repl_write(proc, stdin_lock, REPL_ESCAPE)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        _repl_write(proc, stdin_lock, REPL_PROBE + b"\n")
+        try:
+            _wait_for_marker_sync(proc, buf, REPL_PROBE_HIT, 3, "repl probe")
+            return
+        except ScriptError:
+            if proc.poll() is not None:
+                raise ScriptError("VM exited while entering the REPL")
+    raise ScriptError("timed out entering the openvmm REPL")
+
+
+def _drain_available(proc, buf) -> None:
+    """Move every currently-readable byte from the child into buf+stdout."""
+    assert proc.stdout is not None
+    while True:
+        ready, _, _ = select.select([proc.stdout], [], [], 0)
+        if not ready:
+            return
+        chunk = os.read(proc.stdout.fileno(), 65536)
+        if not chunk:
+            return
+        buf.extend(chunk)
+        del buf[: max(0, len(buf) - 8 * 1024 * 1024)]
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+
+
+def _wait_for_marker_sync(proc, buf, marker, timeout, what) -> None:
+    """Single-threaded marker wait: drain-then-scan, no pump thread."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        _drain_available(proc, buf)
+        if marker in buf:
+            return
+        if proc.poll() is not None:
+            _drain_available(proc, buf)
+            if marker in buf:
+                return
+            raise ScriptError(f"VM exited before {what}")
+        time.sleep(0.2)
+    _drain_available(proc, buf)
+    raise ScriptError(
+        f"timed out after {timeout:g}s waiting for {what} "
+        f"(child alive={proc.poll() is None}, buffered={len(buf)})"
+    )
+
+
+def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
+    """Boot the VM and drive the openvmm REPL on its stdin to save a snapshot.
+
+    Waits for `--save-on` on the combined output, escapes to the REPL with
+    Ctrl-Q, sends `snap <dir>`, waits for the upstream "snapshot saved"
+    marker, then sends `shutdown` (the REPL blocks resume after a save to
+    protect the snapshot). Output is drained single-threaded via select so
+    no pump thread can hide bytes. Returns the process exit code.
+    """
+    save_dir = Path(args.save_snapshot)
+    # Upstream `snap` creates the leaf and refuses an existing one, so only
+    # ensure the parent exists here.
+    save_dir.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    assert proc.stdout is not None and proc.stdin is not None
+    buf = bytearray()
+    stdin_lock = threading.Lock()
+    forward = threading.Thread(
+        target=_forward_stdin, args=(proc, stdin_lock), daemon=True
+    )
+    forward.start()
+    try:
+        _wait_for_marker_sync(
+            proc,
+            buf,
+            args.save_on.encode(),
+            args.save_timeout,
+            f"save marker {args.save_on!r}",
+        )
+        if args.save_exec is not None:
+            # Still in guest-forward mode: the line runs in the guest shell.
+            _repl_write(proc, stdin_lock, (args.save_exec + "\n").encode())
+            _wait_for_marker_sync(
+                proc,
+                buf,
+                args.save_ready.encode(),
+                args.save_timeout,
+                f"save-ready marker {args.save_ready!r}",
+            )
+        _repl_enter_sync(proc, buf, stdin_lock, min(args.save_timeout, 60))
+        _repl_write(proc, stdin_lock, f"snap {save_dir}\n".encode())
+        try:
+            _wait_for_marker_sync(
+                proc, buf, REPL_SAVE_OK,
+                args.save_timeout, "snapshot-saved marker",
+            )
+        except ScriptError:
+            failed = REPL_SAVE_FAILED in buf
+            if failed:
+                raise ScriptError(
+                    "openvmm REPL reported save-snapshot failed "
+                    "(fresh hvf boots need --memory-backing-file; "
+                    "the NIC needs the `snapshot` option, added "
+                    "automatically with --save-snapshot on hvf)"
+                )
+            raise
+        print(f">> snapshot saved to {save_dir}", flush=True)
+        _repl_write(proc, stdin_lock, b"shutdown\n")
+        try:
+            return proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        try:
+            proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+
 def _append_consomme_option(spec: str, option: str) -> str:
     """Append an option to a consomme endpoint spec.
 
@@ -471,6 +733,28 @@ def command_run(args: argparse.Namespace) -> None:
         raise ScriptError("--memory-capacity-mib is only valid for a fresh boot")
     if args.memory_backing_file is not None and args.restore_snapshot is not None:
         raise ScriptError("--memory-backing-file is only valid for a fresh boot")
+    if args.kernel is not None and args.restore_snapshot is not None:
+        raise ScriptError("--kernel is only valid for a fresh boot")
+    if args.initrd is not None and args.restore_snapshot is not None:
+        raise ScriptError("--initrd is only valid for a fresh boot")
+    if args.disk is not None and _hypervisor(args.hypervisor) != "hvf":
+        raise ScriptError(
+            "--disk is only valid with --hypervisor hvf; "
+            "the microVM machine profile has no virtio-blk controller"
+        )
+    if args.save_snapshot is not None and args.save_on is None:
+        raise ScriptError("--save-snapshot requires --save-on MARKER")
+    if (args.save_exec is None) != (args.save_ready is None):
+        raise ScriptError("--save-exec and --save-ready must be used together")
+    if args.save_exec is not None and args.save_snapshot is None:
+        raise ScriptError("--save-exec/--save-ready require --save-snapshot")
+    if args.save_snapshot is not None:
+        if args.restore_snapshot is None and _hypervisor(args.hypervisor) == "hvf":
+            if args.memory_backing_file is None:
+                raise ScriptError(
+                    "--save-snapshot on a fresh hvf boot requires "
+                    "--memory-backing-file (the REPL cannot save otherwise)"
+                )
     descriptor = guest_descriptor(args.guest)
     if args.restore_snapshot is not None and descriptor.name != "alpine":
         raise ScriptError(
@@ -540,10 +824,18 @@ def command_run(args: argparse.Namespace) -> None:
             if hypervisor == "hvf"
             else KernelBuildConstants.BINARY_NAME
         )
-        kernel = require_file(artifact_path(kernel_name), "Linux direct kernel")
-        initrd = require_file(
-            artifact_path(descriptor.initramfs_name),
-            f"{descriptor.distribution} initramfs",
+        kernel = (
+            require_file(Path(args.kernel), "custom Linux direct kernel")
+            if args.kernel is not None
+            else require_file(artifact_path(kernel_name), "Linux direct kernel")
+        )
+        initrd = (
+            require_file(Path(args.initrd), "custom initramfs")
+            if args.initrd is not None
+            else require_file(
+                artifact_path(descriptor.initramfs_name),
+                f"{descriptor.distribution} initramfs",
+            )
         )
         command.extend(
             [
@@ -588,15 +880,48 @@ def command_run(args: argparse.Namespace) -> None:
             command.extend(["--host-loopback-forward", forward])
     virtio_specs = list(args.virtio_net)
     hvf_static_ip = None
+    # Self-serve 9P servers listen on ephemeral loopback ports reached via
+    # the gateway mapping; start them before policy translation so a deny
+    # policy can punch exactly those guest->gateway holes below.
+    serves = _start_serve_servers(args.serve) if args.serve else []
     if hypervisor == "hvf":
         policy_fragments = _hvf_consomme_policy_fragments(args)
+        if serves and args.network_egress == "deny":
+            cidr = next(
+                (
+                    cidr
+                    for spec in virtio_specs
+                    if spec.startswith("consomme")
+                    for cidr in [_consomme_spec_cidr(spec)]
+                    if cidr is not None
+                ),
+                None,
+            )
+            if cidr is None:
+                _stop_serve_servers(serves)
+                raise ScriptError(
+                    "--serve with --network-egress deny needs a CIDR on the "
+                    "consomme endpoint so the gateway allow-rules can be "
+                    "derived (e.g. --virtio-net consomme:192.168.127.0/24)"
+                )
+            try:
+                gateway = str(
+                    next(ipaddress.ip_network(cidr, strict=False).hosts())
+                )
+            except ValueError:
+                _stop_serve_servers(serves)
+                raise ScriptError(
+                    f"invalid consomme CIDR {cidr!r} for --serve gateway allow"
+                ) from None
+            for _server, port, _mountpoint, _mode in serves:
+                policy_fragments.append(f"egress-allow={gateway}:tcp:{port}")
         if policy_fragments:
             hvf_static_ip = _apply_hvf_consomme_policy(virtio_specs, policy_fragments)
-    if args.share:
+    if args.share or args.serve:
         consomme = [spec for spec in virtio_specs if spec.startswith("consomme")]
         if not consomme:
             raise ScriptError(
-                "--share requires --virtio-net with a consomme backend "
+                "--share/--serve requires --virtio-net with a consomme backend "
                 "so the guest can reach the host 9P server"
             )
         # The guest reaches the host server through the gateway address, so
@@ -605,6 +930,24 @@ def command_run(args: argparse.Namespace) -> None:
             spec
             if not spec.startswith("consomme") or "gwloopback" in spec
             else _append_consomme_option(spec, "gwloopback")
+            for spec in virtio_specs
+        ]
+    if args.save_snapshot is not None and hypervisor == "hvf":
+        # Snapshot save requires a save-capable NIC: the upstream `snapshot`
+        # option derives the same network+2/network+1 identity the policy
+        # path configures, so the two compose.
+        if not any(spec.startswith("consomme") for spec in virtio_specs):
+            raise ScriptError(
+                "--save-snapshot on hvf requires --virtio-net with a "
+                "consomme backend carrying a CIDR "
+                "(e.g. consomme:192.168.127.0/24)"
+            )
+        virtio_specs = [
+            spec
+            if not spec.startswith("consomme")
+            or ",snapshot" in spec
+            or spec.endswith(":snapshot")
+            else _append_consomme_option(spec, "snapshot")
             for spec in virtio_specs
         ]
     for spec in virtio_specs:
@@ -634,13 +977,33 @@ def command_run(args: argparse.Namespace) -> None:
     for spec in args.share:
         port, mountpoint, mode = parse_share_spec(spec)
         command.extend(["--cmdline", f"virt9p={port}:{mountpoint}:{mode}"])
+    for _server, port, mountpoint, mode in serves:
+        command.extend(["--cmdline", f"virt9p={port}:{mountpoint}:{mode}"])
+    if args.disk is not None:
+        disk_path = (
+            Path(args.disk)
+            if args.dry_run
+            else _ensure_disk_image(Path(args.disk))
+        )
+        command.extend(["--virtio-blk", f"file:{disk_path}"])
+        if args.restore_snapshot is None:
+            # Fresh boot only: on restore the cmdline (including virtdisk)
+            # is baked into the snapshot, but the device itself must still
+            # be present for the saved inventory to match.
+            command.extend(["--cmdline", f"virtdisk=vda:{args.disk_mount}"])
     if args.outcome_report is not None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     if args.cmdline:
         command.extend(["--cmdline", args.cmdline])
     print(f">> {_format_command(command)}")
-    if not args.dry_run:
+    try:
+        if args.dry_run:
+            return
+        if args.save_snapshot is not None:
+            raise SystemExit(_run_repl_driven(command, args))
         raise SystemExit(subprocess.run(command).returncode)
+    finally:
+        _stop_serve_servers(serves)
 
 
 def command_sandbox(args: argparse.Namespace) -> None:
@@ -1038,7 +1401,83 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="PORT:MNTPOINT[:ro|rw]",
         help="mount a host 9P server (see scripts/nvx_tools/nvx_9p.py) in the "
         "guest; requires a consomme --virtio-net (gwloopback is added "
-        "automatically). Example: --share 5564:/mnt/host",
+        "automatically). The server must already be running. "
+        "Example: --share 5564:/mnt/host",
+    )
+    run.add_argument(
+        "--serve",
+        action="append",
+        default=[],
+        metavar="HOSTDIR:MNTPOINT[:ro|rw]",
+        help="self-serve variant of --share: start an in-process 9P server "
+        "for HOSTDIR on an ephemeral loopback port and mount it in the "
+        "guest; the server lives exactly as long as the run. "
+        "Example: --serve ./payload:/mnt/host:ro",
+    )
+    run.add_argument(
+        "--kernel",
+        type=Path,
+        help="custom direct-boot kernel image (fresh boot only; "
+        "default: the built artifact for the hypervisor)",
+    )
+    run.add_argument(
+        "--initrd",
+        type=Path,
+        help="custom initramfs image (fresh boot only; "
+        "default: the built artifact for the guest)",
+    )
+    run.add_argument(
+        "--disk",
+        nargs="?",
+        const=str(BuildConstants.REPO_ROOT / DEFAULT_DISK_NAME),
+        metavar="PATH",
+        help="attach a persistent virtio-blk disk (upstream file-backed "
+        "disk, e.g. --virtio-blk file:...); a missing image is created as "
+        f"a sparse {DEFAULT_DISK_MIB} MiB raw file. Bare --disk uses "
+        f"{DEFAULT_DISK_NAME} in the repo root. hvf only; repeat the same "
+        "--disk (and --virtio-net) on restore so the saved device "
+        "inventory matches. The guest mounts it where --disk-mount says.",
+    )
+    run.add_argument(
+        "--disk-mount",
+        default="/data",
+        help="guest mountpoint for --disk (default: /data)",
+    )
+    run.add_argument(
+        "--save-snapshot",
+        type=Path,
+        metavar="DIR",
+        help="scripted snapshot capture: wait for --save-on on the VM "
+        "output, send `snap DIR` to the openvmm REPL on its stdin, wait "
+        "for the upstream 'snapshot saved' marker, then shut down. "
+        "Requires --save-on; fresh hvf boots also need --memory-backing-file.",
+    )
+    run.add_argument(
+        "--save-on",
+        metavar="MARKER",
+        help="output marker that triggers --save-snapshot "
+        "(e.g. VIRTDISK-OK or a payload READY line)",
+    )
+    run.add_argument(
+        "--save-exec",
+        metavar="CMD",
+        help="guest shell line to run after --save-on and before capture "
+        "(stdin is still in guest-forward mode, e.g. "
+        "--save-exec 'echo hi > /data/stamp && echo STAMP-DONE'). "
+        "Requires --save-ready.",
+    )
+    run.add_argument(
+        "--save-ready",
+        metavar="MARKER",
+        help="output marker that --save-exec completed; capture starts here. "
+        "Requires --save-exec.",
+    )
+    run.add_argument(
+        "--save-timeout",
+        type=float,
+        default=600.0,
+        help="seconds to wait for the save marker and the snapshot-saved "
+        "marker each (default: 600)",
     )
     run.add_argument(
         "--outcome-report",

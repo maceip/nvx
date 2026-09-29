@@ -3,6 +3,7 @@
 
 import argparse
 import ast
+import contextlib
 import hashlib
 import http.client
 import http.server
@@ -822,6 +823,227 @@ class CliTests(unittest.TestCase):
         for bad in ("5564", "abc:/mnt", "0:/mnt", "70000:/mnt", "5564:relative", "5564:/mnt:xx"):
             with self.subTest(spec=bad), self.assertRaises(common.ScriptError):
                 nvx.parse_share_spec(bad)
+
+    def test_serve_spec_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                nvx.parse_serve_spec(f"{tmp}:/mnt/host"),
+                (Path(tmp), "/mnt/host", "ro"),
+            )
+            self.assertEqual(
+                nvx.parse_serve_spec(f"{tmp}:/mnt/rw:rw"),
+                (Path(tmp), "/mnt/rw", "rw"),
+            )
+        for bad in ("onlyone", f"{tmp}:relative", f"{tmp}:/mnt:xx"):
+            with self.subTest(spec=bad), self.assertRaises(common.ScriptError):
+                nvx.parse_serve_spec(bad)
+        with self.assertRaisesRegex(common.ScriptError, "missing"):
+            nvx.parse_serve_spec("/nonexistent-nvx-dir-xyz:/mnt")
+
+    def _dry_run(self, argv):
+        args = nvx.parse_args(argv)
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        with (
+            patch.object(nvx, "require_file", side_effect=require),
+            patch.object(
+                nvx, "_format_command", return_value="formatted"
+            ) as format_command,
+        ):
+            nvx.command_run(args)
+        return format_command.call_args.args[0]
+
+    def test_serve_wires_ephemeral_port_and_gwloopback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._dry_run(
+                [
+                    "run", "--hypervisor", "hvf",
+                    "--virtio-net", "consomme:192.168.127.0/24",
+                    "--serve", f"{tmp}:/mnt/host:ro",
+                    "--dry-run",
+                ]
+            )
+        nic = command[command.index("--virtio-net") + 1]
+        self.assertIn("gwloopback", nic)
+        cmdlines = [
+            command[i + 1] for i, part in enumerate(command[:-1]) if part == "--cmdline"
+        ]
+        matches = [c for c in cmdlines if c.startswith("virt9p=") and c.endswith(":/mnt/host:ro")]
+        self.assertEqual(len(matches), 1)
+        port = int(matches[0].split("=", 1)[1].split(":", 1)[0])
+        self.assertTrue(1024 <= port <= 65535)
+
+    def test_serve_without_consomme_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = nvx.parse_args(
+                ["run", "--hypervisor", "hvf", "--serve", f"{tmp}:/mnt", "--dry-run"]
+            )
+
+            def require(path: Path, _description: str) -> Path:
+                return path
+
+            with patch.object(nvx, "require_file", side_effect=require):
+                with self.assertRaisesRegex(common.ScriptError, "consomme"):
+                    nvx.command_run(args)
+
+    def test_disk_dry_run_wires_virtio_blk_without_creating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = str(Path(tmp) / "d.raw")
+            command = self._dry_run(
+                ["run", "--hypervisor", "hvf", "--disk", image, "--dry-run"]
+            )
+            self.assertEqual(command[command.index("--virtio-blk") + 1], f"file:{image}")
+            cmdlines = [
+                command[i + 1]
+                for i, part in enumerate(command[:-1])
+                if part == "--cmdline"
+            ]
+            self.assertIn("virtdisk=vda:/data", cmdlines)
+            self.assertFalse(Path(image).exists())
+
+    def test_disk_bare_defaults_to_repo_image(self):
+        args = nvx.parse_args(["run", "--hypervisor", "hvf", "--disk"])
+        self.assertEqual(
+            Path(args.disk), BuildConstants.REPO_ROOT / nvx.DEFAULT_DISK_NAME
+        )
+
+    def test_disk_rejected_on_kvm(self):
+        args = nvx.parse_args(
+            ["run", "--hypervisor", "kvm", "--disk", "/tmp/x.raw", "--dry-run"]
+        )
+        with self.assertRaisesRegex(common.ScriptError, "hvf"):
+            nvx.command_run(args)
+
+    def test_disk_on_restore_keeps_device_without_cmdline(self):
+        command = self._dry_run(
+            [
+                "run", "--hypervisor", "hvf",
+                "--disk", "/tmp/x.raw",
+                "--restore-snapshot", "snap",
+                "--dry-run",
+            ]
+        )
+        self.assertEqual(
+            command[command.index("--virtio-blk") + 1], "file:/tmp/x.raw"
+        )
+        cmdlines = [
+            command[i + 1]
+            for i, part in enumerate(command[:-1])
+            if part == "--cmdline"
+        ]
+        self.assertFalse([c for c in cmdlines if "virtdisk=" in c])
+
+    def test_ensure_disk_image_creates_sparse_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "sparse.raw"
+            nvx._ensure_disk_image(image)
+            self.assertEqual(image.stat().st_size, nvx.DEFAULT_DISK_MIB * 1024 * 1024)
+            # Sparse: allocated blocks far below the logical size.
+            self.assertLess(image.stat().st_blocks * 512, 1024 * 1024)
+
+    def test_kernel_initrd_passthrough(self):
+        command = self._dry_run(
+            [
+                "run", "--hypervisor", "hvf",
+                "--kernel", "/tmp/custom-Image",
+                "--initrd", "/tmp/custom-initramfs.cpio.gz",
+                "--dry-run",
+            ]
+        )
+        self.assertEqual(command[command.index("--kernel") + 1], "/tmp/custom-Image")
+        self.assertEqual(
+            command[command.index("--initrd") + 1], "/tmp/custom-initramfs.cpio.gz"
+        )
+
+    def test_save_snapshot_validations(self):
+        base = ["run", "--hypervisor", "hvf"]
+        with self.assertRaisesRegex(common.ScriptError, "--save-on"):
+            nvx.command_run(nvx.parse_args(base + ["--save-snapshot", "s"]))
+        with self.assertRaisesRegex(common.ScriptError, "together"):
+            nvx.command_run(nvx.parse_args(base + ["--save-exec", "echo hi"]))
+        with self.assertRaisesRegex(common.ScriptError, "require --save-snapshot"):
+            nvx.command_run(
+                nvx.parse_args(
+                    base + ["--save-exec", "echo hi", "--save-ready", "DONE"]
+                )
+            )
+        with self.assertRaisesRegex(common.ScriptError, "memory-backing-file"):
+            nvx.command_run(
+                nvx.parse_args(base + ["--save-snapshot", "s", "--save-on", "M"])
+            )
+
+    def test_save_snapshot_adds_snapshot_nic_option(self):
+        command = self._dry_run(
+            [
+                "run", "--hypervisor", "hvf",
+                "--virtio-net", "consomme:192.168.127.0/24",
+                "--memory-backing-file", "/tmp/mem.bin",
+                "--save-snapshot", "/tmp/snap",
+                "--save-on", "MARKER",
+                "--dry-run",
+            ]
+        )
+        nic = command[command.index("--virtio-net") + 1]
+        self.assertIn(",snapshot", nic)
+
+    def test_repl_enter_syncs_on_probe_marker(self):
+        class FakeProc:
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+
+            def poll(self):
+                return None
+
+        proc = FakeProc()
+        buf = bytearray(b"error: unrecognized subcommand 'x'\n")
+        with (
+            patch.object(nvx.select, "select", return_value=([], [], [])),
+            contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO())),
+        ):
+            nvx._repl_enter_sync(proc, buf, threading.Lock(), 10)
+        written = proc.stdin.getvalue()
+        self.assertTrue(written.startswith(b"\x11"))
+        self.assertIn(nvx.REPL_PROBE, written)
+
+    def test_wait_for_marker_sync_scans_drained_output(self):
+        class FakeProc:
+            def __init__(self, chunks):
+                self._chunks = list(chunks)
+                self.stdout = self
+                self._fileno = 99
+
+            def fileno(self):
+                return self._fileno
+
+            def poll(self):
+                return None
+
+        proc = FakeProc([b"booting\n", b"VIRTDISK-OK: /dev/vda\n"])
+        buf = bytearray()
+        reads = {"n": 0}
+
+        def fake_select(readers, _w, _e, _t):
+            if reads["n"] < len(proc._chunks):
+                return ([proc.stdout], [], [])
+            return ([], [], [])
+
+        def fake_read(_fd, _n):
+            if reads["n"] < len(proc._chunks):
+                chunk = proc._chunks[reads["n"]]
+                reads["n"] += 1
+                return chunk
+            return b""
+
+        with (
+            patch.object(nvx.select, "select", side_effect=fake_select),
+            patch.object(nvx.os, "read", side_effect=fake_read),
+            contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO())),
+        ):
+            nvx._wait_for_marker_sync(proc, buf, b"VIRTDISK-OK", 10, "test")
+        self.assertIn(b"VIRTDISK-OK", buf)
 
     def test_hvf_run_uses_direct_boot_without_microvm_machine(self):
         for hypervisor in ("hvf", "hypervisor-framework"):

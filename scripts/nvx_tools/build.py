@@ -502,7 +502,34 @@ def build_openvmm(
         shutil.copy2(source, config.output)
     if mode == "musl":
         config.output.chmod(config.output.stat().st_mode | 0o111)
+    if sys.platform == "darwin":
+        _codesign_openvmm_macos(source)
+        if not source.samefile(config.output):
+            _codesign_openvmm_macos(config.output)
     record_openvmm_provenance(config)
+
+
+def _codesign_openvmm_macos(binary: Path) -> None:
+    """Apply the Hypervisor.framework entitlement ad-hoc after a build.
+
+    Every cargo relink drops the signature, so signing is part of the
+    build, not a one-time step; without it hv_vm_create fails with
+    "operation not permitted".
+    """
+    entitlements = Path(__file__).with_name("openvmm-macos.entitlements.plist")
+    require_file(entitlements, "macOS OpenVMM entitlements")
+    require_tool("codesign")
+    run_checked(
+        [
+            "codesign",
+            "-s",
+            "-",
+            "--entitlements",
+            str(entitlements),
+            "--force",
+            str(binary),
+        ]
+    )
 
 
 def build_guest(config: BuildConfig) -> None:

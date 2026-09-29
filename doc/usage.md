@@ -307,7 +307,20 @@ python3 scripts/nvx.py run
     [--host-loopback {allow,deny}]
     [--network-proxy IPV4:TCP-PORT]
     [--host-loopback-forward PROTOCOL:HOST_PORT:GUEST_PORT]...
+    [--virtio-net BACKEND]...
+    [--share PORT:MNTPOINT[:ro|rw]]...
+    [--serve HOSTDIR:MNTPOINT[:ro|rw]]...
+    [--kernel PATH]
+    [--initrd PATH]
+    [--disk [PATH]]
+    [--disk-mount MNTPOINT]
+    [--outcome-report PATH]
     [--cmdline TEXT]
+    [--save-snapshot DIR]
+    [--save-on MARKER]
+    [--save-exec CMD]
+    [--save-ready MARKER]
+    [--save-timeout SECONDS]
     [--restore-snapshot PATH]
     [--restore-processors {1,2,4,8}]
     [--restore-memory-mib MIB]
@@ -333,8 +346,21 @@ python3 scripts/nvx.py run
 | `--host-loopback {allow,deny}` | existing mapping | Control guest access to host loopback services. |
 | `--network-proxy IPV4:TCP-PORT` | none | Allow one explicit host TCP proxy endpoint. |
 | `--host-loopback-forward PROTOCOL:HOST_PORT:GUEST_PORT` | none | Publish one TCP or UDP localhost port to the guest; repeat to add forwards. |
+| `--virtio-net BACKEND` | none | Expose a virtio NIC (e.g. `consomme` or `consomme:192.168.127.0/24`); repeat to add NICs. On hvf the guest configures it via DHCP unless an egress policy selects a static identity. |
+| `--share PORT:MNTPOINT[:ro|rw]` | none | Mount an already-running host 9P server in the guest; needs a consomme `--virtio-net` (gwloopback is added automatically). |
+| `--serve HOSTDIR:MNTPOINT[:ro|rw]` | none | Self-serve `--share`: start an in-process 9P server for HOSTDIR on an ephemeral loopback port for exactly the run. Under `--network-egress deny` the gateway hole for that port is punched automatically. |
+| `--kernel PATH` | built artifact | Custom direct-boot kernel (fresh boot only). |
+| `--initrd PATH` | built artifact | Custom initramfs (fresh boot only). |
+| `--disk [PATH]` | none | Persistent virtio-blk disk (hvf only); a missing image is created sparse (4 GiB). Bare `--disk` uses `nvx-disk.raw` in the repo root. Repeat the same `--disk` on restore. |
+| `--disk-mount MNTPOINT` | `/data` | Guest mountpoint for `--disk` (fresh boot; baked into the snapshot on restore). |
+| `--outcome-report PATH` | none | Write a bounded local JSON outcome report. |
 | `--cmdline TEXT` | empty | Append kernel parameters; `nvx_*` and `tsc=` tokens are reserved. |
-| `--memory-backing-file PATH` | none | Fresh hvf boot only: file-backed guest RAM, required to save a snapshot later from the openvmm REPL. The NIC also needs the `snapshot` option. |
+| `--memory-backing-file PATH` | none | Fresh hvf boot only: file-backed guest RAM, required for `--save-snapshot` scripted capture (the NIC `snapshot` option is added automatically). |
+| `--save-snapshot DIR` | none | Scripted capture: wait for `--save-on`, run `--save-exec`, then send `snap DIR` to the openvmm REPL (Ctrl-Q + probe sync), wait for `snapshot saved`, shut down. The leaf must not exist; when the parent is a symlink, pass the real path (`/private/tmp/x`, not `/tmp/x` on macOS). |
+| `--save-on MARKER` | none | Output marker that starts `--save-snapshot` (e.g. `VIRTDISK-OK`). |
+| `--save-exec CMD` | none | Guest shell line after `--save-on`, before capture. Requires `--save-ready`; needs a console shell (Alpine direct boot). |
+| `--save-ready MARKER` | none | Marker that `--save-exec` finished; capture starts here. |
+| `--save-timeout SECONDS` | `600` | Per-wait timeout for the save marker and the snapshot-saved marker. |
 | `--restore-snapshot PATH` | none | Restore the immutable machine contract and saved state from a snapshot directory. |
 | `--restore-processors {1,2,4,8}` | none | Bring this contiguous processor prefix online before restore readiness. Requires an opt-in microVM snapshot and cannot exceed `--processors` capacity. |
 | `--restore-memory-mib MIB` | none | Select the 128 MiB-aligned RAM target for an expansion-capable snapshot restore. |

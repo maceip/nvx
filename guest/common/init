@@ -233,6 +233,29 @@ if [ -n "$v9p" ]; then
         fi
     fi
 fi
+# virtdisk: mount a virtio-blk disk (see `scripts/nvx.py run --disk`,
+# spec DEV:MOUNTPOINT, e.g. virtdisk=vda:/data). A blank disk is formatted
+# ext4 on first boot, so the same image persists across boots/restores.
+vdisk=$(sed -n 's/.*virtdisk=\([^ ]*\).*/\1/p' /proc/cmdline)
+if [ -n "$vdisk" ]; then
+    vddev=${vdisk%%:*}; vdmnt=${vdisk#*:}
+    [ "$vdmnt" = "$vdisk" ] && vdmnt=/data
+    if [ ! -e "/dev/$vddev" ]; then
+        echo "virtdisk: /dev/$vddev not present" >&2
+    else
+        mkdir -p "$vdmnt"
+        if mount "/dev/$vddev" "$vdmnt" 2>/tmp/virtdisk-mount.log; then
+            echo "VIRTDISK-OK: /dev/$vddev at $vdmnt"
+        elif command -v mkfs.ext4 >/dev/null 2>&1 &&
+             mkfs.ext4 "/dev/$vddev" >/tmp/virtdisk-mkfs.log 2>&1 &&
+             mount "/dev/$vddev" "$vdmnt" 2>>/tmp/virtdisk-mount.log; then
+            echo "VIRTDISK-OK: /dev/$vddev formatted ext4 at $vdmnt"
+        else
+            cat /tmp/virtdisk-mount.log >&2
+            echo "virtdisk: failed to mount /dev/$vddev at $vdmnt" >&2
+        fi
+    fi
+fi
 if [ "$sandbox_mode" = true ]; then
     [ -x /sbin/nvx-init-agent ] ||
         workload_fatal "selected guest cannot act as sandbox control"
