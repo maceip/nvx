@@ -891,6 +891,103 @@ class CliTests(unittest.TestCase):
                 ):
                     nvx.command_run(args)
 
+    def test_hvf_run_translates_egress_policy_onto_consomme(self):
+        command = self._hvf_run_command(
+            [
+                "--virtio-net",
+                "consomme:192.168.127.0/24",
+                "--network-egress",
+                "deny",
+                "--network-egress-allow",
+                "192.0.2.7:tcp:443",
+            ]
+        )
+        spec_index = command.index("--virtio-net") + 1
+        spec = command[spec_index]
+        self.assertIn("egress=deny", spec)
+        self.assertIn("egress-allow=192.0.2.7:tcp:443", spec)
+        # MicroVM-namespaced policy flags never reach the VMM on hvf.
+        self.assertNotIn("--network-egress", command)
+        self.assertNotIn("--network-egress-allow", command)
+        # The guest uses the static identity the policy binds to, not DHCP.
+        cmdlines = [
+            command[index + 1]
+            for index, token in enumerate(command[:-1])
+            if token == "--cmdline"
+        ]
+        self.assertTrue(
+            any("virtnet_ip=192.168.127.2" in cmdline for cmdline in cmdlines)
+        )
+        self.assertFalse(
+            any("virtnet_dhcp=1" in cmdline for cmdline in cmdlines)
+        )
+
+    def test_hvf_run_policy_requires_consomme_cidr(self):
+        for extra_args, pattern in (
+            (
+                ["--network-egress", "deny"],
+                "requires --virtio-net with a consomme backend",
+            ),
+            (
+                [
+                    "--virtio-net",
+                    "consomme",
+                    "--network-egress",
+                    "deny",
+                ],
+                "requires a CIDR",
+            ),
+        ):
+            with self.subTest(extra_args=extra_args):
+                args = nvx.parse_args(
+                    ["run", "--hypervisor", "hvf", *extra_args, "--dry-run"]
+                )
+                with (
+                    patch.object(nvx.sys, "platform", "darwin"),
+                    patch.object(
+                        nvx.os,
+                        "uname",
+                        return_value=argparse.Namespace(machine="arm64"),
+                        create=True,
+                    ),
+                    patch.object(nvx, "require_file", return_value=Path("artifact")),
+                    self.assertRaisesRegex(common.ScriptError, pattern),
+                ):
+                    nvx.command_run(args)
+
+    def test_hvf_run_rejects_ingress_allow(self):
+        args = nvx.parse_args(
+            [
+                "run",
+                "--hypervisor",
+                "hvf",
+                "--virtio-net",
+                "consomme:192.168.127.0/24",
+                "--network-ingress",
+                "allow",
+                "--dry-run",
+            ]
+        )
+        with (
+            patch.object(nvx.sys, "platform", "darwin"),
+            patch.object(
+                nvx.os,
+                "uname",
+                return_value=argparse.Namespace(machine="arm64"),
+                create=True,
+            ),
+            patch.object(nvx, "require_file", return_value=Path("artifact")),
+            self.assertRaisesRegex(common.ScriptError, "ingress allow"),
+        ):
+            nvx.command_run(args)
+
+    def test_hvf_share_bare_consomme_gets_colon_gwloopback(self):
+        command = self._hvf_run_command(
+            ["--virtio-net", "consomme", "--share", "5564:/mnt/host"]
+        )
+        spec_index = command.index("--virtio-net") + 1
+        self.assertEqual(command[spec_index], "consomme:gwloopback")
+
     def test_hvf_run_rejects_unverified_restore_companions(self):
         for options in (
             ["--restore-snapshot", "snapshot", "--restore-processors", "1"],

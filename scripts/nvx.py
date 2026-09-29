@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import shlex
@@ -320,21 +321,116 @@ def parse_share_spec(value: str) -> tuple[int, str, str]:
     return port, mountpoint, mode
 
 
+def _append_consomme_option(spec: str, option: str) -> str:
+    """Append an option to a consomme endpoint spec.
+
+    Options after the backend name are colon-introduced and comma-separated,
+    so a bare `consomme` spec takes `:option` while `consomme:...` takes
+    `,option`.
+    """
+    return spec + ("," if ":" in spec else ":") + option
+
+
+def _consomme_spec_cidr(spec: str) -> str | None:
+    """Return the bare CIDR option of a consomme endpoint spec, if any."""
+    rest = spec[len("consomme") :]
+    if rest.startswith(":"):
+        rest = rest[1:]
+    for option in rest.split(","):
+        if (
+            "/" in option
+            and "=" not in option
+            and option not in ("gwloopback", "snapshot")
+        ):
+            return option
+    return None
+
+
+def _hvf_consomme_policy_fragments(args: argparse.Namespace) -> list[str]:
+    """Translate nvx network-policy flags to consomme endpoint options."""
+    fragments = []
+    if args.network_egress is not None:
+        fragments.append(f"egress={args.network_egress}")
+    if args.network_ingress is not None:
+        if args.network_ingress == "allow":
+            raise ScriptError(
+                "--network-ingress allow is unsupported with --hypervisor hvf; "
+                "inbound traffic is denied except for hostfwd forwards"
+            )
+        fragments.append("ingress=deny")
+    fragments.extend(f"egress-allow={rule}" for rule in args.network_egress_allow)
+    fragments.extend(f"egress-deny={rule}" for rule in args.network_egress_deny)
+    return fragments
+
+
+def _hvf_policy_static_ip(cidr: str) -> tuple[str, str, str]:
+    """Guest IP (network+2), netmask, and gateway (network+1) for a CIDR.
+
+    Mirrors the deterministic identity the VMM binds the policy to, so the
+    guest must configure this exact static address (no DHCP under policy).
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        raise ScriptError(
+            f"invalid consomme CIDR {cidr!r} for hvf egress policy"
+        ) from None
+    if not 1 <= network.prefixlen <= 30:
+        raise ScriptError(
+            f"consomme CIDR {cidr!r} cannot host a policy identity "
+            "(need a prefix of 1-30)"
+        )
+    gateway = network.network_address + 1
+    guest = network.network_address + 2
+    if int(guest) >= int(network.broadcast_address):
+        raise ScriptError(
+            f"consomme CIDR {cidr!r} leaves no usable guest address"
+        )
+    return str(guest), str(network.netmask), str(gateway)
+
+
+def _apply_hvf_consomme_policy(
+    specs: list[str], fragments: list[str]
+) -> tuple[str, str, str]:
+    """Append policy options to every consomme spec in place.
+
+    Returns the static guest identity derived from the first consomme CIDR.
+    """
+    indexes = [
+        index for index, spec in enumerate(specs) if spec.startswith("consomme")
+    ]
+    if not indexes:
+        raise ScriptError(
+            "--network-egress/--network-ingress policy on hvf requires "
+            "--virtio-net with a consomme backend"
+        )
+    for index in indexes:
+        for fragment in fragments:
+            specs[index] = _append_consomme_option(specs[index], fragment)
+    for index in indexes:
+        cidr = _consomme_spec_cidr(specs[index])
+        if cidr is not None:
+            return _hvf_policy_static_ip(cidr)
+    raise ScriptError(
+        "hvf egress policy requires a CIDR on the consomme endpoint "
+        "(e.g. --virtio-net consomme:192.168.127.0/24)"
+    )
+
+
 def _require_hvf_run_args(args: argparse.Namespace) -> None:
     # The microVM machine profile is x86-only (MP-table boot, fixed x86 APIC
     # topology, KVM/MSHV/WHP hypervisors). On macOS/HVF, run uses standard
     # Linux direct boot: OpenVMM synthesizes the boot tables (default ACPI
     # mode with stub DT + EFI on aarch64) from --kernel/--initrd/--cmdline.
     # MicroVM-only options are rejected with an actionable message.
+    # Network-policy knobs (--network-egress/ingress and the allow/deny rule
+    # lists) are enforced on hvf through the standard-profile consomme
+    # endpoint, so they are accepted here and translated onto --virtio-net.
     rejected = (
         ("mount", args.mount),
         ("mount-deny", args.mount_deny or None),
         ("net", args.net),
         ("network-profile", args.network_profile),
-        ("network-egress", args.network_egress),
-        ("network-ingress", args.network_ingress),
-        ("network-egress-allow", args.network_egress_allow or None),
-        ("network-egress-deny", args.network_egress_deny or None),
         ("host-loopback", args.host_loopback),
         ("network-proxy", args.network_proxy),
         ("host-loopback-forward", args.host_loopback_forward or None),
@@ -473,21 +569,29 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--mount-deny", str(denied_path)])
     if args.net is not None:
         command.extend(["--net", args.net, "--network-profile", args.network_profile])
-    if args.network_egress is not None:
-        command.extend(["--network-egress", args.network_egress])
-    if args.network_ingress is not None:
-        command.extend(["--network-ingress", args.network_ingress])
-    for rule in args.network_egress_allow:
-        command.extend(["--network-egress-allow", rule])
-    for rule in args.network_egress_deny:
-        command.extend(["--network-egress-deny", rule])
-    if args.host_loopback is not None:
-        command.extend(["--host-loopback", args.host_loopback])
-    if args.network_proxy is not None:
-        command.extend(["--network-proxy", args.network_proxy])
-    for forward in args.host_loopback_forward:
-        command.extend(["--host-loopback-forward", forward])
+    if hypervisor != "hvf":
+        # MicroVM-namespaced policy flags; on hvf the policy knobs below are
+        # translated onto the consomme endpoint instead.
+        if args.network_egress is not None:
+            command.extend(["--network-egress", args.network_egress])
+        if args.network_ingress is not None:
+            command.extend(["--network-ingress", args.network_ingress])
+        for rule in args.network_egress_allow:
+            command.extend(["--network-egress-allow", rule])
+        for rule in args.network_egress_deny:
+            command.extend(["--network-egress-deny", rule])
+        if args.host_loopback is not None:
+            command.extend(["--host-loopback", args.host_loopback])
+        if args.network_proxy is not None:
+            command.extend(["--network-proxy", args.network_proxy])
+        for forward in args.host_loopback_forward:
+            command.extend(["--host-loopback-forward", forward])
     virtio_specs = list(args.virtio_net)
+    hvf_static_ip = None
+    if hypervisor == "hvf":
+        policy_fragments = _hvf_consomme_policy_fragments(args)
+        if policy_fragments:
+            hvf_static_ip = _apply_hvf_consomme_policy(virtio_specs, policy_fragments)
     if args.share:
         consomme = [spec for spec in virtio_specs if spec.startswith("consomme")]
         if not consomme:
@@ -498,7 +602,9 @@ def command_run(args: argparse.Namespace) -> None:
         # The guest reaches the host server through the gateway address, so
         # the gateway-to-loopback mapping must be on.
         virtio_specs = [
-            spec if not spec.startswith("consomme") or "gwloopback" in spec else spec + ",gwloopback"
+            spec
+            if not spec.startswith("consomme") or "gwloopback" in spec
+            else _append_consomme_option(spec, "gwloopback")
             for spec in virtio_specs
         ]
     for spec in virtio_specs:
@@ -511,7 +617,20 @@ def command_run(args: argparse.Namespace) -> None:
         # On macOS/HVF the guest configures the virtio NIC via DHCP served
         # by the backend (e.g. consomme). Fresh boot only: the cmdline is
         # baked into the snapshot and must not be re-supplied on restore.
-        command.extend(["--cmdline", "virtnet_dhcp=1"])
+        # With an egress policy the guest instead uses the static identity
+        # the policy binds to, so DHCP must stay off.
+        if hvf_static_ip is not None:
+            guest_ip, netmask, gateway = hvf_static_ip
+            command.extend(
+                [
+                    "--cmdline",
+                    f"virtnet_ip={guest_ip} "
+                    f"virtnet_mask={netmask} "
+                    f"virtnet_gw={gateway}",
+                ]
+            )
+        else:
+            command.extend(["--cmdline", "virtnet_dhcp=1"])
     for spec in args.share:
         port, mountpoint, mode = parse_share_spec(spec)
         command.extend(["--cmdline", f"virt9p={port}:{mountpoint}:{mode}"])
