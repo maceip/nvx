@@ -6361,6 +6361,14 @@ class BenchmarkTests(unittest.TestCase):
                     # A zombie's /proc status no longer reports VmHWM.
                     return None if interaction.process.exited else 1024
 
+                def darwin_peak_rss_bytes(
+                    pid: int, interaction: FakeInteraction = interaction
+                ) -> int | None:
+                    self.assertEqual(pid, 123)
+                    # A zombie keeps its PID but reports 0 RSS, so the
+                    # poll-after-sample discipline resolves it to missing.
+                    return None if interaction.process.exited else 1024
+
                 with (
                     patch.object(
                         benchmark, "InteractiveProcess", return_value=interaction
@@ -6369,6 +6377,11 @@ class BenchmarkTests(unittest.TestCase):
                         benchmark,
                         "_linux_live_peak_rss_bytes",
                         side_effect=linux_peak_rss_bytes,
+                    ),
+                    patch.object(
+                        benchmark,
+                        "_darwin_live_rss_bytes",
+                        side_effect=darwin_peak_rss_bytes,
                     ),
                     patch.object(benchmark, "windows_peak_rss_bytes", return_value=1),
                     patch.object(
@@ -6457,6 +6470,43 @@ class BenchmarkTests(unittest.TestCase):
         ):
             self.assertIsNone(benchmark.live_peak_rss_bytes(exited))
             with self.assertRaisesRegex(OSError, "closed"):
+                benchmark.live_peak_rss_bytes(running)
+
+    def test_live_peak_rss_samples_darwin_process_without_reaping(self):
+        running = MagicMock(pid=7)
+        running.poll.return_value = None
+        exited = MagicMock(pid=8)
+        exited.poll.return_value = 0
+        gone = MagicMock(pid=9)
+        gone.poll.return_value = 0
+
+        def run_ps(args, **kwargs):
+            del kwargs
+            pid = args[-1]
+            if pid == "7":
+                return subprocess.CompletedProcess(args, 0, "  1264\n", "")
+            if pid == "8":
+                return subprocess.CompletedProcess(args, 0, "  0\n", "")
+            return subprocess.CompletedProcess(args, 1, "", "")
+
+        with (
+            patch.object(benchmark.os, "name", "posix"),
+            patch.object(benchmark.sys, "platform", "darwin"),
+            patch.object(benchmark.subprocess, "run", side_effect=run_ps),
+        ):
+            self.assertEqual(benchmark.live_peak_rss_bytes(running), 1264 * 1024)
+            # A zombie keeps its PID but reports 0 RSS.
+            self.assertIsNone(benchmark.live_peak_rss_bytes(exited))
+            self.assertIsNone(benchmark.live_peak_rss_bytes(gone))
+        with (
+            patch.object(benchmark.os, "name", "posix"),
+            patch.object(benchmark.sys, "platform", "darwin"),
+            patch.object(
+                benchmark.subprocess, "run", side_effect=OSError("ps missing")
+            ),
+        ):
+            self.assertIsNone(benchmark.live_peak_rss_bytes(exited))
+            with self.assertRaisesRegex(OSError, "ps missing"):
                 benchmark.live_peak_rss_bytes(running)
 
     def test_linux_live_peak_rss_requires_process_address_space(self):

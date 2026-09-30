@@ -502,7 +502,11 @@ def build_openvmm(
         shutil.copy2(source, config.output)
     if mode == "musl":
         config.output.chmod(config.output.stat().st_mode | 0o111)
-    if sys.platform == "darwin":
+    # Codesigning follows the target, not the host: a linux-gnu cross
+    # build on a Mac must not be macOS-codesigned (codesign rejects
+    # non-Mach-O files), while a native macos-hvf build needs the
+    # Hypervisor.framework entitlement to launch.
+    if selected == "macos-hvf":
         _codesign_openvmm_macos(source)
         if not source.samefile(config.output):
             _codesign_openvmm_macos(config.output)

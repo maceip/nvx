@@ -802,6 +802,27 @@ def _linux_live_peak_rss_bytes(pid: int) -> int | None:
     return _linux_status_bytes(status, "VmHWM")
 
 
+def _darwin_live_rss_bytes(pid: int) -> int | None:
+    """Current RSS of a macOS process via ps; None once the PID is gone.
+
+    macOS publishes no per-process high-water counter to userspace, so
+    the live sample is the current resident set, taken while the process
+    runs. A zombie keeps its PID but reports 0 RSS, which the caller
+    resolves with process.poll().
+    """
+    completed = subprocess.run(
+        ["ps", "-o", "rss=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    text = completed.stdout.strip()
+    if not text:
+        return None
+    return int(text.split()[0]) * 1024
+
+
 def live_peak_rss_bytes(process: subprocess.Popen[bytes]) -> int | None:
     """Return the peak RSS of a still-running process, or None after it exits.
 
@@ -809,6 +830,8 @@ def live_peak_rss_bytes(process: subprocess.Popen[bytes]) -> int | None:
     once the process releases its address space, and the wait4() maximum RSS
     also covers the coordinator's pre-exec image. Windows retains a terminated
     process's counters, but its peak working set then includes teardown.
+    macOS publishes no high-water counter, so the darwin sample is the
+    current RSS at the marker, accepted only while the process runs.
     """
     if os.name == "nt":
         try:
@@ -826,6 +849,18 @@ def live_peak_rss_bytes(process: subprocess.Popen[bytes]) -> int | None:
         if linux_peak is None:
             return None
         peak = linux_peak
+    elif sys.platform == "darwin":
+        try:
+            darwin_rss = _darwin_live_rss_bytes(process.pid)
+        except OSError:
+            if process.poll() is not None:
+                return None
+            raise
+        # A zombie keeps its PID and reports 0 RSS, so accept only a
+        # sample completed while it was running.
+        if darwin_rss is None or process.poll() is not None:
+            return None
+        peak = darwin_rss
     else:
         raise RuntimeError(f"peak RSS measurement is unsupported on {sys.platform}")
     if peak <= 0:
