@@ -1045,6 +1045,52 @@ class CliTests(unittest.TestCase):
             nvx._wait_for_marker_sync(proc, buf, b"VIRTDISK-OK", 10, "test")
         self.assertIn(b"VIRTDISK-OK", buf)
 
+    def test_wait_for_marker_sync_matches_slow_dribbled_output(self):
+        # Real pipe, real select: the marker arrives split across writes
+        # with sleeps between, like a slow-booting VM. Must match.
+        proc = subprocess.Popen(
+            ["bash", "-c",
+             "printf 'VIRT'; sleep 0.4; printf 'DISK'; sleep 0.4; "
+             "printf -- '-OK\\n'"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            buf = bytearray()
+            with contextlib.redirect_stdout(
+                io.TextIOWrapper(io.BytesIO())
+            ):
+                nvx._wait_for_marker_sync(proc, buf, b"VIRTDISK-OK", 15, "test")
+            self.assertIn(b"VIRTDISK-OK", buf)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+    def test_wait_timeout_reports_child_state(self):
+        # No output ever: the error must say whether the child is alive
+        # and how much was buffered, so the next silent launch is
+        # diagnosable from the message alone.
+        proc = subprocess.Popen(
+            ["sleep", "30"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            buf = bytearray()
+            with contextlib.redirect_stdout(
+                io.TextIOWrapper(io.BytesIO())
+            ):
+                with self.assertRaisesRegex(
+                    common.ScriptError,
+                    r"child alive=True.*buffered=0",
+                ):
+                    nvx._wait_for_marker_sync(proc, buf, b"NEVER", 1, "test")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
     def test_hvf_run_uses_direct_boot_without_microvm_machine(self):
         for hypervisor in ("hvf", "hypervisor-framework"):
             with self.subTest(hypervisor=hypervisor):

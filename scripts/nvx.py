@@ -486,7 +486,23 @@ def _drain_available(proc, buf) -> None:
 
 
 def _wait_for_marker_sync(proc, buf, marker, timeout, what) -> None:
-    """Single-threaded marker wait: drain-then-scan, no pump thread."""
+    """Single-threaded marker wait: drain-then-scan, no pump thread.
+
+    The first version tailed output with a pump thread doing blocking
+    reads into a lock-shared buffer while the main thread polled for the
+    marker. A live HVF run never matched although scripted-producer unit
+    tests passed, which looked like the pump deadlocking. Rerunning that
+    exact pump against the live VM exonerated it: over 300 s the pump
+    stayed alive while the shared buffer and the log file both stayed at
+    0 bytes and the openvmm child kept burning CPU -- zero bytes were
+    emitted, so there was nothing to pump. An identical launch minutes
+    earlier printed the full 19 KiB boot log with the marker. The failure
+    is an intermittent silent HVF boot, not a tailing deadlock (repro and
+    driver log kept at /tmp/nvxdrive/oldpump_repro.py). The
+    single-threaded drain stays: one reader keeps the timeout's
+    buffered= count exactly what was scanned, so the next silent boot is
+    diagnosable from the error alone.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         _drain_available(proc, buf)
@@ -511,8 +527,9 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
     Waits for `--save-on` on the combined output, escapes to the REPL with
     Ctrl-Q, sends `snap <dir>`, waits for the upstream "snapshot saved"
     marker, then sends `shutdown` (the REPL blocks resume after a save to
-    protect the snapshot). Output is drained single-threaded via select so
-    no pump thread can hide bytes. Returns the process exit code.
+    protect the snapshot). Output is drained single-threaded via select,
+    so the marker scan and the timeout's buffered= count always agree.
+    Returns the process exit code.
     """
     save_dir = Path(args.save_snapshot)
     # Upstream `snap` creates the leaf and refuses an existing one, so only
