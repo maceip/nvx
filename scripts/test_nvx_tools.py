@@ -727,6 +727,11 @@ class CliTests(unittest.TestCase):
             nvx.command_run(missing_network)
 
     def test_run_and_sandbox_forward_network_arguments(self):
+        # Pin the hypervisor: the forwarding contract under test is
+        # hypervisor-independent, but the default hypervisor is hvf on
+        # macOS, where these microVM-namespaced flags are rejected by
+        # design (hvf translates policy onto the consomme endpoint).
+        backend = "whp" if os.name == "nt" else "kvm"
         network_arguments = (
             "--net 10.0.0.2/24 --network-profile portable "
             "--network-egress deny --network-ingress deny "
@@ -735,9 +740,11 @@ class CliTests(unittest.TestCase):
             "--network-proxy 10.0.0.1:3128 --host-loopback-forward tcp:8080:80"
         ).split()
         commands = [
-            ["run", "--dry-run", *network_arguments],
+            ["run", "--hypervisor", backend, "--dry-run", *network_arguments],
             [
                 "sandbox",
+                "--hypervisor",
+                backend,
                 "--dry-run",
                 "--layer",
                 "distro,distro.erofs,11111111-1111-1111-1111-111111111111",
@@ -6323,6 +6330,9 @@ class SandboxTests(unittest.TestCase):
             self.assertEqual(validated.mount.host_path, share)
 
     def test_sandbox_command_forwards_mount_to_openvmm(self):
+        # Pin the hypervisor: sandbox is microVM-profile-only, and the
+        # default hypervisor is hvf on macOS, which this command rejects.
+        backend = "whp" if os.name == "nt" else "kvm"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             layer = root / "distro.erofs"
@@ -6334,6 +6344,8 @@ class SandboxTests(unittest.TestCase):
             args = nvx.parse_args(
                 [
                     "sandbox",
+                    "--hypervisor",
+                    backend,
                     "--layer",
                     f"distro,{layer},11111111-1111-1111-1111-111111111111",
                     "--scratch",
@@ -6364,9 +6376,14 @@ class SandboxTests(unittest.TestCase):
             self.assertEqual(command[command.index("--mount-deny") + 1], "secrets")
 
     def test_sandbox_command_rejects_misplaced_mount_options(self):
+        # Pin the hypervisor: sandbox is microVM-profile-only, and the
+        # default hypervisor is hvf on macOS, which this command rejects.
+        backend = "whp" if os.name == "nt" else "kvm"
         deny_only = nvx.parse_args(
             [
                 "sandbox",
+                "--hypervisor",
+                backend,
                 "--layer",
                 "distro,distro.erofs,11111111-1111-1111-1111-111111111111",
                 "--scratch",
@@ -6382,6 +6399,8 @@ class SandboxTests(unittest.TestCase):
                 args = nvx.parse_args(
                     [
                         "sandbox",
+                        "--hypervisor",
+                        backend,
                         operation,
                         "--state-dir",
                         "state",
