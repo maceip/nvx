@@ -13,11 +13,29 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Showcase") {
-                    Label("Live detonation", systemImage: "flame")
+                    Label("Runtime", systemImage: "cpu")
                         .tag(SidebarSection.live)
                     Label("Snapshots", systemImage: "clock.arrow.circlepath")
                         .tag(SidebarSection.snapshots)
                 }
+                Section("Payload") {
+                    ForEach(Payload.all) { payload in
+                        HStack {
+                            Button(payload.name) {
+                                controller.payload = payload
+                            }
+                            .buttonStyle(.plain)
+                            Spacer()
+                            if controller.payload == payload {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .help(payload.blurb)
+                    }
+                }
+                .disabled(controller.phase == .live ||
+                    controller.phase == .launching)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {

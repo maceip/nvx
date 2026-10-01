@@ -14,6 +14,7 @@ import os
 import queue
 import select
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -33,6 +34,7 @@ from unittest.mock import MagicMock, call, patch
 sys.path.insert(0, str(Path(__file__).parent))
 import nvx  # noqa: E402
 from nvx_tools import (  # noqa: E402
+    adversarial_oracles,
     archive,
     benchmark,
     build,
@@ -10677,6 +10679,106 @@ class DownloadTests(unittest.TestCase):
                 )
 
             self.assertEqual(destination.read_bytes(), payload)
+
+
+class OracleTests(unittest.TestCase):
+    def test_network_canary_counts_loopback_connection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log_path = Path(temporary) / "canary.jsonl"
+            canary = adversarial_oracles.NetworkCanary(log_path)
+            try:
+                self.assertGreater(canary.port, 0)
+                canary.start()
+                with socket.create_connection(
+                    ("127.0.0.1", canary.port), timeout=5
+                ):
+                    pass
+                deadline = time.monotonic() + 10
+                while (
+                    canary.connections == 0
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.05)
+                self.assertEqual(canary.connections, 1)
+                self.assertIsNone(canary.error)
+            finally:
+                canary.close()
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            event = json.loads(lines[0])
+            self.assertEqual(event["event"], "unexpected-connection")
+
+    def test_network_canary_close_is_quiet_without_connections(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            canary = adversarial_oracles.NetworkCanary(
+                Path(temporary) / "canary.jsonl"
+            )
+            canary.start()
+            canary.close()
+            self.assertEqual(canary.connections, 0)
+            self.assertIsNone(canary.error)
+
+    def test_run_bounded_process_captures_fast_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = adversarial_oracles.run_bounded_process(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write('hi'); "
+                    "sys.stderr.write('e')",
+                ],
+                cwd=root,
+                output_dir=root / "out",
+                timeout=30,
+                environment={},
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertFalse(result.timed_out)
+            self.assertTrue(result.teardown_complete)
+            self.assertEqual(result.stdout_bytes, 2)
+            self.assertEqual(result.stderr_bytes, 1)
+            self.assertEqual((root / "out" / "stdout.log").read_bytes(), b"hi")
+            self.assertEqual((root / "out" / "stderr.log").read_bytes(), b"e")
+            # Encoded samples are base64 ("hi" -> "aGk=").
+            self.assertEqual(result.encoded_stdout(), "aGk=")
+
+    def test_run_bounded_process_reports_timeout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = adversarial_oracles.run_bounded_process(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                cwd=root,
+                output_dir=root / "out",
+                timeout=1,
+                environment={},
+            )
+            self.assertTrue(result.timed_out)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(result.teardown_complete)
+
+    def test_run_bounded_process_rejects_nonpositive_timeout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(
+                common.ScriptError, "greater than zero"
+            ):
+                adversarial_oracles.run_bounded_process(
+                    [sys.executable, "-c", "pass"],
+                    cwd=root,
+                    output_dir=root / "out",
+                    timeout=0,
+                    environment={},
+                )
+
+    def test_sha256_file_matches_hashlib(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "payload.bin"
+            path.write_bytes(b"canary-payload")
+            self.assertEqual(
+                adversarial_oracles.sha256_file(path),
+                hashlib.sha256(b"canary-payload").hexdigest(),
+            )
 
 
 if __name__ == "__main__":

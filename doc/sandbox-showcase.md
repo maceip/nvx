@@ -1,12 +1,12 @@
 # NVX vs Firecracker: malicious-code sandbox showcase (talk plan + evidence)
 
 Status: DRAFT — all cells below were executed live except where marked.
-Detonate on Linux/KVM; analyze on Mac. Single instance throughout —
+Run on Linux/KVM; analyze on Mac. Single instance throughout —
 scale is elucidated from the wiring, never measured.
 
 ## Environment (measured, not claimed)
 
-- Linux detonation box: Azure Ubuntu 26.04, x86_64, 4 vCPU, 31 GiB RAM,
+- Linux measurement box: Azure Ubuntu 26.04, x86_64, 4 vCPU, 31 GiB RAM,
   `/dev/kvm` present.
 - NVX: fork at `maceip/nvx` `dev` (`def84b4`), openvmm `6d9a62155`
   (includes snapshot-chaining work), release binary, backend `kvm`.
@@ -68,7 +68,7 @@ start), results POSTed back by the guest, post-mortem log read via
 - One exfil control run showed a doubled POST receipt (client retry);
   ground truth is the attacker listener log, which is unambiguous.
 
-## Single-instance timeline (measured on the detonation box)
+## Single-instance timeline (measured on the measurement box)
 
 - `sandbox run` one-shot: boot → workload → exit + outcome JSON in
   seconds (see per-case logs in `~/demo/zoo/`).
@@ -93,7 +93,7 @@ start), results POSTed back by the guest, post-mortem log read via
 
 - Snapshots are arch-bound (VP/GIC state, enforced `architecture`
   field): an x86_64 snapshot can never restore on ARM64. The Mac is
-  the review station (verify + decode), not a second detonation
+  the review station (verify + decode), not a second run
   chamber.
 - Firecracker's own docs resume snapshots only on identical
   hardware/software with no network guarantee across clones; its
@@ -111,7 +111,7 @@ start), results POSTed back by the guest, post-mortem log read via
 
 ## Reproduce
 
-- NVX arm: driver scripts live in `/tmp/` on the detonation box
+- NVX arm: driver scripts live in `/tmp/` on the measurement box
   (drafted from the Mac); simulants seeded into
   `~/demo/zoo/case-scratch.ext4` (`upper/`); collector
   `/tmp/zoo-collector.py` (ports 18080 report / 19090 attacker).

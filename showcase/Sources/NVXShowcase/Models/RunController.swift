@@ -1,6 +1,6 @@
 import Foundation
 
-/// Owns one live detonation: launches `nvx.py run`, tails its combined
+/// Owns one live runtime run: launches `nvx.py run`, tails its combined
 /// output, and derives attempted/denied counts plus the verdict.
 @Observable
 @MainActor
@@ -109,7 +109,7 @@ final class RunController {
     }
 
     /// Drop all but the newest `keeping` run directories so repeated
-    /// detonations don't fill Application Support.
+    /// runs don't fill Application Support.
     private func pruneRuns(keeping: Int) {
         let fm = FileManager.default
         guard let dirs = try? fm.contentsOfDirectory(

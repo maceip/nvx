@@ -23,7 +23,7 @@ struct LiveView: View {
                         controller.stop()
                     }
                 } else {
-                    Button("Detonate", systemImage: "flame.fill") {
+                    Button("Run", systemImage: "play.fill") {
                         controller.launch()
                     }
                     .disabled(controller.phase == .launching)

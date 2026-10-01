@@ -38,7 +38,7 @@ enum Verdict: String {
     }
 }
 
-/// A malicious-behavior payload the dashboard can detonate on HVF.
+/// A malicious-behavior payload the dashboard can run on HVF.
 struct Payload: Identifiable, Hashable {
     let id: String
     let name: String
