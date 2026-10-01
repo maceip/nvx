@@ -29,7 +29,10 @@ python3 scripts/nvx.py performance gate --help
 | `build-distro-layer` | Build a deterministic Ubuntu EROFS distro layer. |
 | `verify-guest-determinism` | Rebuild Ubuntu guest artifacts twice and compare SHA-256 values. |
 | `build-openvmm` | Build the OpenVMM release binary. |
+| `record-openvmm-provenance` | Bind an existing OpenVMM binary to the pinned source revision. |
+| `materialize-kernel-provenance-inputs` | Write kernel provenance inputs from raw run-head blobs. |
 | `setup-cross-os-cache` | Install GNU tar and zstd for GitHub Actions cross-OS caches. |
+| `check-required-ci` | Validate required GitHub Actions job results. |
 | `test-openvmm-unit` | Run the OpenVMM workspace unit and documentation tests. |
 | `test-openvmm` | Run self-contained OpenVMM microVM control-plane tests. |
 | `test-microvm` | Run NVX Linux and device correctness tests through OpenVMM. |
@@ -37,7 +40,7 @@ python3 scripts/nvx.py performance gate --help
 | `build` | Build the guest artifacts and OpenVMM. |
 | `download` | Download and install the latest matching GitHub release. |
 | `run` | Run an OpenVMM microVM. |
-| `sandbox` | Run one workload from EROFS layers over private ext4 scratch. |
+| `sandbox` | Run or manage workloads over EROFS layers and private ext4 scratch. |
 | `benchmark` | Run the OpenVMM-native benchmark coordinator. |
 | `performance` | Collect, gate, and persist CI performance results. |
 | `collect-sources` | Materialize verified Linux, Alpine, and Ubuntu release sources. |
@@ -298,6 +301,7 @@ python3 scripts/nvx.py run
     [--memory-backing-file PATH]
     [--processors {1,2,4,8}]
     [--mount GUEST_TARGET,HOST_PATH[,ro|rw]]
+    [--mount-deny HOST_PATH]...
     [--net IPV4/PREFIX]
     [--network-profile {portable}]
     [--network-egress {allow,deny}]
@@ -337,6 +341,7 @@ python3 scripts/nvx.py run
 | `--memory-capacity-mib MIB` | none | Reserve an immutable, 128 MiB-aligned RAM capacity for a fresh microVM snapshot. |
 | `--processors {1,2,4,8}` | `1` | Select the microVM processor count. |
 | `--mount GUEST_TARGET,HOST_PATH[,ro\|rw]` | none | Expose one host directory to the absolute guest target. Active snapshot restore requires the same canonical path, target, and mode; a dormant-slot restore may attach a new mapping that the resumed guest mounts explicitly. |
+| `--mount-deny HOST_PATH` | none | Hide one existing file or directory inside the mounted host root; repeat to deny multiple paths. |
 | `--net IPV4/PREFIX` | none | Enable virtio-net with the static guest IPv4 address and prefix. |
 | `--network-profile {portable}` | none | Select the required cross-platform network behavior contract; must be specified with `--net`. |
 | `--network-egress {allow,deny}` | `allow` | Set the default guest egress policy. |
@@ -376,35 +381,68 @@ virtio-fs examples.
 
 ```text
 python3 scripts/nvx.py sandbox
-    --layer ROLE,PATH,EROFS_UUID [--layer ...]
-    --scratch PATH
+    [{run,provision,start,exec,stop,deprovision}]
+    [--layer ROLE,PATH,EROFS_UUID]...
+    [--scratch PATH]
+    [--state-dir PATH]
     [--entrypoint PATH]
     [--arg VALUE]...
     [--hostname NAME]
+    [--workload-user UID:GID]
     [--memory-max BYTES]
     [--pids-max COUNT]
     [--memory-mib MIB]
+    [--timeout SECONDS]
+    [--exec-timeout-ms MILLISECONDS]
     [--hypervisor {auto,whp,kvm,mshv}]
+    [--mount GUEST_TARGET,HOST_PATH[,ro|rw]]
+    [--mount-deny HOST_PATH]...
     [--net IPV4/PREFIX]
     [--network-profile {portable}]
+    [--network-egress {allow,deny}]
+    [--network-ingress {allow,deny}]
+    [--network-egress-allow CIDR[:PROTOCOL:PORT]]...
+    [--network-egress-deny CIDR[:PROTOCOL:PORT]]...
+    [--host-loopback {allow,deny}]
+    [--network-proxy IPV4:TCP-PORT]
+    [--host-loopback-forward PROTOCOL:HOST_PORT:GUEST_PORT]...
+    [--outcome-report PATH]
     [--cmdline TEXT]
     [--dry-run]
 ```
 
+Network policy and live-share options configure only the `run` and `provision`
+launches.
+
 | Option | Default | Description |
 | --- | --- | --- |
-| `--layer ROLE,PATH,EROFS_UUID` | required | Attach a `distro`, `runtime`, or `custom` EROFS layer. Repeat once per distinct role. |
-| `--scratch PATH` | required | Attach a preformatted ext4 scratch image as the writable overlay. |
+| `{run,provision,start,exec,stop,deprovision}` | `run` | Select a one-shot run or a managed lifecycle operation. |
+| `--layer ROLE,PATH,EROFS_UUID` | required for `run` and `provision` | Attach a `distro`, `runtime`, or `custom` EROFS layer. Repeat once per distinct role. |
+| `--scratch PATH` | required for `run` and `provision` | Attach a preformatted ext4 scratch image as the writable overlay. |
+| `--state-dir PATH` | required for managed operations | Select persistent sandbox state. One-shot `run` rejects this option. |
 | `--entrypoint PATH` | `/bin/sh` | Select an absolute workload entrypoint without whitespace. |
 | `--arg VALUE` | none | Append one whitespace-free entrypoint argument. Repeat to pass multiple arguments. |
 | `--hostname NAME` | `nvx-sandbox` | Set the workload UTS hostname. |
+| `--workload-user UID:GID` | `65534:65534` | Select the fixed non-root workload identity for `run` or `provision`. |
 | `--memory-max BYTES` | none | Set the workload cgroup memory limit. |
 | `--pids-max COUNT` | none | Set the workload cgroup process limit. |
 | `--memory-mib MIB` | `256` | Set guest memory in MiB. |
+| `--timeout SECONDS` | `60` | Set the control response timeout for managed `start`, `exec`, and `stop`. |
+| `--exec-timeout-ms MILLISECONDS` | `0` | Set the managed `exec` guest workload timeout; zero disables it. |
 | `--hypervisor {auto,whp,kvm,mshv}` | `auto` | Select the host hypervisor. |
+| `--mount GUEST_TARGET,HOST_PATH[,ro\|rw]` | none | Live-share one host directory at the absolute target inside the container rootfs for `run` or `provision`; defaults to `ro`. `/`, `/etc`, and the `/proc`, `/sys`, `/dev`, and `/.nvx-agent` trees are reserved. |
+| `--mount-deny HOST_PATH` | none | Hide one existing file or directory inside the `--mount` host directory; relative paths are resolved inside it. Repeat to deny multiple paths. |
 | `--net IPV4/PREFIX` | none | Enable virtio-net with a static guest address. |
 | `--network-profile {portable}` | none | Select the required cross-platform network behavior contract; must be specified with `--net`. |
-| `--cmdline TEXT` | empty | Append non-sandbox kernel parameters; `nvx_*` and `tsc=` tokens are reserved. |
+| `--network-egress {allow,deny}` | `allow` | Set the default guest egress policy for `run` or `provision`. |
+| `--network-ingress {allow,deny}` | `deny` | Set the host ingress policy for `run` or `provision`. The portable profile supports only `deny`. |
+| `--network-egress-allow CIDR[:PROTOCOL:PORT]` | none | Allow matching guest egress; repeat to add rules. Requires explicit `--network-egress`. |
+| `--network-egress-deny CIDR[:PROTOCOL:PORT]` | none | Deny matching guest egress; repeat to add rules. Requires explicit `--network-egress`; deny rules take precedence. |
+| `--host-loopback {allow,deny}` | existing mapping | Control guest access to host loopback services for `run` or `provision`. |
+| `--network-proxy IPV4:TCP-PORT` | none | Allow one explicit host TCP proxy endpoint; the IPv4 address must match the guest gateway. |
+| `--host-loopback-forward PROTOCOL:HOST_PORT:GUEST_PORT` | none | Publish one TCP or UDP localhost port to the guest; repeat to add forwards and set `--host-loopback allow`. |
+| `--outcome-report PATH` | none | Write a bounded local JSON outcome report for one-shot `run` or managed `exec`. |
+| `--cmdline TEXT` | empty | Append non-sandbox kernel parameters; `nvx_*`, `virtfs_*`, and `tsc=` tokens are reserved. |
 | `--dry-run` | off | Print the generated OpenVMM microVM command without running it. |
 
 See [Run](run.md) for artifact preparation, the security boundary, and current
@@ -445,7 +483,7 @@ python3 scripts/nvx.py benchmark [OPTIONS]
 | `--virtfs-runs N` | `3` | Set the number of virtio-fs workload samples. |
 | `--virtfs-memory-mib MIB` | `512` | Set guest memory for the virtio-fs workload. |
 | `--payload-mib MIB` | `64` | Set the virtio-fs sequential I/O payload size. |
-| `--shell-memories MIB [MIB ...]` | `128 256 512` | Set the guest memory sizes for shell snapshot measurements. |
+| `--shell-memories MIB [MIB ...]` | `128 256 512` (`128 256 512 1024` for `snapshot-profile`) | Set the guest memory sizes for shell snapshot measurements. |
 | `--network-memory-mib MIB` | `256` | Set guest memory for the network snapshot workload. |
 | `--restore-devices {console,net,virtiofs} [...]` | all three devices | Select devices for the `device-restore-profile` suite. |
 | `--restore-modes {active,deferred} [...]` | both modes | Select activation modes for the `device-restore-profile` suite. |
@@ -463,6 +501,7 @@ python3 scripts/nvx.py benchmark [OPTIONS]
 | `--cache-state {warm,cold,both}` | `both` | Select artifact cache states for the `snapshot-profile` suite. |
 | `--output PATH` | none | Write the benchmark result as JSON. |
 | `--output-dir PATH` | none | Write canonical workload logs to a directory. |
+| `--scratch-dir PATH` | system temporary directory | Select an existing directory for temporary snapshots, guest RAM backing, and workload files. |
 | `--keep-kvm-stage` | off | Keep temporary staged KVM benchmark binaries. |
 
 Measured counts must be at least 1; warmups may be zero, and timeouts must be greater than zero.

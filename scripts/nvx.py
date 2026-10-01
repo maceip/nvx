@@ -79,7 +79,12 @@ from nvx_tools.release import (
     package_release,
     verify_source_tree,
 )
-from nvx_tools.sandbox import SandboxLaunch, SandboxLayer, parse_workload_identity
+from nvx_tools.sandbox import (
+    SandboxLaunch,
+    SandboxLayer,
+    SandboxMount,
+    parse_workload_identity,
+)
 from nvx_tools.snapshot import format_report, verify_snapshot
 
 DEFAULT_RELEASE_REPOSITORY = "microsoft/nvx"
@@ -735,6 +740,23 @@ def _require_hvf_run_args(args: argparse.Namespace) -> None:
                 f"--{name} is not verified with --hypervisor hvf; "
                 "restore with --restore-snapshot (and --restore-ready-path) only"
             )
+def _extend_network_arguments(command: list[str], args: argparse.Namespace) -> None:
+    if args.net is not None:
+        command.extend(["--net", args.net, "--network-profile", args.network_profile])
+    if args.network_egress is not None:
+        command.extend(["--network-egress", args.network_egress])
+    if args.network_ingress is not None:
+        command.extend(["--network-ingress", args.network_ingress])
+    for rule in args.network_egress_allow:
+        command.extend(["--network-egress-allow", rule])
+    for rule in args.network_egress_deny:
+        command.extend(["--network-egress-deny", rule])
+    if args.host_loopback is not None:
+        command.extend(["--host-loopback", args.host_loopback])
+    if args.network_proxy is not None:
+        command.extend(["--network-proxy", args.network_proxy])
+    for forward in args.host_loopback_forward:
+        command.extend(["--host-loopback-forward", forward])
 
 
 def command_run(args: argparse.Namespace) -> None:
@@ -1042,6 +1064,10 @@ def command_sandbox(args: argparse.Namespace) -> None:
         raise ScriptError(
             "--outcome-report is only valid for one-shot run or managed exec"
         )
+    if args.mount_deny and args.mount is None:
+        raise ScriptError("--mount-deny requires --mount")
+    if args.mount is not None and operation not in ("run", "provision"):
+        raise ScriptError("--mount is only valid for sandbox run or provision")
     if operation in ("run", "provision"):
         if (args.net is None) != (args.network_profile is None):
             raise ScriptError("--net and --network-profile must be specified together")
@@ -1056,6 +1082,11 @@ def command_sandbox(args: argparse.Namespace) -> None:
             workload_identity=args.workload_user,
             memory_max=args.memory_max,
             pids_max=args.pids_max,
+            mount=(
+                None
+                if args.mount is None
+                else SandboxMount.parse(args.mount, tuple(args.mount_deny))
+            ),
         ).validated()
         _validate_sandbox_systemd_policy(launch)
     else:
@@ -1146,22 +1177,7 @@ def command_sandbox(args: argparse.Namespace) -> None:
         "--cmdline",
         launch.kernel_command_line(args.cmdline),
     ]
-    if args.net is not None:
-        command.extend(["--net", args.net, "--network-profile", args.network_profile])
-    if args.network_egress is not None:
-        command.extend(["--network-egress", args.network_egress])
-    if args.network_ingress is not None:
-        command.extend(["--network-ingress", args.network_ingress])
-    for rule in args.network_egress_allow:
-        command.extend(["--network-egress-allow", rule])
-    for rule in args.network_egress_deny:
-        command.extend(["--network-egress-deny", rule])
-    if args.host_loopback is not None:
-        command.extend(["--host-loopback", args.host_loopback])
-    if args.network_proxy is not None:
-        command.extend(["--network-proxy", args.network_proxy])
-    for forward in args.host_loopback_forward:
-        command.extend(["--host-loopback-forward", forward])
+    _extend_network_arguments(command, args)
     if args.outcome_report is not None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     print(f">> {_format_command(command)}")
@@ -1574,6 +1590,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="guest workload timeout in milliseconds; zero disables it",
     )
     sandbox.add_argument("--hypervisor", choices=HYPERVISORS, default="auto")
+    sandbox.add_argument(
+        "--mount",
+        metavar="GUEST_TARGET,HOST_PATH[,ro|rw]",
+        help="live-share one host directory inside the container rootfs",
+    )
+    sandbox.add_argument(
+        "--mount-deny",
+        action="append",
+        default=[],
+        metavar="HOST_PATH",
+        help="hide one existing path inside the --mount host directory",
+    )
     sandbox.add_argument("--net", metavar="IPV4/PREFIX")
     sandbox.add_argument("--network-profile", choices=NETWORK_PROFILES)
     sandbox.add_argument("--network-egress", choices=("allow", "deny"))

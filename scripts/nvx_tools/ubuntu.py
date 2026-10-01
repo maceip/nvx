@@ -109,7 +109,10 @@ def _required_string(
 def load_package_lock(
     path: Path = UbuntuBuildConstants.PACKAGE_LOCK,
 ) -> tuple[UbuntuLockedPackage, ...]:
-    raw_document = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw_document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ScriptError(f"failed to read Ubuntu package lock: {path}") from error
     if not isinstance(raw_document, dict):
         raise ScriptError(f"{path} must contain a JSON object")
     document = cast(dict[str, object], raw_document)

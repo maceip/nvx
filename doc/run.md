@@ -367,7 +367,8 @@ python3 scripts/nvx.py sandbox \
 
 CI uses `/sbin/nvx-sandbox-smoke` as the entrypoint to verify Ubuntu identity,
 the fixed non-root account, and a scratch-backed `/tmp` write before clean
-guest exit.
+guest exit. With `--arg TARGET --arg ro|rw`, it also checks a live share at
+`TARGET` as described below.
 
 The layer UUID is the EROFS superblock UUID, not a content digest. The command
 validates the files before launch, orders roles independently of option order,
@@ -392,6 +393,45 @@ root; otherwise the workload is never started.
 The outer agent retains the initramfs root; the capability-stripped child
 enters only the assembled root with `chroot`, because Linux cannot
 `pivot_root` away from an initramfs `rootfs`.
+
+### Live host-directory share
+
+`sandbox run` and `sandbox provision` accept one
+`--mount GUEST_TARGET,HOST_PATH[,ro|rw]` (default `ro`) plus repeatable
+`--mount-deny HOST_PATH` rules. OpenVMM exports the host directory through its
+microVM virtio-fs device and enforces the access mode and denied paths on the
+host side, so edits are visible in both directions without staging or
+copy-back:
+
+```bash
+python3 scripts/nvx.py sandbox \
+  --layer distro,build/ubuntu-distro.erofs,11111111-1111-1111-1111-111111111111 \
+  --scratch /var/lib/nvx/scratch.ext4 \
+  --mount /workspace,/srv/checkout,rw \
+  --mount-deny .git/credentials \
+  --entrypoint /bin/sh
+```
+
+A relative `--mount-deny` path is resolved inside the exported host directory.
+After it assembles the container overlay and verifies the workload identity,
+the guest agent creates the target inside the container root and mounts the
+share there with `nosuid,nodev` before the workload enters its private mount
+namespace. A one-shot workload exit, a managed `stop`, and any failure after
+the share is mounted unmount it before the overlay is unmounted or the VM
+powers off. The target must be an absolute, canonical path; `/`, `/etc`, and
+the `/proc`, `/sys`, `/dev`, and `/.nvx-agent` trees are reserved for the
+container runtime.
+The guest refuses a target whose path crosses a symbolic link in a container
+layer, and any validation or mount failure aborts the sandbox with status 125
+instead of starting the workload without its share.
+
+Guest file permissions use the ownership and mode bits that OpenVMM reports
+for the exported files, so grant the selected workload identity access to the
+host directory. One share per microVM and the existing OpenVMM file-identity
+and symbolic-link policies apply. A managed sandbox stores the absolute host
+path in its configuration and reattaches the share on every `start`.
+
+### Managed lifecycle
 
 For a state-aware sandbox, provision configuration without starting a VM,
 start it once, run multiple workloads in the same warm guest, stop it while
@@ -421,7 +461,10 @@ Lifecycle transitions fail closed: `start` rejects an already-running or stale
 runtime record, `exec` and `stop` require a live OpenVMM process, and
 `deprovision` refuses to remove a running sandbox or unknown files. Managed
 workload arguments use the bounded control protocol rather than the kernel
-command line and may contain whitespace. The legacy operation-less `sandbox`
+command line and may contain whitespace. The workload sees one machine ID for
+the life of the VM. On `stop`, the guest agent unmounts the live share, overlay,
+layers, and scratch in dependency order before the VM powers off, as it does
+when a one-shot workload exits. The legacy operation-less `sandbox`
 form is `sandbox run`; it remains one-shot and rejects `--state-dir` or any
 request to retain VM state.
 

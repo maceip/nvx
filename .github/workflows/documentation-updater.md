@@ -22,7 +22,7 @@ engine:
     - --context
     - long_context
 model: gpt-5.6-sol-fast
-max-turns: 20
+max-turns: 100
 timeout-minutes: 60
 concurrency: documentation-updater
 sandbox:
@@ -346,6 +346,10 @@ Before requesting the safe output:
 
 The pull request body must state the pinned OpenVMM SHA, the mismatches
 corrected, the exact evidence paths inspected, and the validation results.
+
+Reserve one model invocation after the final commit for `create-pull-request`.
+Once the commit succeeds, call that safe output immediately without additional
+searches or rereading passing validation logs.
 
 ## Boundaries
 

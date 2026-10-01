@@ -14,6 +14,7 @@ from types import TracebackType
 from typing import NamedTuple
 
 from .benchmark import InteractiveProcess, terminate
+from .common import remaining_timeout
 
 
 def _line_marker_end(
@@ -163,7 +164,7 @@ class OpenvmmProcess:
             if chunk is None:
                 break
             self._output.extend(chunk)
-        remaining = max(0.0, deadline - time.monotonic())
+        remaining = remaining_timeout(deadline)
         try:
             returncode = self.process.wait(timeout=remaining)
         except subprocess.TimeoutExpired:

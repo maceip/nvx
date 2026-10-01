@@ -6,7 +6,7 @@ The following items are **Proposed**, beyond the low-level implementation:
 
 | Area | Remaining design or delivery work |
 | --- | --- |
-| Launch configuration and control | Implement the replaceable region, consumed-section validation, authenticated broker, bounded framed protocol, reconnect/cancellation semantics, and node-version compatibility policy. |
+| Launch configuration and control | Implement the replaceable region, consumed-section validation, a typed and versioned workload RPC over the authenticated control-console broker, cancellation and restore rehandshake semantics, and a node-version compatibility policy. The broker, its bounded framing, and the managed lifecycle subset are implemented. |
 | Production agent | Complete OCI policy, atomic workload placement, orphan supervision, typed errors, PTY/log handling, and capture-safe worker rendezvous. Measure agent CPU/memory reserves. |
 | Image conversion | Build the curated-base converter, metadata allowlist, geometry classes, admission validation, and tests for crafted overlay/security attributes. |
 | Snapshot orchestration | Integrate trusted placeholder-based platform builds, per-runtime warm shims, checkpoint requests, private scratch acquisition, and capture failure reporting with the public sandbox workflow. |
@@ -57,7 +57,7 @@ because a format permits them.
 | Guest device-mapper snapshots | Adds a second copy-on-write mechanism when overlayfs already supplies the writable filesystem view. |
 | SquashFS or uncompressed EROFS | EROFS is the selected compressed read-only and overlay-metadata contract. Another format needs a concrete benefit; uncompressed images are primarily relevant to a future DAX path. |
 | A general init system in the outer guest | Adds services and boot work that a single workload's supervisor does not need. A systemd workload inside its own namespace is a separate compatibility question. |
-| Another vsock or multiport control device | The reserved single-port control console reuses existing queue and saved-state machinery; authentication and RPC still have to be built. |
+| Another vsock or multiport control device | The dedicated single-port control console reuses existing queue and saved-state machinery and already carries the authenticated broker; the production RPC still has to be built on top of it. |
 | Configuration in the kernel command line | Size and secrecy limits, and no per-restore replacement of the captured effective command line. |
 | Configuration baked into layers, scratch, or initramfs | Forces filesystem access or per-launch image writes and can leave stale configuration in captured RAM. The launch region keeps configuration separate from reusable artifacts. |
 | Full layer hashing inside the guest | Reads whole images on the launch path. Current integrity checks belong to host restore; UUID checks in the guest detect attachment mistakes only. |

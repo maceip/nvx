@@ -37,7 +37,7 @@ shared disk extents on suitable filesystems:
 | Reference or copy | File identity | Isolation implication |
 | --- | --- | --- |
 | Hard link or symlink | Same backing file | Does not separate the file-backed page cache |
-| Linux reflink (`FICLONE`) | Distinct inode, initially shared extents | Distinct file page caches, subject to host deduplication policy |
+| Linux reflink | Distinct inode, initially shared extents | Distinct file page caches, subject to host deduplication policy |
 | Windows ReFS block clone | Distinct file streams, initially shared extents | Physical-frame separation under COW mappings requires validation on the deployed Windows build |
 | Independent full copy | Distinct backing file | Avoids same-file sharing, subject to host deduplication policy |
 

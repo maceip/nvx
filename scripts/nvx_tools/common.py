@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import os
 import re
 import shutil
 import stat
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +27,21 @@ from .build_constants import (
 
 class ScriptError(RuntimeError):
     """Raised for an actionable command-line workflow failure."""
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def remaining_timeout(deadline: float) -> float:
+    return max(0.0, deadline - time.monotonic())
+
+
+def bytes_to_mib(value: int | float) -> float:
+    return value / (1024 * 1024)
 
 
 def artifact_path(name: str) -> Path:
@@ -100,6 +117,24 @@ def run_capture(
         capture_output=True,
     )
     return CommandResult(command, result.returncode, result.stdout, result.stderr)
+
+
+def openvmm_git_state(directory: Path) -> tuple[str, bool]:
+    head = run_capture(["git", "-C", directory, "rev-parse", "HEAD"])
+    require_success(head, "OpenVMM revision query")
+    gitlink = run_capture(
+        ["git", "-C", BuildConstants.REPO_ROOT, "rev-parse", ":openvmm"]
+    )
+    require_success(gitlink, "OpenVMM gitlink query")
+    status = run_capture(["git", "-C", directory, "status", "--porcelain"])
+    require_success(status, "OpenVMM status query")
+    revision = head.stdout.decode("ascii").strip()
+    expected_revision = gitlink.stdout.decode("ascii").strip()
+    if revision != expected_revision:
+        raise ScriptError(
+            f"OpenVMM submodule is at {revision}, expected {expected_revision}"
+        )
+    return revision, not status.stdout.strip()
 
 
 def require_file(path: Path, description: str) -> Path:

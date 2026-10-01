@@ -11,9 +11,10 @@ initramfs. This specialization is for non-confidential, single-workload
 sandboxes, not multi-container groups; the host is trusted with image content
 and guest memory.
 
-The implemented foundation is a cold-filesystem bootstrap and low-level
-snapshot primitives. The production conversion service, replaceable launch
-configuration, Rust agent, and authenticated runtime protocol described below
+The implemented foundation is a cold-filesystem bootstrap, low-level snapshot
+primitives, and an authenticated control channel with a bounded managed
+lifecycle. The production conversion service, replaceable launch
+configuration, Rust agent, and production runtime protocol described below
 are **Proposed**. They must not be inferred from the presence of block devices
 or snapshot-tier metadata alone.
 
@@ -25,16 +26,15 @@ individual argument tokens. It supplies non-secret kernel-command-line
 configuration; environment variables, secrets, arguments containing
 whitespace, and sandbox snapshot orchestration are not supported by this
 command. Lower-level OpenVMM capture and restore do support sandbox blocks.
-See [Run](../run.md#experimental-single-workload-sandbox) and
-[`scripts/nvx_tools/sandbox.py`](../../scripts/nvx_tools/sandbox.py).
+See [Run](../run.md#experimental-single-workload-sandbox).
 
-The required kernel facilities are already enabled in
-[`kernel/config-microvm`](../../kernel/config-microvm): virtio-blk, EROFS with
-compression and xattrs, overlayfs, cgroup v2, memory and process controllers,
-namespaces, `CONFIG_BPF_SYSCALL`, and `CONFIG_CGROUP_BPF`. Kernel support for a
-device filter does not mean the current agent installs one.
+The required kernel facilities are already enabled in the NVX microVM kernel
+configuration: virtio-blk, EROFS with compression and xattrs, overlayfs,
+cgroup v2, memory and process controllers, namespaces, BPF system calls, and
+cgroup BPF programs. Kernel support for a device filter does not mean the
+current agent installs one.
 
-[`guest/common/nvx-init-agent`](../../guest/common/nvx-init-agent) performs the assembly:
+The guest init agent performs the assembly:
 
 1. mount runtime tmpfs and cgroup2, create sibling `agent` and `container`
    cgroups, and move the supervisor into the agent cgroup;
@@ -67,9 +67,8 @@ the intended curated-image shape, not a requirement that all three lower
 slots be populated. The initramfs remains the supervisor's root and is not
 another container lower layer.
 
-[`guest/alpine/nvx-container-launch`](../../guest/alpine/nvx-container-launch) releases the
-barrier into private mount, PID, and UTS namespaces.
-[`guest/alpine/nvx-container-enter`](../../guest/alpine/nvx-container-enter) makes mounts
+The container launch helper releases the barrier into private mount, PID, and
+UTS namespaces. The container entry helper makes mounts
 private, creates private proc, read-only sysfs, `/dev`, devpts, and shared-memory
 mounts, binds the workload machine ID read-only, and enters the overlay with
 `chroot`. It clears supplementary groups and all capability sets and enables
@@ -299,7 +298,7 @@ hooks; kernel CRNG reseeding cannot reset their userspace RNGs, caches, or
 external connections. Blocking the requesting thread on a socket is not a
 barrier for its peers. A cloneable warm point must be single-threaded or hold
 all peers behind a runtime-owned barrier until repair is complete. The current
-workload-start helper requires a `runtime-post-restore` hook, but there is no
+workload-start helper requires a runtime post-restore hook, but there is no
 production shim or work-item handoff protocol yet.
 
 The replay contract is explicit: do not capture live external connections or

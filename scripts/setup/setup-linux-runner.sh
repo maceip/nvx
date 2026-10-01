@@ -60,6 +60,13 @@ version_at_least() {
     [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]
 }
 
+require_invariant_tsc() {
+    # Guests on a host without an invariant TSC intermittently see cross-vCPU
+    # TSC warps, which make Linux mark the guest TSC unstable (#211).
+    grep -Eq '^flags[[:space:]]*:.*[[:space:]]nonstop_tsc([[:space:]]|$)' "$1" ||
+        die "host does not expose an invariant TSC (nonstop_tsc); redeploy the VM on a host that does"
+}
+
 validate_runner_name() {
     case "$1" in
         '' | .* | *..* | *[!A-Za-z0-9_.-]*)
@@ -811,6 +818,7 @@ case "$backend" in
     kvm | mshv) ;;
     *) die "--backend must be kvm or mshv" ;;
 esac
+require_invariant_tsc /proc/cpuinfo
 [ "$(id -u)" -ne 0 ] || die "run this script as the SSH administrator, not root"
 require_command sudo
 sudo -n true || die "passwordless sudo is required"

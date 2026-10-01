@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from .common import ScriptError
+from .common import ScriptError, remaining_timeout
 
 OUTER_HEADER = struct.Struct("<4sHBB16sQQI")
 APP_HEADER = struct.Struct("<4sBBHQiI")
@@ -76,7 +76,7 @@ class _SocketStream:
     def read_exact(self, length: int, deadline: float) -> bytes:
         output = bytearray()
         while len(output) != length:
-            remaining = deadline - time.monotonic()
+            remaining = remaining_timeout(deadline)
             if remaining <= 0:
                 raise TimeoutError("managed control response timed out")
             self._connection.settimeout(min(remaining, 0.25))

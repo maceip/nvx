@@ -1646,6 +1646,16 @@ class PerformanceTests(unittest.TestCase):
                 )
             )
 
+    def test_rejects_unreadable_benchmark_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            logs = Path(temporary)
+            (logs / performance.BENCHMARK_METADATA_FILENAME).mkdir()
+
+            with self.assertRaisesRegex(
+                performance.PerformanceError, "cannot read benchmark metadata"
+            ):
+                performance.read_workload_dimensions(logs, "linux-kvm-virtual-machine")
+
     def test_rejects_microvm_v3_dimensions(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

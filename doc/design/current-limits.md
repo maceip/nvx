@@ -14,8 +14,13 @@ The current ABI family intentionally does not provide:
    non-128-MiB targets, or expansion from snapshots without an opt-in capacity;
 - ABI value 1 or boot-layout value 1 snapshots;
 - snapshot block media other than cached regular raw files;
-- sandbox-block construction through TTRPC;
-- public activation of the reserved control console or an authenticated guest RPC broker;
+- sandbox-block, network, or control-console construction through the
+   management RPC, or its restore of snapshots that contain them;
+- host networking other than the in-process portable endpoint, unrestricted
+   ingress, generic bidirectional host-loopback connectivity, or live
+   host-loopback port forwards in snapshots;
+- a production control-session RPC protocol beyond the managed lifecycle
+   subset;
 - replaceable sandbox configuration, a production OCI agent, or a public sandbox snapshot workflow;
 - serialization of live network flows or native host handles;
 - snapshotting of the contents of a live virtio-fs export; or
@@ -32,8 +37,9 @@ current host validation rejects tenant command-line configuration and records
 layer identities as unbound, but cannot prove that arbitrary guest code did
 not read an attached layer before requesting capture.
 
-The control-console reservation, attachment serialization, and snapshot RPC
-exclusion are foundations for that protocol, not completion of it. The shell
+The authenticated control console, its bounded record framing and broker saved
+state, the snapshot RPC exclusion, and the managed lifecycle subset are the
+transport foundation for that protocol, not completion of it. The shell
 bootstrap does not implement a fleet-safe platform build point, warm-runtime
 handoff, arbitrary OCI policy, or production agent resource guarantees.
 

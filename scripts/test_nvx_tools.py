@@ -12,7 +12,9 @@ import json
 import lzma
 import os
 import queue
+import select
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -723,6 +725,48 @@ class CliTests(unittest.TestCase):
         missing_network = nvx.parse_args(["run", "--network-profile", "portable"])
         with self.assertRaisesRegex(common.ScriptError, "--net and --network-profile"):
             nvx.command_run(missing_network)
+
+    def test_run_and_sandbox_forward_network_arguments(self):
+        network_arguments = (
+            "--net 10.0.0.2/24 --network-profile portable "
+            "--network-egress deny --network-ingress deny "
+            "--network-egress-allow 140.82.112.0/20:tcp:443 "
+            "--network-egress-deny 10.0.0.0/8 --host-loopback allow "
+            "--network-proxy 10.0.0.1:3128 --host-loopback-forward tcp:8080:80"
+        ).split()
+        commands = [
+            ["run", "--dry-run", *network_arguments],
+            [
+                "sandbox",
+                "--dry-run",
+                "--layer",
+                "distro,distro.erofs,11111111-1111-1111-1111-111111111111",
+                "--scratch",
+                "scratch.ext4",
+                *network_arguments,
+            ],
+        ]
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        for arguments in commands:
+            with self.subTest(command=arguments[0]):
+                args = nvx.parse_args(arguments)
+                with (
+                    patch.object(nvx, "require_file", side_effect=require),
+                    patch.object(sandbox, "require_file", side_effect=require),
+                    patch.object(
+                        nvx, "_format_command", return_value="formatted"
+                    ) as format_command,
+                ):
+                    args.handler(args)
+
+                command = format_command.call_args.args[0]
+                self.assertEqual(
+                    command[command.index("--net") :],
+                    network_arguments,
+                )
 
     def test_run_parses_denied_filesystem_paths(self):
         args = nvx.parse_args(
@@ -3134,6 +3178,77 @@ class CiConfigurationTests(unittest.TestCase):
             ):
                 self.assertIn(firmware, configuration)
 
+    def test_linux_runners_require_an_invariant_tsc(self):
+        validate_runner = (
+            BuildConstants.REPO_ROOT
+            / ".github"
+            / "actions"
+            / "validate-runner"
+            / "action.yml"
+        ).read_text(encoding="utf-8")
+        linux_setup = (
+            BuildConstants.REPO_ROOT / "scripts" / "setup" / "setup-linux-runner.sh"
+        ).read_text(encoding="utf-8")
+
+        step = validate_runner.split("    - name: Validate host TSC\n", 1)[1]
+        step = step.split("\n\n    - name: ", 1)[0]
+        self.assertIn("      if: runner.os != 'Windows'\n", step)
+        check = "\n".join(
+            line.removeprefix("        ")
+            for line in step.split("      run: |\n", 1)[1].splitlines()
+        )
+        function = linux_setup.split("require_invariant_tsc() {\n", 1)[1]
+        function = "require_invariant_tsc() {\n" + function.split("\n}\n", 1)[0]
+        function += "\n}\n"
+        self.assertLess(
+            linux_setup.index("require_invariant_tsc /proc/cpuinfo\n"),
+            linux_setup.index('sudo -n true || die "passwordless sudo is required"'),
+        )
+        if os.name != "posix":
+            return
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cpuinfo = Path(temporary) / "cpuinfo"
+            for flags, invariant in (
+                ("fpu tsc constant_tsc nonstop_tsc tsc_known_freq", True),
+                ("fpu tsc constant_tsc tsc_known_freq", False),
+                ("fpu tsc constant_tsc nonstop_tsc_x", False),
+            ):
+                cpuinfo.write_text(
+                    f"model name\t: Test CPU\nflags\t\t: {flags}\n",
+                    encoding="utf-8",
+                )
+                with self.subTest(flags=flags, check="validate-runner"):
+                    result = subprocess.run(
+                        ["bash", "-c", check.replace("/proc/cpuinfo", str(cpuinfo))],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, invariant, result.stderr)
+                    self.assertIn("CPU: Test CPU", result.stdout)
+                    self.assertEqual(
+                        "::error::Runner host does not expose an invariant TSC"
+                        in result.stderr,
+                        not invariant,
+                    )
+                with self.subTest(flags=flags, check="setup-linux-runner"):
+                    result = subprocess.run(
+                        [
+                            "sh",
+                            "-c",
+                            'die() { echo "$*" >&2; exit 1; }\n'
+                            f"{function}"
+                            f"require_invariant_tsc '{cpuinfo}'\n",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, invariant, result.stderr)
+
     def test_runner_setups_install_backend_native_openvmm_targets(self):
         linux_setup = (
             BuildConstants.REPO_ROOT / "scripts" / "setup" / "setup-linux-runner.sh"
@@ -4256,7 +4371,7 @@ class BuildTests(unittest.TestCase):
 
                     with (
                         patch.object(build, "run_checked"),
-                        patch.object(build, "run_capture", side_effect=results),
+                        patch.object(common, "run_capture", side_effect=results),
                     ):
                         build.build_openvmm(config, platform=platform)
 
@@ -4504,7 +4619,7 @@ class BuildTests(unittest.TestCase):
 
             with (
                 patch.object(BuildConstants, "REPO_ROOT", root),
-                patch.object(build, "run_capture", side_effect=results),
+                patch.object(common, "run_capture", side_effect=results),
             ):
                 build.record_openvmm_provenance(
                     build_config.OpenVmmBuildConfig(
@@ -4806,6 +4921,16 @@ class BuildTests(unittest.TestCase):
                 "netcat-openbsd",
             ],
         )
+
+    def test_ubuntu_package_lock_read_errors_are_actionable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "packages.json"
+            path.write_text("{", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                common.ScriptError, "failed to read Ubuntu package lock"
+            ):
+                ubuntu.load_package_lock(path)
 
     def test_ubuntu_safe_extractor_rejects_archive_symlink_escape(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -5586,6 +5711,356 @@ class BuildTests(unittest.TestCase):
                 build._assert_shared_status_kernel_config(config)
 
 
+def _posix_shell() -> str | None:
+    shell = shutil.which("sh")
+    if shell is None:
+        git = shutil.which("git")
+        git_shell = Path(git).parent.parent / "bin" / "sh.exe" if git else None
+        if git_shell is not None and git_shell.is_file():
+            shell = str(git_shell)
+    return shell
+
+
+def _shell_function(source: str, name: str) -> str:
+    start = source.index(f"\n{name}() {{\n") + 1
+    return source[start : source.index("\n}\n", start) + 3]
+
+
+class SandboxShareAgentTests(unittest.TestCase):
+    AGENT = Path(__file__).parents[1] / "guest" / "common" / "nvx-init-agent"
+
+    def setUp(self):
+        shell = _posix_shell()
+        if shell is None:
+            self.skipTest("POSIX shell is unavailable")
+        self.shell = shell
+        self.source = self.AGENT.read_text(encoding="utf-8")
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.rootfs = self.root / "rootfs"
+        self.rootfs.mkdir()
+
+    def _run(self, cmdline: str) -> tuple[subprocess.CompletedProcess[str], str]:
+        mount_log = self.root / "mount.log"
+        mount_log.unlink(missing_ok=True)
+        functions = "".join(
+            _shell_function(self.source, name)
+            for name in ("cmdline_value", "validate_share_target", "mount_live_share")
+        )
+        script = (
+            "set -eu\n"
+            "rootfs=$1\ncmdline=$2\nmount_log=$3\nshare_mountpoint=\n"
+            'fatal() { echo "FATAL: $*" >&2; exit 125; }\n'
+            'mount() { printf "%s\\n" "$*" >>"$mount_log"; }\n'
+            f"{functions}"
+            "mount_live_share\n"
+            'echo "mountpoint=$share_mountpoint"\n'
+        )
+        result = subprocess.run(
+            [
+                self.shell,
+                "-s",
+                "--",
+                self.rootfs.as_posix(),
+                cmdline,
+                mount_log.as_posix(),
+            ],
+            input=script,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        log = mount_log.read_text(encoding="utf-8") if mount_log.exists() else ""
+        return result, log
+
+    def _run_teardown(
+        self, script: str, *, share: bool, failing: str = ""
+    ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+        runtime = self.root / "run"
+        runtime.mkdir(exist_ok=True)
+        for name in ("container.pid", "workload-machine-id"):
+            (runtime / name).write_text("x\n", encoding="utf-8")
+        log = self.root / "teardown.log"
+        log.unlink(missing_ok=True)
+        functions = "".join(
+            _shell_function(self.source, name)
+            for name in ("unmount_live_share", "fatal", "teardown")
+        ).replace("/sbin/nvx-exit", "nvx_exit")
+        result = subprocess.run(
+            [
+                self.shell,
+                "-s",
+                "--",
+                runtime.as_posix(),
+                log.as_posix(),
+                f"{self.rootfs.as_posix()}/workspace" if share else "",
+                failing,
+            ],
+            input=(
+                "set -eu\n"
+                "runtime=$1\nlog=$2\nshare_mountpoint=$3\nfailing=$4\n"
+                "rootfs=$runtime/rootfs\nlayers=$runtime/layers\n"
+                "scratch=$runtime/scratch\n"
+                'umount() { printf "umount %s\\n" "$1" >>"$log"; '
+                '[ "$1" != "$failing" ]; }\n'
+                'mountpoint() { [ "$2" = "$layers/distro" ]; }\n'
+                'nvx_exit() { printf "exit %s\\n" "$1" >>"$log"; exit "$1"; }\n'
+                f"{functions}{script}\n"
+            ),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return result, lines
+
+    def test_agent_mounts_share_after_lifecycle_checks_for_both_lifecycles(self):
+        mount_call = self.source.index("\nmount_live_share\n")
+        self.assertLess(
+            self.source.index('fatal "configured workload home is unavailable"'),
+            mount_call,
+        )
+        self.assertLess(
+            self.source.index('fatal "unsupported workload lifecycle'), mount_call
+        )
+        machine_id = self.source.index('>"$runtime/workload-machine-id"')
+        managed_agent = self.source.index("\n    /sbin/nvx-managed-agent \\\n")
+        self.assertLess(mount_call, machine_id)
+        self.assertLess(machine_id, managed_agent)
+        self.assertLess(managed_agent, self.source.index("/sbin/nvx-container-launch"))
+        self.assertNotIn("exec /sbin/nvx-managed-agent", self.source)
+        self.assertEqual(self.source.count('\nteardown "$status"\n'), 1)
+        self.assertEqual(self.source.count('\n    teardown "$status"\n'), 1)
+        self.assertLess(managed_agent, self.source.index('\n    teardown "$status"\n'))
+
+    def test_agent_teardown_unmounts_share_before_overlay_layers_and_scratch(self):
+        result, log = self._run_teardown("teardown 7", share=True)
+        runtime = (self.root / "run").as_posix()
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(
+            log,
+            [
+                f"umount {self.rootfs.as_posix()}/workspace",
+                f"umount {runtime}/rootfs",
+                f"umount {runtime}/layers/distro",
+                f"umount {runtime}/scratch",
+                "exit 7",
+            ],
+        )
+        self.assertIn("NVX-SANDBOX-EXIT: status=7", result.stdout)
+        self.assertFalse((self.root / "run" / "workload-machine-id").exists())
+        self.assertFalse((self.root / "run" / "container.pid").exists())
+
+        result, log = self._run_teardown("teardown 0", share=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(log[0], f"umount {runtime}/rootfs")
+
+    def test_agent_teardown_reports_share_unmount_failure(self):
+        share = f"{self.rootfs.as_posix()}/workspace"
+        result, log = self._run_teardown("teardown 0", share=True, failing=share)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("failed to unmount the live share", result.stderr)
+        self.assertEqual(log[0], f"umount {share}")
+        self.assertEqual(log[-1], "exit 1")
+        self.assertIn("NVX-SANDBOX-EXIT: status=1", result.stdout)
+
+    def test_agent_fatal_unmounts_share_before_power_off(self):
+        result, log = self._run_teardown('fatal "synthetic failure"', share=True)
+        self.assertEqual(result.returncode, 125, result.stdout)
+        self.assertIn("NVX-SANDBOX-ERROR: synthetic failure", result.stderr)
+        self.assertEqual(
+            log, [f"umount {self.rootfs.as_posix()}/workspace", "exit 125"]
+        )
+
+        result, log = self._run_teardown('fatal "early failure"', share=False)
+        self.assertEqual(result.returncode, 125, result.stdout)
+        self.assertEqual(log, ["exit 125"])
+
+    def test_agent_skips_share_without_bootstrap_tokens(self):
+        result, log = self._run("console=hvc0 nvx_sandbox=1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mountpoint=\n", result.stdout)
+        self.assertEqual(log, "")
+
+    def test_agent_mounts_share_inside_container_rootfs(self):
+        (self.rootfs / "opt").mkdir()
+        for mode in ("rw", "ro"):
+            with self.subTest(mode=mode):
+                result, log = self._run(
+                    "nvx_sandbox=1 virtfs_dir=/opt/hostedtoolcache "
+                    f"virtfs_tag=microvm virtfs_mode={mode}"
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue((self.rootfs / "opt" / "hostedtoolcache").is_dir())
+                self.assertIn(
+                    f"NVX-SANDBOX-SHARE: target=/opt/hostedtoolcache mode={mode}",
+                    result.stdout,
+                )
+                self.assertEqual(
+                    log.split(),
+                    [
+                        "-t",
+                        "virtiofs",
+                        "-o",
+                        f"{mode},nosuid,nodev",
+                        "microvm",
+                        f"{self.rootfs.as_posix()}/opt/hostedtoolcache",
+                    ],
+                )
+                self.assertIn(
+                    f"mountpoint={self.rootfs.as_posix()}/opt/hostedtoolcache",
+                    result.stdout,
+                )
+
+    def test_agent_fails_closed_for_invalid_share_bootstrap(self):
+        (self.rootfs / "file").write_text("x", encoding="utf-8")
+        for cmdline, message in (
+            ("virtfs_dir=/workspace", "incomplete"),
+            ("virtfs_dir=/workspace virtfs_tag=microvm", "incomplete"),
+            ("virtfs_dir=/workspace virtfs_tag=bad/tag virtfs_mode=rw", "tag"),
+            ("virtfs_dir=/workspace virtfs_tag=microvm virtfs_mode=rx", "mode"),
+            ("virtfs_dir=workspace virtfs_tag=microvm virtfs_mode=rw", "absolute"),
+            ("virtfs_dir=/ virtfs_tag=microvm virtfs_mode=rw", "canonical"),
+            ("virtfs_dir=/a//b virtfs_tag=microvm virtfs_mode=rw", "canonical"),
+            ("virtfs_dir=/a/ virtfs_tag=microvm virtfs_mode=rw", "canonical"),
+            ("virtfs_dir=/a/./b virtfs_tag=microvm virtfs_mode=rw", "canonical"),
+            ("virtfs_dir=/a/../b virtfs_tag=microvm virtfs_mode=rw", "canonical"),
+            ("virtfs_dir=/a=b virtfs_tag=microvm virtfs_mode=rw", "reserved char"),
+            ("virtfs_dir=/proc virtfs_tag=microvm virtfs_mode=rw", "reserved"),
+            ("virtfs_dir=/sys/fs virtfs_tag=microvm virtfs_mode=rw", "reserved"),
+            ("virtfs_dir=/dev/shm virtfs_tag=microvm virtfs_mode=rw", "reserved"),
+            ("virtfs_dir=/.nvx-agent virtfs_tag=microvm virtfs_mode=ro", "reserved"),
+            ("virtfs_dir=/etc virtfs_tag=microvm virtfs_mode=ro", "reserved"),
+            ("virtfs_dir=/file virtfs_tag=microvm virtfs_mode=ro", "not a directory"),
+        ):
+            with self.subTest(cmdline=cmdline):
+                result, log = self._run(cmdline)
+                self.assertEqual(result.returncode, 125, result.stdout)
+                self.assertIn("FATAL: live share", result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(log, "")
+
+    def test_agent_rejects_symbolic_link_in_share_target(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        try:
+            (self.rootfs / "workspace").symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"symbolic links are unavailable: {error}")
+        result, log = self._run(
+            "virtfs_dir=/workspace/project virtfs_tag=microvm virtfs_mode=rw"
+        )
+        self.assertEqual(result.returncode, 125, result.stdout)
+        self.assertIn("crosses a symbolic link", result.stderr)
+        self.assertEqual(log, "")
+        self.assertFalse((outside / "project").exists())
+
+
+class ManagedAgentStopTests(unittest.TestCase):
+    SOURCE = Path(__file__).parents[1] / "guest" / "common" / "nvx-managed-agent.c"
+    OUTER = struct.Struct("<4sHBB16sQQI")
+    APP = struct.Struct("<4sBBHQiI")
+
+    def setUp(self):
+        if sys.platform != "linux":
+            self.skipTest("the managed agent requires a Linux pseudo-terminal")
+        compiler = shutil.which("cc") or shutil.which("gcc")
+        if compiler is None:
+            self.skipTest("C compiler is unavailable")
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.agent = Path(temporary.name) / "nvx-managed-agent"
+        flags = [
+            flag
+            for flag in InitramfsBuildConstants.STATIC_HELPER_CFLAGS
+            if flag != "-static"
+        ]
+        result = subprocess.run(
+            [compiler, *flags, "-o", str(self.agent), str(self.SOURCE)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def _record(
+        self, record_type: int, instance: bytes, sequence: int, payload: bytes = b""
+    ) -> bytes:
+        header = self.OUTER.pack(
+            b"NVXS", 1, record_type, 0, instance, 1, sequence, len(payload)
+        )
+        return header + payload
+
+    def _read_exact(self, fd: int, length: int, deadline: float) -> bytes:
+        data = b""
+        while len(data) < length:
+            remaining = deadline - time.monotonic()
+            self.assertGreater(remaining, 0, "managed agent did not respond")
+            readable, _, _ = select.select([fd], [], [], remaining)
+            if readable:
+                chunk = os.read(fd, length - len(data))
+                self.assertTrue(chunk, "managed agent closed the control tty")
+                data += chunk
+        return data
+
+    def _read_record(self, fd: int, deadline: float) -> tuple[int, int, bytes]:
+        header = self._read_exact(fd, self.OUTER.size, deadline)
+        magic, version, record_type, flags, _, _, sequence, length = self.OUTER.unpack(
+            header
+        )
+        self.assertEqual((magic, version, flags), (b"NVXS", 1, 0))
+        return record_type, sequence, self._read_exact(fd, length, deadline)
+
+    @staticmethod
+    def _reap(process: subprocess.Popen[bytes]) -> None:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+
+    def test_sandbox_agent_returns_to_init_agent_after_stop(self):
+        if sys.platform != "linux":
+            self.skipTest("the managed agent requires a Linux pseudo-terminal")
+        import pty
+
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        process = subprocess.Popen(
+            [
+                str(self.agent),
+                os.ttyname(slave),
+                "/run/nvx/rootfs",
+                "nvx-sandbox",
+                "65534",
+                "65534",
+                "nobody",
+                "/nonexistent",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        self.addCleanup(self._reap, process)
+        deadline = time.monotonic() + 10
+        instance = bytes(range(1, 17))
+
+        self.assertEqual(self._read_record(master, deadline)[0], 1)
+        os.write(master, self._record(3, instance, 7))
+        record_type, sequence, credit = self._read_record(master, deadline)
+        self.assertEqual((record_type, sequence, len(credit)), (4, 0, 4))
+        stop = self.APP.pack(b"NVXC", 1, 3, 0, 42, 0, 0)
+        os.write(master, self._record(5, instance, 8, stop))
+        self.assertEqual(self._read_record(master, deadline)[0], 9)
+        record_type, _, payload = self._read_record(master, deadline)
+        self.assertEqual(record_type, 5)
+        _, _, kind, _, request_id, status, length = self.APP.unpack(payload)
+        self.assertEqual((kind, request_id, status, length), (0x85, 42, 0, 0))
+
+        _, stderr = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 0, stderr)
+
+
 class SandboxTests(unittest.TestCase):
     def test_launch_contract_orders_roles_and_builds_agent_command_line(self):
         custom = sandbox.SandboxLayer.parse(
@@ -5667,6 +6142,394 @@ class SandboxTests(unittest.TestCase):
         with self.assertRaisesRegex(common.ScriptError, "UUID is invalid"):
             sandbox.SandboxLayer.parse("distro,layer.erofs,not-a-uuid")
 
+    def test_mount_parser_defaults_to_read_only_and_accepts_rw(self):
+        default = sandbox.SandboxMount.parse("/workspace,host-dir")
+        self.assertEqual(default.guest_target, "/workspace")
+        self.assertEqual(default.host_path, Path("host-dir"))
+        self.assertEqual(default.access, "ro")
+        self.assertEqual(default.denied_paths, ())
+
+        writable = sandbox.SandboxMount.parse(
+            "/opt/hostedtoolcache,host-dir,rw", ("logs", "secrets")
+        )
+        self.assertEqual(writable.access, "rw")
+        self.assertEqual(writable.denied_paths, ("logs", "secrets"))
+        self.assertEqual(
+            writable.openvmm_arguments(),
+            [
+                "--mount",
+                f"/opt/hostedtoolcache,{os.fspath(Path('host-dir'))},rw",
+                "--mount-deny",
+                "logs",
+                "--mount-deny",
+                "secrets",
+            ],
+        )
+        self.assertEqual(
+            writable.command_line_fragment(),
+            " virtfs_dir=/opt/hostedtoolcache virtfs_tag=microvm virtfs_mode=rw",
+        )
+
+    def test_mount_parser_rejects_malformed_specifications(self):
+        for value, message in (
+            ("/workspace", "GUEST_TARGET,HOST_PATH"),
+            ("/workspace,host,rw,extra", "GUEST_TARGET,HOST_PATH"),
+            ("/workspace,", "host path is empty"),
+            ("/workspace,host,rx", "unsupported sandbox mount mode"),
+        ):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(common.ScriptError, message):
+                    sandbox.SandboxMount.parse(value)
+        with self.assertRaisesRegex(common.ScriptError, "commas"):
+            sandbox.SandboxMount(guest_target="/workspace", host_path=Path("a,b"))
+        with self.assertRaisesRegex(common.ScriptError, "parent component"):
+            sandbox.SandboxMount.parse("/workspace,link/../share")
+
+    def test_mount_absolute_path_keeps_symbolic_link_components(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "link-target" / "share").mkdir(parents=True)
+            try:
+                (root / "link").symlink_to(
+                    root / "link-target", target_is_directory=True
+                )
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                mount = sandbox.SandboxMount.parse("/workspace,link/share,rw")
+                absolute = mount.absolute()
+                expected = Path.cwd() / "link" / "share"
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(absolute.host_path, expected)
+        self.assertNotIn("link-target", absolute.host_path.parts)
+        self.assertEqual(absolute.absolute(), absolute)
+        with self.assertRaisesRegex(common.ScriptError, "unique"):
+            sandbox.SandboxMount.parse("/workspace,host", ("logs", "logs"))
+        with self.assertRaisesRegex(common.ScriptError, "nonempty"):
+            sandbox.SandboxMount.parse("/workspace,host", ("",))
+        with self.assertRaisesRegex(common.ScriptError, "at most 128"):
+            sandbox.SandboxMount.parse(
+                "/workspace,host", tuple(f"path-{index}" for index in range(129))
+            )
+
+    def test_mount_target_validation_rejects_unsafe_and_reserved_targets(self):
+        for target in (
+            "",
+            "/",
+            "workspace",
+            "/workspace/",
+            "/work//space",
+            "/work/./space",
+            "/work/../space",
+            "/work space",
+            "/work=space",
+            "/work\\space",
+            "/" + "x" * 4096,
+        ):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(common.ScriptError, "invalid sandbox"):
+                    sandbox.validate_mount_target(target)
+        for target in (
+            "/proc",
+            "/proc/self",
+            "/sys",
+            "/sys/fs",
+            "/dev",
+            "/dev/shm",
+            "/.nvx-agent",
+            "/.nvx-agent/tools",
+            "/etc",
+        ):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(common.ScriptError, "reserved"):
+                    sandbox.validate_mount_target(target)
+        for target in ("/workspace", "/procfs", "/etc/app", "/opt/hostedtoolcache"):
+            with self.subTest(target=target):
+                self.assertEqual(sandbox.validate_mount_target(target), target)
+
+    def test_launch_contract_attaches_mount_and_reserves_bootstrap_tokens(self):
+        distro = sandbox.SandboxLayer.parse(
+            "distro,distro.erofs,11111111-1111-1111-1111-111111111111"
+        )
+        launch = sandbox.SandboxLaunch(
+            layers=(distro,),
+            scratch=Path("scratch.ext4"),
+            mount=sandbox.SandboxMount.parse("/workspace,share,rw", ("secrets",)),
+        )
+
+        arguments = launch.openvmm_arguments()
+        self.assertEqual(
+            arguments[arguments.index("--mount") :],
+            [
+                "--mount",
+                f"/workspace,{os.fspath(Path('share'))},rw",
+                "--mount-deny",
+                "secrets",
+            ],
+        )
+        self.assertNotIn("virtfs_", launch.kernel_command_line("quiet"))
+        for token in ("virtfs_dir=/other", "virtfs_tag=other", "virtfs_mode=rw"):
+            with self.subTest(token=token):
+                with self.assertRaisesRegex(common.ScriptError, "--mount option"):
+                    launch.kernel_command_line(token)
+
+        unmounted = sandbox.SandboxLaunch(layers=(distro,), scratch=Path("s.ext4"))
+        base = unmounted.kernel_command_line()
+        fragment = launch.mount.command_line_fragment() if launch.mount else ""
+        fitting = "x" * (
+            sandbox.SANDBOX_COMMAND_LINE_MAX_SIZE - len(base) - len(fragment) - 2
+        )
+        launch.kernel_command_line(fitting)
+        with self.assertRaisesRegex(common.ScriptError, "1024-byte"):
+            launch.kernel_command_line(fitting + "x")
+
+    def test_launch_validation_requires_plain_mount_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layer = root / "distro.erofs"
+            scratch = root / "scratch.ext4"
+            share = root / "share"
+            layer.write_bytes(b"layer")
+            scratch.write_bytes(b"scratch")
+
+            def launch(host_path: Path) -> sandbox.SandboxLaunch:
+                return sandbox.SandboxLaunch(
+                    layers=(
+                        sandbox.SandboxLayer(
+                            role="distro",
+                            path=layer,
+                            uuid="11111111-1111-1111-1111-111111111111",
+                        ),
+                    ),
+                    scratch=scratch,
+                    mount=sandbox.SandboxMount(
+                        guest_target="/workspace", host_path=host_path
+                    ),
+                )
+
+            with self.assertRaisesRegex(common.ScriptError, "plain directory"):
+                launch(share).validated()
+            share.write_bytes(b"file")
+            with self.assertRaisesRegex(common.ScriptError, "plain directory"):
+                launch(share).validated()
+            share.unlink()
+            share.mkdir()
+            validated = launch(share).validated()
+            assert validated.mount is not None
+            self.assertEqual(validated.mount.host_path, share)
+
+    def test_sandbox_command_forwards_mount_to_openvmm(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layer = root / "distro.erofs"
+            scratch = root / "scratch.ext4"
+            share = root / "share"
+            layer.write_bytes(b"distro")
+            scratch.write_bytes(b"scratch")
+            share.mkdir()
+            args = nvx.parse_args(
+                [
+                    "sandbox",
+                    "--layer",
+                    f"distro,{layer},11111111-1111-1111-1111-111111111111",
+                    "--scratch",
+                    str(scratch),
+                    "--mount",
+                    f"/workspace,{share},rw",
+                    "--mount-deny",
+                    "secrets",
+                    "--dry-run",
+                ]
+            )
+
+            def require(path: Path, _description: str) -> Path:
+                return path
+
+            with (
+                patch.object(nvx, "require_file", side_effect=require),
+                patch.object(
+                    nvx, "_format_command", return_value="formatted"
+                ) as format_command,
+            ):
+                nvx.command_sandbox(args)
+
+            command = format_command.call_args.args[0]
+            self.assertEqual(
+                command[command.index("--mount") + 1], f"/workspace,{share},rw"
+            )
+            self.assertEqual(command[command.index("--mount-deny") + 1], "secrets")
+
+    def test_sandbox_command_rejects_misplaced_mount_options(self):
+        deny_only = nvx.parse_args(
+            [
+                "sandbox",
+                "--layer",
+                "distro,distro.erofs,11111111-1111-1111-1111-111111111111",
+                "--scratch",
+                "scratch.ext4",
+                "--mount-deny",
+                "secrets",
+            ]
+        )
+        with self.assertRaisesRegex(common.ScriptError, "requires --mount"):
+            nvx.command_sandbox(deny_only)
+        for operation in ("start", "exec", "stop", "deprovision"):
+            with self.subTest(operation=operation):
+                args = nvx.parse_args(
+                    [
+                        "sandbox",
+                        operation,
+                        "--state-dir",
+                        "state",
+                        "--mount",
+                        "/workspace,share,rw",
+                    ]
+                )
+                with self.assertRaisesRegex(common.ScriptError, "only valid"):
+                    nvx.command_sandbox(args)
+
+    def test_managed_lifecycle_persists_and_replays_mount(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            layer_path = root / "distro.erofs"
+            scratch_path = root / "scratch.ext4"
+            share = root / "share"
+            layer_path.write_bytes(b"layer")
+            scratch_path.write_bytes(b"scratch")
+            share.mkdir()
+            state = root / "state"
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                sandbox_lifecycle.provision(
+                    state,
+                    sandbox.SandboxLaunch(
+                        layers=(
+                            sandbox.SandboxLayer(
+                                role="distro",
+                                path=layer_path,
+                                uuid="11111111-1111-1111-1111-111111111111",
+                            ),
+                        ),
+                        scratch=scratch_path,
+                        mount=sandbox.SandboxMount.parse(
+                            "/workspace,share,rw", ("secrets",)
+                        ),
+                    ),
+                    hypervisor="whp",
+                    memory_mib=256,
+                    net=None,
+                    network_profile=None,
+                    network_egress=None,
+                    network_ingress=None,
+                    network_egress_allow=(),
+                    network_egress_deny=(),
+                    host_loopback=None,
+                    network_proxy=None,
+                    host_loopback_forward=(),
+                    cmdline="quiet",
+                )
+            finally:
+                os.chdir(previous)
+
+            config = json.loads(
+                (state / sandbox_lifecycle.CONFIG_NAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(config["format"], sandbox_lifecycle.MOUNT_CONFIG_FORMAT)
+            with self.assertRaisesRegex(common.ScriptError, "unsupported format"):
+                sandbox_lifecycle._read_json(
+                    state / sandbox_lifecycle.CONFIG_NAME,
+                    "sandbox configuration",
+                    version=1,
+                )
+            self.assertEqual(
+                config["mount"],
+                {
+                    "guest_target": "/workspace",
+                    "host_path": os.fspath(share),
+                    "access": "rw",
+                    "denied_paths": ["secrets"],
+                },
+            )
+
+            process = MagicMock()
+            process.pid = 123
+            process.stdin = io.BytesIO()
+            context = MagicMock()
+
+            def require(path: Path, _description: str) -> Path:
+                return path
+
+            with (
+                patch.object(sandbox_lifecycle, "require_file", side_effect=require),
+                patch.object(
+                    sandbox_lifecycle.subprocess, "Popen", return_value=process
+                ) as popen,
+                patch.object(
+                    sandbox_lifecycle.ControlSession, "connect", return_value=context
+                ),
+            ):
+                sandbox_lifecycle.start(state, 10)
+
+            command = popen.call_args.args[0]
+            self.assertEqual(
+                command[command.index("--mount") + 1], f"/workspace,{share},rw"
+            )
+            self.assertEqual(command[command.index("--mount-deny") + 1], "secrets")
+
+    def test_managed_lifecycle_accepts_configuration_without_mount(self):
+        config: dict[str, object] = {
+            "format": sandbox_lifecycle.CONFIG_FORMAT,
+            "layers": [
+                {
+                    "role": "distro",
+                    "path": "distro.erofs",
+                    "uuid": "11111111-1111-1111-1111-111111111111",
+                }
+            ],
+            "scratch": "scratch.ext4",
+            "hostname": "nvx-sandbox",
+            "workload_uid": 65534,
+            "workload_gid": 65534,
+            "memory_max": None,
+            "pids_max": None,
+        }
+
+        def require(path: Path, _description: str) -> Path:
+            return path
+
+        with (
+            patch.object(sandbox, "require_file", side_effect=require),
+        ):
+            self.assertIsNone(sandbox_lifecycle._deserialize_launch(config).mount)
+            config["format"] = sandbox_lifecycle.MOUNT_CONFIG_FORMAT
+            with self.assertRaisesRegex(common.ScriptError, "does not match"):
+                sandbox_lifecycle._deserialize_launch(config)
+            config["mount"] = {"guest_target": "/workspace"}
+            with self.assertRaisesRegex(common.ScriptError, "malformed"):
+                sandbox_lifecycle._deserialize_launch(config)
+            config["mount"] = {
+                "guest_target": "/proc",
+                "host_path": "share",
+                "access": "rw",
+                "denied_paths": [],
+            }
+            with self.assertRaisesRegex(common.ScriptError, "reserved"):
+                sandbox_lifecycle._deserialize_launch(config)
+            config["mount"] = {
+                "guest_target": "/workspace",
+                "host_path": "share",
+                "access": "rw",
+                "denied_paths": [],
+            }
+            config["format"] = sandbox_lifecycle.CONFIG_FORMAT
+            with self.assertRaisesRegex(common.ScriptError, "does not match"):
+                sandbox_lifecycle._deserialize_launch(config)
+
     def test_managed_lifecycle_provisions_and_deprovisions_state(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -5706,9 +6569,32 @@ class SandboxTests(unittest.TestCase):
             config = json.loads(
                 (state / sandbox_lifecycle.CONFIG_NAME).read_text(encoding="utf-8")
             )
+            self.assertEqual(config["format"], sandbox_lifecycle.CONFIG_FORMAT)
+            self.assertIsNone(config["mount"])
             self.assertEqual(config["workload_uid"], 65534)
             self.assertEqual(config["hypervisor"], "whp")
             self.assertFalse((state / sandbox_lifecycle.RUNTIME_NAME).exists())
+
+            config["network_egress_allow"] = None
+            (state / sandbox_lifecycle.CONFIG_NAME).write_text(
+                json.dumps(config), encoding="utf-8"
+            )
+
+            def require(path: Path, _description: str) -> Path:
+                return path
+
+            with (
+                patch.object(
+                    sandbox_lifecycle,
+                    "require_file",
+                    side_effect=require,
+                ),
+                self.assertRaisesRegex(
+                    common.ScriptError, "sandbox configuration is malformed"
+                ),
+            ):
+                sandbox_lifecycle.start(state, 10)
+
             with self.assertRaisesRegex(common.ScriptError, "already provisioned"):
                 sandbox_lifecycle.provision(
                     state,
@@ -6420,6 +7306,73 @@ class BenchmarkTests(unittest.TestCase):
                     interaction.process, benchmark.TEARDOWN_TIMEOUT_SECONDS
                 )
 
+    def test_completed_output_line_with_prefix_requires_a_whole_line(self):
+        prefix = b"NVX-RESTORE-PROCESSORS-FAIL"
+        self.assertIsNone(
+            benchmark.completed_output_line_with_prefix(
+                b"NVX-RESTORE-PROCESSORS-FAIL unst", prefix
+            )
+        )
+        self.assertIsNone(
+            benchmark.completed_output_line_with_prefix(
+                b'> echo "NVX-RESTORE-PROCESSORS-FAIL count=$n"\r\n', prefix
+            )
+        )
+        self.assertEqual(
+            benchmark.completed_output_line_with_prefix(
+                b"guest\r\nNVX-RESTORE-PROCESSORS-FAIL unstable-tsc\r\nmore", prefix
+            ),
+            b"NVX-RESTORE-PROCESSORS-FAIL unstable-tsc",
+        )
+
+    def test_measure_once_stops_at_a_completed_guest_failure_marker(self):
+        class FakeInteraction:
+            def __init__(self):
+                self.process = MagicMock(pid=123)
+                self.process.poll.return_value = None
+
+            def read_output(self, chunks: queue.Queue[bytes | None]):
+                chunks.put(b'> echo "NVX-RESTORE-PROCESSORS-FAIL count=$n"\r\n')
+                chunks.put(b"Measured 6 cycles TSC warp between CPUs\r\n")
+                chunks.put(b"NVX-RESTORE-PROCESSORS-FAIL unst")
+                chunks.put(b"able-tsc\r\n")
+
+            def write_input(self, data: bytes):
+                raise AssertionError(f"unexpected input: {data!r}")
+
+            def close(self):
+                pass
+
+        interaction = FakeInteraction()
+        with tempfile.TemporaryDirectory() as temporary:
+            log_path = Path(temporary) / "restore.log"
+            with (
+                patch.object(benchmark, "InteractiveProcess", return_value=interaction),
+                patch.object(benchmark, "terminate") as terminate,
+                patch.object(benchmark, "wait_for_process_exit") as wait,
+            ):
+                with self.assertRaises(benchmark.GuestFailureReported) as raised:
+                    benchmark.measure_once(
+                        ["openvmm"],
+                        environment={},
+                        timeout=60,
+                        marker=b"NVX-RESTORE-PROCESSORS-OK count=8",
+                        marker_must_be_line=True,
+                        guest_exit_prequeued=True,
+                        log_path=log_path,
+                        failure_marker=b"NVX-RESTORE-PROCESSORS-FAIL",
+                    )
+            log = log_path.read_bytes()
+
+        self.assertEqual(
+            raised.exception.line, "NVX-RESTORE-PROCESSORS-FAIL unstable-tsc"
+        )
+        self.assertIn("TSC warp", raised.exception.output_tail)
+        self.assertIn("--- OpenVMM output ---", str(raised.exception))
+        terminate.assert_called_once_with(interaction.process)
+        wait.assert_not_called()
+        self.assertTrue(log.endswith(b"NVX-RESTORE-PROCESSORS-FAIL unstable-tsc\r\n"))
+
     def test_live_peak_rss_samples_linux_process_without_reaping(self):
         process = MagicMock(pid=123)
         with (
@@ -6839,6 +7792,25 @@ class BenchmarkTests(unittest.TestCase):
                 f"{benchmark.SNAPSHOT_CAPTURE_PATH}\n"
             )
         )
+
+    def test_mshv_and_whp_capture_after_linux_leaves_tsc_early(self):
+        wait = benchmark.stable_clocksource_wait_script()
+        for backend, waits in (("mshv", True), ("whp", True), ("kvm", False)):
+            with self.subTest(backend=backend):
+                script = benchmark.prepare_snapshot_capture_script(
+                    1, backend=backend, teardown_mode="guest-exit"
+                )
+                probe = script.split("<<'NVX_SMP_PROBE_SCRIPT'\n", 1)[1]
+                probe = probe.split("NVX_SMP_PROBE_SCRIPT\n", 1)[0]
+                self.assertEqual(probe.startswith(wait), waits)
+                self.assertEqual("SMP-CLOCKSOURCE-FAIL expected=stable" in probe, waits)
+                if waits:
+                    # The wait and its check run before the probe completes, so
+                    # the host requests the snapshot only after tsc-early is gone.
+                    self.assertLess(
+                        probe.index("SMP-CLOCKSOURCE-FAIL"),
+                        probe.index("NVX-SMP-PROBE-OK"),
+                    )
 
     def test_output_marker_must_be_a_complete_line(self):
         marker = benchmark.RESTORE_MARKER
@@ -8355,7 +9327,7 @@ class ReleaseTests(unittest.TestCase):
         response = io.BytesIO(json.dumps(releases).encode("utf-8"))
 
         with patch(
-            "nvx_tools.release.urllib.request.urlopen",
+            "nvx_tools.release.urllib.request.OpenerDirector.open",
             return_value=response,
         ):
             asset = release._latest_release_asset(
@@ -8383,7 +9355,10 @@ class ReleaseTests(unittest.TestCase):
         )
 
         with (
-            patch("nvx_tools.release.urllib.request.urlopen", side_effect=error),
+            patch(
+                "nvx_tools.release.urllib.request.OpenerDirector.open",
+                side_effect=error,
+            ),
             self.assertRaises(release.ScriptError) as context,
         ):
             release._latest_release_asset("example/nvx", "linux-kvm", "token")
@@ -8403,7 +9378,10 @@ class ReleaseTests(unittest.TestCase):
         )
 
         with (
-            patch("nvx_tools.release.urllib.request.urlopen", side_effect=error),
+            patch(
+                "nvx_tools.release.urllib.request.OpenerDirector.open",
+                side_effect=error,
+            ),
             self.assertRaisesRegex(release.ScriptError, "set GH_TOKEN"),
         ):
             release._latest_release_asset("example/nvx", "linux-kvm", None)
@@ -8420,7 +9398,10 @@ class ReleaseTests(unittest.TestCase):
         )
 
         with (
-            patch("nvx_tools.release.urllib.request.urlopen", side_effect=error),
+            patch(
+                "nvx_tools.release.urllib.request.OpenerDirector.open",
+                side_effect=error,
+            ),
             self.assertRaisesRegex(release.ScriptError, "rate limit is exhausted"),
         ):
             release._latest_release_asset("example/nvx", "linux-kvm", "token")
@@ -8457,9 +9438,9 @@ class ReleaseTests(unittest.TestCase):
 
         with (
             patch(
-                "nvx_tools.release.urllib.request.urlopen",
+                "nvx_tools.release.urllib.request.OpenerDirector.open",
                 side_effect=[error, public_response],
-            ) as urlopen,
+            ) as opener_open,
             patch("sys.stderr", io.StringIO()) as stderr,
         ):
             asset, download_token = release._latest_release_asset_with_fallback(
@@ -8468,9 +9449,9 @@ class ReleaseTests(unittest.TestCase):
                 "token",
             )
 
-        self.assertEqual(urlopen.call_count, 2)
-        authenticated_request = urlopen.call_args_list[0].args[0]
-        public_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(opener_open.call_count, 2)
+        authenticated_request = opener_open.call_args_list[0].args[0]
+        public_request = opener_open.call_args_list[1].args[0]
         self.assertIsNotNone(authenticated_request.get_header("Authorization"))
         self.assertIsNone(public_request.get_header("Authorization"))
         self.assertEqual(asset.tag, "v1.2.3")
@@ -8666,7 +9647,7 @@ class ReleaseTests(unittest.TestCase):
                 ),
                 patch.object(
                     release,
-                    "_openvmm_git_state",
+                    "openvmm_git_state",
                     return_value=(revision, True),
                 ),
                 patch("sys.stderr", stderr),
@@ -8729,6 +9710,51 @@ class ReleaseTests(unittest.TestCase):
             common.verify_sha256_sums(destination)
             self.assertIn("binary-only package", stderr.getvalue())
 
+    def test_runtime_provenance_validation_uses_required_paths(self):
+        build_dir = Path("build")
+        binary = Path("openvmm")
+
+        def artifact_path(name: str) -> Path:
+            return build_dir / name
+
+        def require_file(path: Path, _description: str) -> Path:
+            return path
+
+        with (
+            patch.object(release, "artifact_path", side_effect=artifact_path),
+            patch.object(release, "openvmm_binary_path", return_value=binary),
+            patch.object(
+                release,
+                "require_file",
+                side_effect=require_file,
+            ) as require,
+            patch.object(release, "_validate_openvmm_provenance") as openvmm,
+            patch.object(release, "_validate_kernel_provenance"),
+            patch.object(release, "_validate_initramfs_provenance"),
+        ):
+            release.validate_runtime_artifact_provenance()
+
+        self.assertEqual(
+            require.call_args_list[-3:],
+            [
+                call(
+                    build_dir / OpenVMMBuildConstants.PROVENANCE_NAME,
+                    "OpenVMM build provenance",
+                ),
+                call(
+                    build_dir / KernelBuildConstants.PROVENANCE_NAME,
+                    "kernel build provenance",
+                ),
+                call(
+                    build_dir / InitramfsBuildConstants.PROVENANCE_NAME,
+                    "initramfs build provenance",
+                ),
+            ],
+        )
+        openvmm.assert_called_once_with(
+            binary, build_dir / OpenVMMBuildConstants.PROVENANCE_NAME
+        )
+
     def test_package_rejects_dirty_openvmm_provenance(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -8737,7 +9763,7 @@ class ReleaseTests(unittest.TestCase):
             with (
                 patch.object(
                     release,
-                    "_openvmm_git_state",
+                    "openvmm_git_state",
                     return_value=(revision, False),
                 ),
                 self.assertRaisesRegex(
@@ -8929,7 +9955,7 @@ class ReleaseTests(unittest.TestCase):
                     ),
                     patch.object(
                         release,
-                        "_openvmm_git_state",
+                        "openvmm_git_state",
                         return_value=(revision, True),
                     ),
                     patch("sys.stderr", io.StringIO()),
@@ -8994,7 +10020,7 @@ class ReleaseTests(unittest.TestCase):
                 ),
                 patch.object(
                     release,
-                    "_openvmm_git_state",
+                    "openvmm_git_state",
                     return_value=(revision, True),
                 ),
                 patch.object(
@@ -9219,6 +10245,23 @@ class ReleaseTests(unittest.TestCase):
                     (build_dir / name).read_bytes(),
                     name.encode("ascii"),
                 )
+
+
+class PositiveIntTests(unittest.TestCase):
+    def test_accepts_positive_integer(self):
+        self.assertEqual(common.positive_int("1"), 1)
+
+    def test_rejects_zero_and_negative_values(self):
+        for value in ("0", "-1"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    argparse.ArgumentTypeError, "^must be greater than zero$"
+                ):
+                    common.positive_int(value)
+
+    def test_rejects_non_integer_input(self):
+        with self.assertRaises(ValueError):
+            common.positive_int("not-an-int")
 
 
 class SharedFileTests(unittest.TestCase):

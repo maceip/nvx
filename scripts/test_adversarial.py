@@ -45,6 +45,8 @@ from nvx_tools.adversarial_broker import (
 )
 from nvx_tools.adversarial_executor import (
     AdversarialExecutor,
+    _artifact_metadata,
+    _close_oracles_after_failure,
     _InitializedSession,
     _inventory_outcomes,
     _live_openvmm_pids,
@@ -58,7 +60,13 @@ from nvx_tools.adversarial_oracles import (
     run_bounded_process,
 )
 from nvx_tools.benchmark import InteractiveProcess
-from nvx_tools.build_constants import ReleaseBuildConstants
+from nvx_tools.build_constants import (
+    AlpineBuildConstants,
+    InitramfsBuildConstants,
+    KernelBuildConstants,
+    OpenVMMBuildConstants,
+    ReleaseBuildConstants,
+)
 from nvx_tools.common import ScriptError
 
 
@@ -1521,7 +1529,7 @@ class CopilotContainmentTests(unittest.TestCase):
     def test_missing_copilot_is_a_preflight_failure(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temporary,
-            patch("nvx_tools.adversarial.shutil.which", return_value=None),
+            patch("nvx_tools.common.shutil.which", return_value=None),
         ):
             with self.assertRaisesRegex(ScriptError, "required"):
                 CopilotController(
@@ -1533,7 +1541,7 @@ class CopilotContainmentTests(unittest.TestCase):
     def test_copilot_smoke_rejects_boolean_schema_version(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temporary,
-            patch("nvx_tools.adversarial.shutil.which", return_value="copilot"),
+            patch("nvx_tools.common.shutil.which", return_value="copilot"),
             patch.object(
                 CopilotController,
                 "_version",
@@ -1577,6 +1585,44 @@ class CopilotContainmentTests(unittest.TestCase):
         self.assertNotIn("SSH_AUTH_SOCK", environment)
         self.assertNotIn("UNRELATED_SECRET", environment)
 
+    def test_executor_resolves_build_artifacts_with_shared_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            openvmm = root / OpenVMMBuildConstants.BINARY_NAME
+            openvmm.write_bytes(b"openvmm")
+
+            def artifact_path(name: str) -> Path:
+                path = root / name
+                path.write_bytes(name.encode())
+                return path
+
+            with (
+                patch(
+                    "nvx_tools.adversarial_executor.artifact_path",
+                    side_effect=artifact_path,
+                ) as resolve,
+                patch(
+                    "nvx_tools.adversarial_executor.openvmm_binary_path",
+                    return_value=openvmm,
+                ),
+                patch(
+                    "nvx_tools.adversarial_executor.validate_runtime_artifact_provenance"
+                ),
+            ):
+                _artifact_metadata()
+
+        self.assertEqual(
+            [entry.args[0] for entry in resolve.call_args_list],
+            [
+                KernelBuildConstants.BINARY_NAME,
+                AlpineBuildConstants.INITRAMFS_NAME,
+                AlpineBuildConstants.PACKAGE_MANIFEST_NAME,
+                InitramfsBuildConstants.PROVENANCE_NAME,
+                KernelBuildConstants.PROVENANCE_NAME,
+                OpenVMMBuildConstants.PROVENANCE_NAME,
+            ],
+        )
+
     def test_external_executor_also_drops_controller_credentials(self) -> None:
         process = MagicMock()
         process.stdin = MagicMock()
@@ -1610,6 +1656,23 @@ class CopilotContainmentTests(unittest.TestCase):
             executor = AdversarialExecutor(Path(temporary))
             with self.assertRaisesRegex(ScriptError, "must be an integer"):
                 executor.handle({"schema_version": True, "operation": "shutdown"})
+
+    def test_executor_failure_closes_oracles(self) -> None:
+        oracles = MagicMock()
+
+        _close_oracles_after_failure(oracles, ScriptError("operation failed"))
+
+        oracles.close.assert_called_once_with()
+
+    def test_executor_failure_reports_oracle_cleanup_failure(self) -> None:
+        oracles = MagicMock()
+        oracles.close.side_effect = ScriptError("cleanup failed")
+
+        with self.assertRaisesRegex(
+            ScriptError,
+            "operation failed; oracle cleanup also failed: cleanup failed",
+        ):
+            _close_oracles_after_failure(oracles, ScriptError("operation failed"))
 
     def test_external_executor_rejects_dirty_source_tree(self) -> None:
         campaign = "workload-isolation"
@@ -1851,7 +1914,7 @@ class CopilotContainmentTests(unittest.TestCase):
         ) as temporary:
             relative_run_dir = Path(temporary).relative_to(Path.cwd())
             with (
-                patch("nvx_tools.adversarial.shutil.which", return_value="copilot"),
+                patch("nvx_tools.common.shutil.which", return_value="copilot"),
                 patch.object(
                     CopilotController,
                     "_version",
@@ -1958,7 +2021,7 @@ class CopilotContainmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with (
-                patch("nvx_tools.adversarial.shutil.which", return_value="copilot"),
+                patch("nvx_tools.common.shutil.which", return_value="copilot"),
                 patch.object(
                     CopilotController,
                     "_version",

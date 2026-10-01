@@ -43,6 +43,7 @@
 #define OUTPUT_CHUNK_BYTES 32768U
 #define MAX_TIMEOUT_MS (60U * 60U * 1000U)
 #define PORTB_CONSOLE 0xe9
+#define AGENT_STOPPED 1
 
 struct outer_record {
     uint8_t type;
@@ -870,8 +871,7 @@ static int handle_data_record(
             return -1;
         }
         tcdrain(session->fd);
-        execl("/sbin/nvx-exit", "nvx-exit", "0", (char *)NULL);
-        return -1;
+        return AGENT_STOPPED;
     default:
         return send_app_error(
             session, request.request_id, 95, "unsupported-operation");
@@ -899,7 +899,13 @@ static int run_agent(
                 return -1;
             }
         } else if (record.type == OUTER_DATA) {
-            if (handle_data_record(session, config, &record) != 0) {
+            int result = handle_data_record(session, config, &record);
+
+            if (result == AGENT_STOPPED) {
+                free_outer_record(&record);
+                return AGENT_STOPPED;
+            }
+            if (result != 0) {
                 portb_error("data", errno);
                 free_outer_record(&record);
                 return -1;
@@ -913,10 +919,27 @@ static int run_agent(
     }
 }
 
+/*
+ * Direct mode runs as PID 1 and powers the VM off itself. In sandbox mode the
+ * init agent supervises this process and unmounts the live share, overlay,
+ * layers, and scratch before it powers the VM off.
+ */
+static int finish_agent(const struct agent_config *config, int status)
+{
+    char code[12];
+
+    if (config->direct) {
+        snprintf(code, sizeof(code), "%d", status);
+        execl("/sbin/nvx-exit", "nvx-exit", code, (char *)NULL);
+    }
+    return status;
+}
+
 int main(int argc, char **argv)
 {
     struct control_session session = {0};
     struct agent_config config;
+    int result;
 
     if (argc != 8) {
         return 125;
@@ -936,8 +959,7 @@ int main(int argc, char **argv)
             STDERR_FILENO,
             "NVX-MANAGED-ERROR: stage=control-open status=%d\n",
             status);
-        execl("/sbin/nvx-exit", "nvx-exit", "125", (char *)NULL);
-        return 125;
+        return finish_agent(&config, 125);
     }
     if (configure_control_tty(session.fd) != 0) {
         int status = errno;
@@ -947,10 +969,14 @@ int main(int argc, char **argv)
             "NVX-MANAGED-ERROR: stage=control-tty status=%d\n",
             status);
         close(session.fd);
-        execl("/sbin/nvx-exit", "nvx-exit", "125", (char *)NULL);
-        return 125;
+        return finish_agent(&config, 125);
     }
-    if (run_agent(&session, &config) != 0) {
+    result = run_agent(&session, &config);
+    if (result == AGENT_STOPPED) {
+        close(session.fd);
+        return finish_agent(&config, 0);
+    }
+    if (result != 0) {
         int status = errno;
         portb_error("control-session", status);
         dprintf(
@@ -960,8 +986,7 @@ int main(int argc, char **argv)
         if (session.fd >= 0) {
             close(session.fd);
         }
-        execl("/sbin/nvx-exit", "nvx-exit", "125", (char *)NULL);
-        return 125;
+        return finish_agent(&config, 125);
     }
     return 0;
 }

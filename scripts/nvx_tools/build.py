@@ -38,6 +38,7 @@ from .common import (
     artifact_path,
     download_verified,
     format_size,
+    openvmm_git_state,
     require_file,
     require_success,
     require_tool,
@@ -367,25 +368,12 @@ def initramfs_provenance_inputs() -> dict[str, object]:
 
 def record_openvmm_provenance(config: OpenVmmBuildConfig) -> None:
     """Bind an OpenVMM executable to the checked-out submodule revision."""
-    head = run_capture(["git", "-C", config.directory, "rev-parse", "HEAD"])
-    require_success(head, "OpenVMM revision query")
-    gitlink = run_capture(
-        ["git", "-C", BuildConstants.REPO_ROOT, "rev-parse", ":openvmm"]
-    )
-    require_success(gitlink, "OpenVMM gitlink query")
-    status = run_capture(["git", "-C", config.directory, "status", "--porcelain"])
-    require_success(status, "OpenVMM status query")
-    source_revision = head.stdout.decode("ascii").strip()
-    expected_revision = gitlink.stdout.decode("ascii").strip()
-    if source_revision != expected_revision:
-        raise ScriptError(
-            f"OpenVMM submodule is at {source_revision}, expected {expected_revision}"
-        )
+    source_revision, source_clean = openvmm_git_state(config.directory)
     executable = require_file(config.output, "OpenVMM release binary")
     provenance = {
         "format": OpenVMMBuildConstants.PROVENANCE_FORMAT,
         "source_revision": source_revision,
-        "source_clean": not status.stdout.strip(),
+        "source_clean": source_clean,
         "executable_sha256": sha256_file(executable),
     }
     path = config.build_directory / OpenVMMBuildConstants.PROVENANCE_NAME

@@ -12,13 +12,15 @@ guest without firmware or a PC platform. Its design has four primary goals:
 - capture a running VM into immutable artifacts that can be restored in a new
   process without serializing host handles.
 
-The implemented runtime profile is `MachineProfile::Microvm`, selected only by
-`--machine microvm`. It uses fixed sandbox layer and scratch roles,
-deterministic SMP topology, and shared virtio-mmio interrupt status with
+The implemented runtime profile is the microVM machine profile. It is selected
+explicitly, by `--machine microvm` on the OpenVMM command line or by the
+microVM machine profile of the management RPC, and is never inferred from a
+kernel, device, or hypervisor choice. It uses fixed sandbox layer and scratch
+roles, deterministic SMP topology, and shared virtio-mmio interrupt status with
 edge-triggered delivery. Snapshot manifests retain microVM ABI value 2 and
 boot-layout value 2, optional restore-time RAM expansion uses machine-contract
-capability version 1, and TTRPC uses numeric machine-profile value 2. KVM and
-MSHV are supported on Linux and WHP is supported on Windows.
+capability version 1, and the management RPC uses numeric machine-profile
+value 2. KVM and MSHV are supported on Linux and WHP is supported on Windows.
 Hypervisor-specific code provides partition creation, vCPU execution,
 interrupt injection, and host resource integration. The machine profile owns
 the boot protocol, memory map, device topology, command line, and snapshot
@@ -43,9 +45,7 @@ flowchart TB
    Whp --> Contract
 ```
 
-The public profile and ABI constants live in
-[`openvmm_defs::config`](../../openvmm/openvmm/openvmm_defs/src/config.rs). The
-profile is selected independently from the hypervisor, for example:
+The profile is selected independently from the hypervisor, for example:
 
 ```text
 openvmm --machine microvm --hypervisor kvm  --kernel vmlinux --initrd initramfs.cpio

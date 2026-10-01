@@ -21,14 +21,17 @@ from typing import Any, cast
 from .benchmark import (
     RESTORE_MARKER,
     SMP_PROBE_COMPLETION_MARKER,
+    SNAPSHOT_PROFILE_ENV,
     GuestCommandResult,
+    GuestFailureReported,
     measure_once,
+    parse_snapshot_profile_line,
     positive_float,
     positive_int,
     record_adversarial_openvmm_pid,
     smp_probe_script,
     snapshot_restore_command,
-    whp_stable_clocksource_wait_script,
+    stable_clocksource_wait_script,
     workload_boot_command,
 )
 from .benchmark import (
@@ -140,6 +143,18 @@ WORKLOAD_IDENTITY_MARKER = b"NVX-WORKLOAD-IDENTITY-OK uid=65534 gid=65534"
 BOOT_MARKER = b"NVX-GUEST-BOOT-OK:"
 GUEST_BOOT_COMPLETION_MARKER = b"NVX-GUEST-BOOT-CHECK-OK"
 GUEST_IDENTITY_COMPLETION_MARKER = b"NVX-GUEST-IDENTITY-OK"
+RESTORE_PROCESSORS_FAILURE_MARKER = b"NVX-RESTORE-PROCESSORS-FAIL"
+RESTORE_UNSTABLE_TSC_FAILURE = "NVX-RESTORE-PROCESSORS-FAIL unstable-tsc"
+# Records each VP's applied restore downtime and which restored MSHV APs were
+# aligned to the BSP counter.
+RESTORE_TSC_LOG_FILTER = (
+    "off,vmm_core::partition_unit::vp_set::tsc=debug,virt_mshv::x86_64::tsc=info"
+)
+TSC_CONTROL_PROCESSORS = 8
+TSC_CONTROL_ROUNDS = 20
+TSC_CONTROL_COMPLETION_MARKER = b"NVX-TSC-CONTROL-DONE"
+TSC_CONTROL_RESULT_PREFIX = "NVX-TSC-CONTROL-RESULT "
+HOST_CPUINFO = Path("/proc/cpuinfo")
 OUTCOME_TOP_LEVEL_FIELDS = frozenset(
     {
         "schema_version",
@@ -313,7 +328,7 @@ def _snapshot_core_script(backend: str) -> str:
             'current_clocksource)" = kvm-clock ] || fail 46'
         )
     elif backend == "whp":
-        select_clocksource = whp_stable_clocksource_wait_script()
+        select_clocksource = stable_clocksource_wait_script()
         validate_clocksource = (
             '[ "$(cat /sys/devices/system/clocksource/clocksource0/'
             'current_clocksource)" != tsc-early ] || fail 46'
@@ -346,7 +361,12 @@ def _read_outcome_report(path: Path) -> dict[str, Any]:
     raw = cast(dict[str, object], value)
     if set(raw) != set(OUTCOME_TOP_LEVEL_FIELDS):
         raise RuntimeError("structured outcome report has unexpected top-level fields")
-    if raw["schema_version"] != 1:
+    schema_version = raw["schema_version"]
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version != 1
+    ):
         raise RuntimeError("structured outcome report has an unsupported version")
     instance_id = raw["instance_id"]
     if (
@@ -2009,6 +2029,142 @@ def run_smp_snapshot(
                 )
 
 
+def _restore_vp_bindings(output: bytes) -> list[int]:
+    """Return the VP indices bound by one profiled OpenVMM process."""
+    bound: list[int] = []
+    thread_bind_records = 0
+    for line in _output_lines(output):
+        record = parse_snapshot_profile_line(line)
+        if record is None or record["operation"] != "startup":
+            continue
+        phase = cast(str, record["phase"])
+        if phase == "vp_thread_bind":
+            thread_bind_records += 1
+        elif phase == "vp_bind_bsp":
+            bound.append(0)
+        elif phase.startswith("vp_bind_ap_"):
+            index = phase.removeprefix("vp_bind_ap_")
+            if not index.isdecimal() or int(index) == 0:
+                raise RuntimeError(f"malformed VP binding profile phase {phase!r}")
+            bound.append(int(index))
+    if thread_bind_records != 1:
+        raise RuntimeError(
+            "expected exactly one startup.vp_thread_bind profile record, "
+            f"found {thread_bind_records}"
+        )
+    return sorted(bound)
+
+
+def _restore_label(target: int | None) -> str:
+    return "untargeted restore" if target is None else f"restore target {target}"
+
+
+def _check_restore_vp_bindings(
+    output: bytes,
+    backend: str,
+    *,
+    target: int | None,
+    capacity: int,
+) -> None:
+    # Only MSHV instantiates the VP prefix of an explicit restore target.
+    # Untargeted MSHV restores and every KVM or WHP restore bind the capacity.
+    expected = target if backend == "mshv" and target is not None else capacity
+    bound = _restore_vp_bindings(output)
+    if bound != list(range(expected)):
+        raise RuntimeError(
+            f"{_restore_label(target)} bound VPs {bound} on {backend}; "
+            f"expected exactly VPs 0..{expected - 1} of capacity {capacity}"
+        )
+
+
+def _tsc_control_verdict(text: str) -> str:
+    """Summarize the fresh-boot TSC control result printed by the guest."""
+    for line in text.splitlines():
+        line = line.removesuffix("\r")
+        if line.startswith(TSC_CONTROL_RESULT_PREFIX):
+            fields = line.removeprefix(TSC_CONTROL_RESULT_PREFIX)
+            state, _, activations = fields.partition(" activations=")
+            if state == "stable" and activations.isdecimal():
+                return (
+                    "fresh-boot TSC control: no TSC instability across "
+                    f"{activations} CPU activations without snapshot restore"
+                )
+            if state == "unstable" and activations.isdecimal():
+                return (
+                    "fresh-boot TSC control: Linux also found TSC instability "
+                    f"without snapshot restore after {activations} CPU activations"
+                )
+            break
+    return "fresh-boot TSC control did not report a result"
+
+
+def _host_invariant_tsc_note(cpuinfo: Path = HOST_CPUINFO) -> str:
+    """Report whether a Linux host CPU exposes an invariant TSC.
+
+    Guests on a host without one intermittently see cross-vCPU TSC warps
+    whether or not they were restored (#211).
+    """
+    try:
+        text = cpuinfo.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        name, _, flags = line.partition(":")
+        if name.strip() == "flags":
+            if "nonstop_tsc" in flags.split():
+                return "host CPU exposes an invariant TSC (nonstop_tsc)\n"
+            return (
+                "host CPU does not expose an invariant TSC (nonstop_tsc); guests "
+                "on this host intermittently see cross-vCPU TSC warps\n"
+            )
+    return ""
+
+
+def run_fresh_boot_tsc_control(
+    executable: Path,
+    kernel: Path,
+    initrd: Path,
+    backend: str,
+    *,
+    memory_mib: int,
+    timeout: float,
+    log_path: Path,
+) -> str:
+    """Check whether a never-restored guest reproduces a restore TSC failure.
+
+    The guest boots every processor with Linux's cross-CPU TSC warp check
+    forced, then repeatedly reactivates each AP against CPU 0. The result only
+    classifies the failure that triggered it.
+    """
+    command = workload_boot_command(
+        executable,
+        backend,
+        kernel,
+        initrd,
+        memory_mib,
+        "quiet loglevel=0 clearcpuid=tsc_adjust",
+        processors=TSC_CONTROL_PROCESSORS,
+    )
+    script = _render_script(
+        "tsc-sync-control.sh.in",
+        PROCESSORS=str(TSC_CONTROL_PROCESSORS),
+        ROUNDS=str(TSC_CONTROL_ROUNDS),
+    )
+    try:
+        result = run_guest_script(
+            command,
+            script,
+            TSC_CONTROL_COMPLETION_MARKER,
+            timeout=timeout,
+            log_path=log_path,
+        )
+    except Exception as error:
+        # The control only annotates the restore failure that triggered it.
+        summary = str(error).splitlines()[0] if str(error) else type(error).__name__
+        return f"fresh-boot TSC control did not complete: {summary}"
+    return _tsc_control_verdict(result["text"])
+
+
 def run_restore_processors(
     executable: Path,
     kernel: Path,
@@ -2022,11 +2178,17 @@ def run_restore_processors(
     check_tsc_sync: bool = False,
 ) -> None:
     capacity = 8
-    cmdline = "quiet loglevel=0 maxcpus=1"
+    boot_online = 1
+    cmdline = f"quiet loglevel=0 maxcpus={boot_online}"
     script = _read_script("restore-processors.sh")
     if check_tsc_sync:
         cmdline += " clearcpuid=tsc_adjust"
         script = _read_script("restore-tsc-sync.sh") + script
+    # The VP-binding lifecycle records identify the VPs that each restore
+    # instantiates without changing restore behavior.
+    environment = _restore_environment()
+    environment["OPENVMM_LOG"] = RESTORE_TSC_LOG_FILTER
+    environment[SNAPSHOT_PROFILE_ENV] = "1"
     with tempfile.TemporaryDirectory(prefix="nvx-restore-processors-") as temporary:
         snapshot_path = Path(temporary) / "snapshot"
         boot_command = workload_boot_command(
@@ -2043,31 +2205,61 @@ def run_restore_processors(
             snapshot_path,
             backend=backend,
             timeout=timeout,
-            processors=1,
+            processors=boot_online,
             post_restore_script=script,
             log_path=output_dir / "restore-processors-capture.log",
         )
         fingerprint = _snapshot_fingerprint(snapshot_path)
-        for target in dict.fromkeys(processor_counts):
-            marker = f"NVX-RESTORE-PROCESSORS-OK count={target}".encode()
-            measure_once(
-                snapshot_restore_command(
-                    executable,
-                    backend,
-                    snapshot_path,
-                    processors=capacity,
-                    restore_processors=target,
-                ),
-                environment=_restore_environment(),
-                timeout=timeout,
-                marker=marker,
-                marker_must_be_line=True,
-                guest_exit_prequeued=True,
-                log_path=output_dir / f"restore-processors-{target}.log",
+        # An untargeted restore keeps the captured boot-online prefix.
+        targets: list[int | None] = [*dict.fromkeys(processor_counts), None]
+        for target in targets:
+            name = "untargeted" if target is None else str(target)
+            online = boot_online if target is None else target
+            marker = f"NVX-RESTORE-PROCESSORS-OK count={online}".encode()
+            log_path = output_dir / f"restore-processors-{name}.log"
+            try:
+                measure_once(
+                    snapshot_restore_command(
+                        executable,
+                        backend,
+                        snapshot_path,
+                        processors=capacity,
+                        restore_processors=target,
+                    ),
+                    environment=environment,
+                    timeout=timeout,
+                    marker=marker,
+                    marker_must_be_line=True,
+                    guest_exit_prequeued=True,
+                    log_path=log_path,
+                    failure_marker=RESTORE_PROCESSORS_FAILURE_MARKER,
+                )
+            except GuestFailureReported as error:
+                verdict = ""
+                if error.line == RESTORE_UNSTABLE_TSC_FAILURE:
+                    verdict = run_fresh_boot_tsc_control(
+                        executable,
+                        kernel,
+                        initrd,
+                        backend,
+                        memory_mib=memory_mib,
+                        timeout=timeout,
+                        log_path=output_dir / "restore-processors-tsc-control.log",
+                    )
+                    verdict += "\n" + _host_invariant_tsc_note()
+                raise RuntimeError(
+                    f"{_restore_label(target)}: guest reported {error.line}\n"
+                    f"{verdict}--- OpenVMM output ---\n{error.output_tail}"
+                ) from error
+            _check_restore_vp_bindings(
+                log_path.read_bytes(),
+                backend,
+                target=target,
+                capacity=capacity,
             )
             if _snapshot_fingerprint(snapshot_path) != fingerprint:
                 raise RuntimeError(
-                    f"restore target {target} modified snapshot artifacts"
+                    f"{_restore_label(target)} modified snapshot artifacts"
                 )
 
 
@@ -3222,13 +3414,14 @@ def run_scratch_snapshot(
         )
 
 
-def _snapshot_tier_script(tier: str) -> str:
-    platform = tier == "platform"
-    workload_start = tier == "workload-start"
-    instance_checkpoint = tier == "instance-checkpoint"
-    if not (platform or workload_start or instance_checkpoint):
+def _snapshot_tier_kinds(tier: str) -> tuple[bool, bool, bool]:
+    if tier not in ("platform", "workload-start", "instance-checkpoint"):
         raise ValueError(f"unsupported snapshot tier {tier!r}")
+    return tier == "platform", tier == "workload-start", tier == "instance-checkpoint"
 
+
+def _snapshot_tier_script(tier: str) -> str:
+    platform, workload_start, instance_checkpoint = _snapshot_tier_kinds(tier)
     prefix = f"NVX-TIER-{tier.upper()}"
     workload_marker = f"{prefix}-WORKLOAD-RAN"
     paired_setup = ""
@@ -3355,11 +3548,7 @@ def _run_snapshot_tier(
     timeout: float,
     output_dir: Path,
 ) -> None:
-    platform = tier == "platform"
-    workload_start = tier == "workload-start"
-    instance_checkpoint = tier == "instance-checkpoint"
-    if not (platform or workload_start or instance_checkpoint):
-        raise ValueError(f"unsupported snapshot tier {tier!r}")
+    platform, workload_start, instance_checkpoint = _snapshot_tier_kinds(tier)
 
     prefix = f"NVX-TIER-{tier.upper()}"
     capture_marker = f"{prefix}-CAPTURE".encode()

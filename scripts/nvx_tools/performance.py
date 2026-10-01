@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from .common import bytes_to_mib, positive_int
+
 LEGACY_CSV_FIELDS = ["commit", "metric", "unit", "direction", "p50"]
 CSV_FIELDS = [
     "platform",
@@ -66,7 +68,6 @@ LIFECYCLE_METRICS = frozenset(
         "openvmm_snapshot_restore_peak_rss",
     }
 )
-BYTES_PER_MIB = 1024 * 1024
 LIFECYCLE_MEMORY_MIB = 128
 LIFECYCLE_BOOT_MARKER = "ALPINE-MICROVM-BOOT-OK"
 LIFECYCLE_RESTORE_MARKER = "OPENVMM-SNAPSHOT-RESTORE-OK"
@@ -802,12 +803,16 @@ def read_workload_dimensions(
     input_dir: Path, expected_platform: str
 ) -> tuple[BenchmarkDimensions, dict[str, object] | None]:
     metadata_path = input_dir / BENCHMARK_METADATA_FILENAME
-    if not metadata_path.exists():
-        return BenchmarkDimensions(expected_platform, 1, 1), None
     try:
         document = _json_object(
             json.loads(metadata_path.read_text(encoding="utf-8")), str(metadata_path)
         )
+    except FileNotFoundError:
+        return BenchmarkDimensions(expected_platform, 1, 1), None
+    except OSError as error:
+        raise PerformanceError(
+            f"cannot read benchmark metadata {metadata_path}: {error}"
+        ) from error
     except (UnicodeError, json.JSONDecodeError) as error:
         raise PerformanceError(
             f"invalid benchmark metadata JSON {metadata_path}: {error}"
@@ -1156,7 +1161,7 @@ def read_lifecycle_data(platform: str, input_path: Path) -> LifecycleData:
         metric: (
             unit,
             "lower",
-            value / BYTES_PER_MIB if unit == "MiB" else value,
+            bytes_to_mib(value) if unit == "MiB" else value,
         )
         for metric, section, field, unit in metric_fields
         for value in [_openvmm_value(document, section, backend, field, input_path)]
@@ -1273,8 +1278,8 @@ def append_openvmm_diagnostics(
             document, section, backend, "peak_rss_max_bytes", source
         )
         lines.append(
-            f"| {label} | {p50 / BYTES_PER_MIB:.2f} MiB | "
-            f"{maximum / BYTES_PER_MIB:.2f} MiB |"
+            f"| {label} | {bytes_to_mib(p50):.2f} MiB | "
+            f"{bytes_to_mib(maximum):.2f} MiB |"
         )
     lines.extend(
         [
@@ -1931,13 +1936,6 @@ def gate_results(
     return 1 if regressions else 0
 
 
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be greater than zero")
-    return parsed
-
-
 def _non_negative_float(value: str) -> float:
     parsed = float(value)
     if not math.isfinite(parsed) or parsed < 0:
@@ -1994,10 +1992,10 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
             "history file restart baseline warmup"
         ),
     )
-    gate.add_argument("--window", type=_positive_int, default=10)
+    gate.add_argument("--window", type=positive_int, default=10)
     gate.add_argument(
         "--minimum-history",
-        type=_positive_int,
+        type=positive_int,
         default=10,
         help="base-branch points required before gating a metric (default: 10)",
     )

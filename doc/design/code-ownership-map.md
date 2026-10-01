@@ -1,28 +1,34 @@
-# Code ownership map
+# Component responsibility map
 
 [Design index](../design.md)
 
-| Area | Primary implementation |
+This map assigns each design area to the architectural component responsible
+for it. It is a navigation aid, not an implementation index: the components
+own their internal structure, and the other design chapters define the
+contracts between them.
+
+| Area | Responsible component |
 | --- | --- |
-| Public profile, ABI constants, validation, command line | [`openvmm_defs/src/config.rs`](../../openvmm/openvmm/openvmm_defs/src/config.rs) |
-| CLI and host attachment construction | [`openvmm_entry/src`](../../openvmm/openvmm/openvmm_entry/src) |
-| Worker composition and fixed virtio placement | [`openvmm_core/src/worker`](../../openvmm/openvmm/openvmm_core/src/worker) |
-| Restore-time VP materialization and saved-state filtering | [`openvmm_core/src/worker/dispatch.rs`](../../openvmm/openvmm/openvmm_core/src/worker/dispatch.rs) and [`vmm_core/src/partition_unit/vp_set.rs`](../../openvmm/vmm_core/src/partition_unit/vp_set.rs) |
-| Restore-time RAM capacity, range selection, and split backing | [`openvmm_helpers/src/snapshot.rs`](../../openvmm/openvmm/openvmm_helpers/src/snapshot.rs), [`openvmm_core/src/worker/memory_layout.rs`](../../openvmm/openvmm/openvmm_core/src/worker/memory_layout.rs), and [`openvmm_core/src/worker/dispatch.rs`](../../openvmm/openvmm/openvmm_core/src/worker/dispatch.rs) |
-| Linux direct MP-table loading | [`vm/loader/src/linux.rs`](../../openvmm/vm/loader/src/linux.rs) and [`vm/loader/src/mptable.rs`](../../openvmm/vm/loader/src/mptable.rs) |
-| Base-chipset allowlist and memory-layout defaults | [`vmm_core/vm_manifest_builder`](../../openvmm/vmm_core/vm_manifest_builder) |
-| portb, shutdown, and snapshot PMIO | [`vm/devices/chipset/src/microvm.rs`](../../openvmm/vm/devices/chipset/src/microvm.rs) |
-| RTC normalization | [`vm/devices/chipset/src/cmos_rtc.rs`](../../openvmm/vm/devices/chipset/src/cmos_rtc.rs) |
-| Virtio device-private saved state | [`vm/devices/virtio`](../../openvmm/vm/devices/virtio) |
-| Snapshot format, machine contract, publication, validation | [`openvmm_helpers/src/snapshot.rs`](../../openvmm/openvmm/openvmm_helpers/src/snapshot.rs) |
-| Capture orchestration | [`openvmm_entry/src/vm_controller.rs`](../../openvmm/openvmm/openvmm_entry/src/vm_controller.rs) |
-| Snapshot management exclusion | [`openvmm_core/src/worker/dispatch/snapshot_rpc.rs`](../../openvmm/openvmm/openvmm_core/src/worker/dispatch/snapshot_rpc.rs) |
-| Portb process-exit output drain | [`openvmm_entry/src/microvm_output.rs`](../../openvmm/openvmm/openvmm_entry/src/microvm_output.rs) |
-| Backend snapshot clocks | [`virt_kvm`](../../openvmm/vmm_core/virt_kvm), [`virt_mshv`](../../openvmm/vmm_core/virt_mshv), and [`virt_whp`](../../openvmm/vmm_core/virt_whp) |
-| Sandbox launch and kernel features | [`scripts/nvx_tools/sandbox.py`](../../scripts/nvx_tools/sandbox.py) and [`kernel/config-microvm`](../../kernel/config-microvm) |
-| Workload namespace and root construction | [`guest/alpine/nvx-container-launch`](../../guest/alpine/nvx-container-launch) and [`guest/alpine/nvx-container-enter`](../../guest/alpine/nvx-container-enter) |
-| Guest workload, scratch quiesce, and post-restore CPU/RAM repair | [`guest/common/nvx-snapshot`](../../guest/common/nvx-snapshot) and [`guest/common/nvx-init-agent`](../../guest/common/nvx-init-agent) |
-| OpenVMM control-plane and guest-artifact integration tests | [`vmm_tests/tests/tests/x86_64/microvm.rs`](../../openvmm/vmm_tests/vmm_tests/tests/tests/x86_64/microvm.rs) and [`vmm_tests/tests/tests/ttrpc.rs`](../../openvmm/vmm_tests/vmm_tests/tests/tests/ttrpc.rs) |
-| NVX Linux and device integration tests | [`scripts/nvx_tools/microvm_tests.py`](../../scripts/nvx_tools/microvm_tests.py) and [`scripts/nvx_tools/microvm_test_scripts`](../../scripts/nvx_tools/microvm_test_scripts) |
-| Copilot adversarial controller and typed broker | [`scripts/nvx_tools/adversarial.py`](../../scripts/nvx_tools/adversarial.py) and [`scripts/nvx_tools/adversarial_broker.py`](../../scripts/nvx_tools/adversarial_broker.py) |
-| Credential-free adversarial executor and independent oracles | [`scripts/nvx_tools/adversarial_executor.py`](../../scripts/nvx_tools/adversarial_executor.py) and [`scripts/nvx_tools/adversarial_oracles.py`](../../scripts/nvx_tools/adversarial_oracles.py) |
+| Machine-profile selection, ABI constants, machine validation, and command-line ownership | OpenVMM machine-profile definitions shared by every launcher and the VM worker |
+| CLI options, host-attachment construction, restore preparation, capture orchestration, portb output drain, and outcome reports | OpenVMM command-line entry layer and its VM controller |
+| Management-RPC microVM creation, capture, restore, readiness, and guest-exit reporting | OpenVMM management-RPC service |
+| Worker composition, fixed virtio placement, snapshot boundaries, management exclusion, clock contracts, and restore sequencing | OpenVMM VM worker |
+| Restore-time VP materialization and saved-VP inventory validation | OpenVMM partition unit |
+| Restore-time RAM capacity, range selection, split backing, and private copy-on-write mapping | Snapshot machine contract, OpenVMM memory-layout engine, and guest-memory manager |
+| Linux direct MP-table loading | OpenVMM Linux direct loader and MP-table builder |
+| Base-chipset allowlist and memory-layout defaults | OpenVMM base-chipset manifest builder |
+| portb, shutdown, and snapshot PMIO; RTC, PIT, and IOAPIC save and restore | OpenVMM chipset devices |
+| Virtio transport, shared interrupt status, and device-private saved state | OpenVMM virtio transport and device models |
+| Control-session protocol, authenticated broker, and local peer identity | OpenVMM virtio-console broker and serial socket and named-pipe backends |
+| Portable networking, egress policy, and endpoint quiesce | OpenVMM Consomme endpoint, egress policy, and virtio-net device |
+| HostFs profile, denied paths, and filesystem saved state | OpenVMM microVM virtio-fs profile |
+| State-unit quiesce, start, rollback, inventory, and downtime advance | OpenVMM state-unit framework |
+| Snapshot format, machine contract, publication, and artifact validation | OpenVMM snapshot helpers and platform file primitives |
+| Backend CPU contracts and snapshot clocks | KVM, MSHV, and WHP backends |
+| Sandbox launch and kernel features | NVX sandbox launcher and microVM kernel configuration |
+| Workload namespace and root construction | NVX guest container launch and entry helpers |
+| Guest workload, scratch quiesce, managed lifecycle, and post-restore CPU/RAM repair | NVX guest init agent and snapshot helper |
+| OpenVMM control-plane and guest-artifact integration tests | OpenVMM microVM and management-RPC VMM tests |
+| NVX Linux and device integration tests | NVX microVM process tests and guest test scripts |
+| Copilot adversarial controller and typed broker | NVX adversarial controller and broker |
+| Credential-free adversarial executor and independent oracles | NVX adversarial executor and oracle watchdog |

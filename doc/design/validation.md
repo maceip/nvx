@@ -6,13 +6,20 @@ The implementation is exercised at three levels:
 
 - loader, command-line, memory-layout, RTC, PMIO, network-policy, snapshot
   format, and device-private-state unit tests;
-- OpenVMM TTRPC lifecycle, SMP, and snapshot tests using NVX's ACPI-free,
-  MP-enabled x86-64 Linux-direct kernel and initramfs when invoked through
-  `nvx.py test-openvmm`; and
-- NVX-owned process tests in
-  [`scripts/nvx_tools/microvm_tests.py`](../../scripts/nvx_tools/microvm_tests.py)
-  using this repository's Linux kernel and selected Alpine or Ubuntu initramfs
-  through the public OpenVMM CLI.
+- OpenVMM VMM tests invoked through `nvx.py test-openvmm`: a test-harness
+  microVM lifecycle test and a management-RPC lifecycle, SMP, and snapshot
+  test that uses NVX's ACPI-free, MP-enabled x86-64 Linux-direct kernel and
+  initramfs; and
+- NVX-owned process tests using this repository's Linux kernel and selected
+  Alpine or Ubuntu initramfs through the public OpenVMM CLI.
+
+The harness lifecycle test covers portb I/O, status shutdown, rejection of
+host save and pulse save/restore, and a snapshot request that continues
+without a configured destination. With NVX's kernel, the management-RPC test
+boots 1, 2, 4, and 8 vCPUs, captures a snapshot with an immutable RAM capacity
+and a boot-online prefix through the RPC, restores it twice with readiness
+signaling and processor and memory targets, and verifies that the artifacts
+are unchanged.
 
 The NVX-owned suite boots the same Linux-direct artifacts on the available native
 backend and covers IRQ0/RTC behavior, raw portb I/O, shutdown status, exact
@@ -43,23 +50,34 @@ Coverage also includes
 pinned per-vCPU execution, timer/interrupt progress, reset, cancellation,
 count and topology mismatch rejection, and repeated immutable restore.
 Restore-time processor coverage captures one capacity-8 template with a
-boot-online count of one, restores it at 1/2/4/8 online VPs, schedules work on
-every requested CPU, and verifies that the artifact is unchanged.
+boot-online count of one, restores it at 1/2/4/8 online VPs and without a
+target, schedules work on every requested CPU, and verifies that the artifact
+is unchanged. Its VP-binding lifecycle records verify that MSHV binds exactly
+the requested prefix, while untargeted MSHV restores and all KVM and WHP
+restores bind the full capacity. The profiled `snapshot-restore-vcpu`
+benchmark reports the same VP-binding and worker-construction phases for
+comparison with fixed-capacity restores.
 Restore-time memory coverage captures 512 MiB with a 2-GiB capacity, restores
 the same artifact at 512 MiB, 1 GiB, and 2 GiB, validates the added-byte count
 and expanded allocation, and verifies artifact immutability. Unit coverage
 verifies that only an explicit MSHV processor target selects a runtime prefix,
 that the complete saved VP inventory is validated before filtering, that
-reduced-prefix saves are rejected, and that dormant VP access fails cleanly.
-Lifecycle profiling verifies that MSHV binds exactly the requested prefix while
-fixed-capacity comparisons retain equivalent per-prefix binding and
-worker-construction costs.
-Additional unit coverage exercises the control-console reservation and
-attachment inventory, command-line spoofing rejection, management exclusion
-at the snapshot boundary, output-drain completion and failures, and backend
-TSC repair. Hardware-dependent clock tests still require their native backend.
-Platform CI and the benchmark histories in `data/` provide the wider host
-matrix.
+reduced-prefix saves are rejected, that dormant VP access fails cleanly, and
+that MSHV restored-TSC alignment targets only created VPs.
+Additional unit coverage exercises the control-console slot and attachment
+inventory, command-line spoofing rejection, the control-session record
+protocol against language-neutral golden vectors and boundary cases, the
+broker state machine and its save and restore, peer-identity and capability
+admission for local endpoints, workload identity and lifecycle ownership,
+the bounded outcome-report schema, egress-policy enforcement in the endpoint
+and virtio-net layers, the virtio-fs microVM profile and denied-path policy,
+state-unit quiesce and rollback, management exclusion at the snapshot
+boundary, management-RPC guest-exit propagation, output-drain completion and
+failures, and backend TSC repair. Hardware-dependent clock tests still require
+their native backend. A host-only benchmark measures snapshot publication,
+restore preparation, copy-on-write dirtying, and fresh-process restore
+preparation without booting a guest. Platform CI and the benchmark histories
+in `data/` provide the wider host matrix.
 
 The separate `test-adversarial` harness adaptively selects tracked
 deterministic primitives from these same process tests. Copilot has no tools

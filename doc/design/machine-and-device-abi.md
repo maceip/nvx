@@ -4,7 +4,7 @@
 
 ## Architectural devices
 
-`BaseChipsetType::Microvm` builds the following allowlist:
+The microVM base chipset contains exactly this allowlist:
 
 - generic PIC and IOAPIC;
 - the selected hypervisor's LAPIC;
@@ -32,7 +32,7 @@ flowchart TB
       Boot["Linux MP-table boot state<br/>and fixed RAM layout"]
       Interrupts["PIC, IOAPIC, LAPIC<br/>PIT, RTC, and VM time"]
       Pmio["PMIO devices<br/>portb, shutdown, snapshot"]
-      Virtio["Fixed virtio-mmio<br/>net, fs, console, and versioned block roles"]
+      Virtio["Fixed virtio-mmio<br/>net, fs, boot and control consoles,<br/>and versioned block roles"]
    end
 
    Common["OpenVMM worker<br/>state units and resource resolvers"]
@@ -66,41 +66,45 @@ flowchart TB
 | `0x604` | shutdown | The first output byte becomes the process status carried with the VM power-off request. Reads return all ones. |
 | `0x605` | snapshot request | Reads return all ones. Writes are coalesced and routed asynchronously to the capture controller. Zero requests fresh scratch and a nonzero first byte requests paired scratch. |
 
-The portb implementation is in
-[`vm/devices/chipset/src/microvm.rs`](../../openvmm/vm/devices/chipset/src/microvm.rs).
-Its receive and transmit buffers are each bounded at one MiB. Output overflow
-drops the newest bytes and emits a rate-limited warning; input applies
+The portb receive and transmit buffers are each bounded at one MiB. Output
+overflow drops the newest bytes and emits a rate-limited warning; input applies
 backpressure by stopping host reads when its buffer is full. Pending bytes are
-saved so capture does not silently lose VMM-owned I/O.
+saved so capture does not silently lose VMM-owned I/O. While host input is
+gated for a snapshot boundary or post-restore repair, portb stops reading its
+host endpoint, returns zero for console data reads, and clears the
+input-available status bit; guest output, the generation ID, and any restore
+packet remain available.
 
 Guest-requested process exit drains the portb endpoint and, when present, its
 host stdout relay before reporting completion. The combined drain has a
 five-second deadline. Success preserves the guest's exit status; endpoint,
 relay, or timeout failures become process-exit errors instead of silently
 discarding final output. This is a portb/host-relay guarantee, not a general
-drain of every virtio-console endpoint. The controller and relay implementation
-are in
-[`openvmm_entry/src/vm_controller.rs`](../../openvmm/openvmm/openvmm_entry/src/vm_controller.rs)
-and
-[`openvmm_entry/src/microvm_output.rs`](../../openvmm/openvmm/openvmm_entry/src/microvm_output.rs).
+drain of every virtio-console endpoint. Under the management RPC, a zero guest
+status completes a pending wait and stops the server cleanly, while a nonzero
+status or failed drain fails the pending wait and ends the server with an
+error.
 
 A snapshot-port write with no configured destination completes normally and
 the guest continues. With a destination, the device permits at most one pending
 transaction and defers completion long enough for the controller to establish
 the exact post-`out` capture boundary. Repeated writes are coalesced. The PMIO
 callback itself never pauses vCPUs, drains devices, hashes RAM, or writes files.
-The scratch policy travels with the deferred boundary request.
+The scratch policy travels with the deferred boundary request. After a gated
+restore, the same write acknowledges completion of guest repair.
 
 ## Fixed virtio-mmio transport
 
 All eight fixed address slots are reserved, including the dedicated control
 console at `0xd0007000..0xd0007fff` on IRQ 3 (shared status at `0x3001c`).
-Snapshot-capable builds instantiate the virtio-fs transport even without a host
-attachment so it is discoverable before capture. Other optional devices are
-instantiated only when active. The control slot is activated by an
-authenticated local endpoint on Linux or Windows.
-Every device uses virtio-mmio, is omitted from ACPI, and has packed-ring support
-masked.
+Every microVM cold-booted from the command line or the management RPC
+instantiates the virtio-fs slot, so it is discoverable before capture even
+without a host attachment; a restore keeps the slot only when the snapshot
+recorded it. Other optional devices are instantiated only when configured.
+The control slot is instantiated for a control console, either a live
+authenticated local endpoint on Linux or Windows or an explicitly disconnected
+console. Every device uses virtio-mmio, is discovered only through
+profile-owned command-line tokens, and has packed-ring support masked.
 
 | Device | Stable identity | MMIO range | IRQ | Availability |
 | --- | --- | ---: | ---: | --- |
@@ -184,44 +188,100 @@ controller flushes the exact scratch handle and copies it only after that drain.
 The optional console is the standard single-port virtio-console device with
 two split queues. Host RX accepted by the device and partial guest TX progress
 are device-private saved state, so a descriptor is not replayed from byte zero
-after restore. Native sockets and handles are not serialized. A listener is
-recreated according to its recorded policy. Client reconnects require an
-explicitly approved restore-time attachment and have a five-second timeout;
-inherited attachments must also be supplied again rather than serialized.
+after restore. Native sockets and handles are not serialized.
 
-### Control console reservation
+The host attachment is a listener (a Unix socket, a named pipe, or loopback
+TCP with a fixed nonzero port), a client connection, the inherited terminal,
+or an explicitly disconnected endpoint that discards guest output. A listener
+retains pending guest output until a client connects. The snapshot records the
+attachment's stable ID, canonical endpoint identity, reconnect policy,
+requiredness, and timeout. For a snapshot-capable machine, Unix sockets live
+beside the snapshot directory and Windows pipes use OpenVMM's fixed microVM
+pipe namespace. A saved listener may be recreated at a fresh private
+restore-time endpoint, but its stable attachment ID, attachment kind, backend
+kind, reconnect policy, required flag, length, and timeout remain exact.
+Client reconnects retain their exact saved identity, require an explicitly
+approved restore-time attachment, and have a five-second timeout; inherited
+attachments must also be supplied again rather than serialized. Disconnected
+attachments remain disconnected.
+
+### Control console
 
 The dedicated control console reuses the single-port virtio-console device but
-has a distinct resource ID (`virtio-control-console`), stable attachment ID
-(`console:microvm-control0`), MMIO slot, IRQ, shared-status word, and saved-state
-inventory. The configuration and snapshot helpers support this second console
-without changing the boot console's identity or placement. A control console
-requires the boot virtio-console, making its guest tty `hvc2`; the profile owns
-the identifying `nvx_control_tty=hvc2` token.
+has a distinct device and attachment kind, stable attachment ID
+(`console:microvm-control0`), MMIO slot, IRQ, shared-status word, and
+saved-state inventory. A fresh boot with a control console requires the boot
+virtio-console, making the control device's guest tty `hvc2`; the profile owns
+the identifying `nvx_control_tty=hvc2` token, and the boot console remains the
+only kernel console.
 
-The internal control-console command-line builder rejects caller-supplied
-control-tty and driver-probe-order tokens, including kernel-equivalent
-hyphenated spellings, as well as quotes and the `--` delimiter. These rules
-prevent guest tty discovery from being redirected by command-line parsing.
-Boot-only command lines retain their existing behavior.
+When a control console is present, the command-line builder rejects
+caller-supplied control-tty, driver-probe-order, and device-discovery tokens,
+including kernel-equivalent hyphenated spellings, as well as quotes and the
+`--` delimiter. These rules prevent guest tty discovery from being redirected
+by command-line parsing. Boot-only command lines retain their existing
+behavior.
 
-The internal control attachment helper accepts only local `listen=...`,
-`connect=...`, or disconnected `none` endpoints, not TCP or inherited stdio.
-Linux uses Unix sockets and Windows uses named pipes. A saved listener may be
-recreated at a fresh private restore-time path, but its stable attachment ID,
-attachment kind, backend kind, reconnect policy, required flag, length, and
-timeout remain exact. A saved `connect` endpoint retains its exact identity and
-requires explicit restore-time approval; `none` remains disconnected. These
-restrictions are groundwork for the broker, not a substitute for its
-authentication.
+The host endpoint is either a local listener or explicitly disconnected. A
+live endpoint is protected in three layers:
 
-This is transport and lifecycle groundwork, not an enabled agent protocol.
-The CLI has no public activation option, and CLI and TTRPC restore reject a
-manifest carrying a control-console device or attachment before authenticated
-broker activation exists. Reservation alone does not expose a host endpoint.
-See the checks in
-[`openvmm_entry/src/lib.rs`](../../openvmm/openvmm/openvmm_entry/src/lib.rs) and
-[`openvmm_entry/src/ttrpc/mod.rs`](../../openvmm/openvmm/openvmm_entry/src/ttrpc/mod.rs).
+- **Private endpoint.** On Linux, it is a Unix socket bound exclusively with
+  mode `0600` inside an existing, non-symlink, owner-only directory of the
+  OpenVMM user. On Windows, it is a named pipe whose protected DACL admits only
+  LocalSystem and the OpenVMM user. TCP, client-connect, terminal, file,
+  standard-stream, and inherited backends are rejected, and the boot and
+  control endpoints must differ.
+- **Peer identity.** The broker reserves its single host slot only for a peer
+  whose operating-system identity is the OpenVMM user: the effective UID of
+  the Unix-socket peer, or the token user SID of the process connected to the
+  pipe. Any other peer is disconnected before its bytes are read.
+- **Capability.** The launcher passes a random 32-byte capability through a
+  prepared one-way standard-input pipe whose writers are closed before
+  OpenVMM starts. The first host record must present it within a bounded
+  authentication timeout, five seconds by default. The capability never
+  appears in arguments, environment variables, logs, endpoint names,
+  snapshots, or attachment identities. Because standard input carries it, the
+  interactive console is disabled, the boot console cannot use the terminal,
+  and the mode cannot be combined with the management RPC server, a console
+  relay, or a paused start.
+
+A disconnected control console uses a random capability that no client can
+present.
+
+OpenVMM brokers a frozen, versioned record stream between the guest and the
+authenticated host. Every record has a fixed-size header with a magic value,
+protocol version, record type, broker instance ID, epoch, direction-local
+sequence, and payload length. Bootstrap attach records establish the guest and
+host sides; acknowledgment, data, wait, ready, reset, authentication-error,
+and credit records carry the session. Host data toward the guest is limited by
+byte-counted receive credit that the guest grants. When credit is exhausted,
+one complete host record may wait in a bounded pending slot, and each output
+direction is bounded in records and bytes. Malformed lengths, wrong-state
+records, wrong instance or epoch values, and duplicate or out-of-order
+sequences fail closed. A wrong capability or an authentication timeout
+detaches the client without advancing the epoch. An active host disconnect
+advances the epoch, drops unstarted data and unused credit, finishes any
+partially transmitted record to keep the stream aligned, and emits a reset;
+the next session receives credit only from a fresh guest acknowledgment.
+
+Snapshots record only the endpoint identity and a broker policy, either an
+authenticated listener or a disconnected console, never the capability or the
+peer UID or SID. Broker saved state omits queued records, host output, and
+usable receive credit; restore keeps only the guest-side parser, any partially
+transmitted guest record, and error counters. Restore validates the saved
+endpoint and requires the launcher to request that same endpoint again with a
+fresh capability. The restored broker receives a fresh instance ID, restarts at
+the first epoch with a queued reset, and ignores guest records for the old
+instance until the guest acknowledges the new one. The management RPC exposes
+no control console and explicitly rejects restoring a snapshot that contains
+one.
+
+The control console carries the managed workload lifecycle: a host-owned
+lifecycle token selects one-shot or managed operation, and managed operation
+requires a fixed workload identity and a live, authenticated control console.
+The workload protocol carried inside the brokered data stream belongs to the
+guest agent; see
+[Control protocol and checkpoint handoff](sandbox-filesystem-and-agent-architecture.md#control-protocol-and-checkpoint-handoff).
 
 ### Network
 
@@ -231,12 +291,15 @@ the MAC-address feature and virtio version 1.
 `/30`, derives the first usable address as the gateway, and derives
 deterministic guest and gateway MAC addresses from the final three IPv4
 octets. The profile is mandatory and selects the same in-process Consomme data
-plane on KVM, MSHV, and WHP.
+plane on KVM, MSHV, and WHP; TAP attachments are rejected for this profile.
+The static identity advertises no routable IPv6 prefix.
 
 The portable profile provides gateway DNS over UDP and TCP, ICMP echo,
 outbound TCP and UDP, deterministic rejection of fragmented IPv4 packets, and
-bounded flow, DNS, buffer, and packet-queue state. It applies one canonical
-egress policy before externally visible transmission:
+bounded flow, DNS, buffer, and packet-queue state. At most 128 TCP, 256 UDP,
+and 16 ICMP guest flows are active at once, and excess flows are rejected
+before a host socket is created. It applies one canonical egress policy before
+externally visible transmission:
 
 - allow only listed IPv4 hosts or CIDRs;
 - allow IPv4 except listed hosts or CIDRs; or
@@ -245,16 +308,23 @@ egress policy before externally visible transmission:
   destination ports and deny precedence.
 
 The legacy modes are mutually exclusive. The generic rule mode requires an
-explicit default action and fails closed for malformed or fragmented
-port-specific traffic. The snapshot records the profile, network identity, and
-policy digest. Restore reconstructs a fresh endpoint and requires the profile
-and policy again; native sockets, DNS requests, and flow objects are never
-serialized.
-Host-loopback allow maps the guest gateway to host loopback and may bind
-explicit localhost TCP/UDP forwards into the guest. Deny blocks both general
-gateway socket access and all forwards. One exact gateway TCP proxy endpoint
-may remain available and is bound into the policy digest; live forward sockets
-are not snapshot attachments.
+explicit default action, accepts at most 256 allow and 256 deny rules, and
+fails closed for malformed or fragmented port-specific traffic. The virtio-net
+device installs the bound policy on the endpoint and prefilters frame headers,
+but the endpoint makes the final decision on the exact bytes it transmits, so
+a guest cannot rewrite a frame after the check. The snapshot records the
+profile, network identity, and policy digest. Restore reconstructs a fresh
+endpoint and requires the profile and policy again; native sockets, DNS
+requests, and flow objects are never serialized.
+
+By default, and subject to the egress policy, the gateway maps guest TCP and
+UDP flows onto host loopback. The portable NAT cannot offer generic
+bidirectional host-loopback connectivity, so an explicit host-loopback allow is
+accepted only with explicit localhost TCP or UDP port forwards into the guest,
+at most 64 of them. Forwards are process-local attachments, and snapshot
+capture and restore reject them. Host-loopback deny blocks gateway and
+host-local destinations and every forward. One exact gateway TCP proxy endpoint
+may remain available under deny and is bound into the policy digest.
 Capture quiesces the endpoint, drains completion ownership, and requires the
 saved queues to contain no unrepresented RX or TX packets. It then saves the
 queue lifecycle, negotiated features, link state, and endpoint generation.
@@ -266,10 +336,15 @@ traffic must establish fresh post-restore flows.
 
 The filesystem slot is a no-DAX virtio-fs device with tag `microvm`, one
 high-priority queue, one request queue, direct I/O, and zero guest cache
-lifetimes. Without `--mount`, it has no HostFs backend or active filesystem
-policy but remains guest-discoverable. Its explicit profile rejects SectionFs,
-Aggregate, alternate tags, extra queues, shared-memory windows, and PCI
-transport.
+lifetimes. It requires FUSE 7.31 or newer and caps writes at 1 MiB. Without
+`--mount`, it has no HostFs backend or active filesystem policy but remains
+guest-discoverable. Its explicit profile rejects SectionFs, Aggregate,
+alternate tags, extra queues, shared-memory windows, and PCI transport.
+The host root is pinned by its platform object identity and revalidated when
+the export is opened, and every operation stays confined to the export:
+paths containing symbolic-link components are rejected, symbolic-link creation
+is refused, and bounded inode, alias, and handle tables fail an operation
+rather than create untracked host state.
 Read-only mode rejects mutation in the host device before invoking host
 filesystem operations; read-write mode exposes only the supported common host
 contract.

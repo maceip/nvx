@@ -7,9 +7,20 @@ runtime=/run/nvx
 layers=$runtime/layers
 scratch=$runtime/scratch
 rootfs=$runtime/rootfs
+share_mountpoint=
+
+unmount_live_share() {
+    [ -n "$share_mountpoint" ] || return 0
+    if ! umount "$share_mountpoint"; then
+        echo "NVX-SANDBOX-ERROR: failed to unmount the live share" >&2
+        return 1
+    fi
+    share_mountpoint=
+}
 
 fatal() {
     echo "NVX-SANDBOX-ERROR: $*" >&2
+    unmount_live_share || true
     /sbin/nvx-exit 125
     while :; do
         sleep 3600
@@ -124,6 +135,98 @@ mount_layer() {
         [ "$actual_uuid" = "$expected_uuid" ] ||
             fatal "$role layer UUID is $actual_uuid, expected $expected_uuid"
     fi
+}
+
+validate_share_target() {
+    case "$1" in
+        /*) ;;
+        *) fatal "live share target must be an absolute path" ;;
+    esac
+    case "$1/" in
+        //* | *//* | */./* | */../*) fatal "live share target is not canonical: $1" ;;
+    esac
+    case "$1" in
+        *[\\=,]*) fatal "live share target contains a reserved character: $1" ;;
+    esac
+    # The container runtime mounts or binds these paths after the share, so a
+    # share there would be shadowed or would expose host data to runtime writes.
+    case "$1" in
+        /proc | /proc/* | /sys | /sys/* | /dev | /dev/* | /.nvx-agent | /.nvx-agent/* | /etc)
+            fatal "live share target is reserved: $1"
+            ;;
+    esac
+}
+
+mount_live_share() {
+    share_tag=$(cmdline_value virtfs_tag || true)
+    share_target=$(cmdline_value virtfs_dir || true)
+    share_mode=$(cmdline_value virtfs_mode || true)
+    [ -n "$share_tag$share_target$share_mode" ] || return 0
+    [ -n "$share_tag" ] && [ -n "$share_target" ] && [ -n "$share_mode" ] ||
+        fatal "live share bootstrap is incomplete"
+    case "$share_tag" in
+        *[!A-Za-z0-9_-]*) fatal "live share tag is invalid" ;;
+    esac
+    case "$share_mode" in
+        ro | rw) ;;
+        *) fatal "live share mode is unsupported: $share_mode" ;;
+    esac
+    validate_share_target "$share_target"
+
+    # Create the mount point one component at a time so that a symbolic link in
+    # a container layer cannot redirect the share outside the container rootfs.
+    share_path=$rootfs
+    share_remainder=${share_target#/}
+    while [ -n "$share_remainder" ]; do
+        share_component=${share_remainder%%/*}
+        if [ "$share_component" = "$share_remainder" ]; then
+            share_remainder=
+        else
+            share_remainder=${share_remainder#*/}
+        fi
+        share_path=$share_path/$share_component
+        if [ -L "$share_path" ]; then
+            fatal "live share target crosses a symbolic link: $share_target"
+        elif [ -e "$share_path" ]; then
+            [ -d "$share_path" ] ||
+                fatal "live share target is not a directory: $share_target"
+        else
+            mkdir -m 0755 "$share_path" ||
+                fatal "failed to create live share target $share_target"
+        fi
+    done
+    mount -t virtiofs -o "$share_mode,nosuid,nodev" "$share_tag" "$share_path" ||
+        fatal "failed to mount live share $share_tag at $share_target"
+    share_mountpoint=$share_path
+    echo "NVX-SANDBOX-SHARE: target=$share_target mode=$share_mode"
+}
+
+# Unmount in dependency order: the live share is a child of the overlay, and
+# the overlay uses the layers and scratch.
+teardown() {
+    status=$1
+    rm -f "$runtime/container.pid" "$runtime/workload-machine-id"
+    unmount_live_share || status=1
+    if ! umount "$rootfs"; then
+        echo "NVX-SANDBOX-ERROR: failed to unmount the container overlay" >&2
+        status=1
+    fi
+    for role in custom runtime distro; do
+        directory=$layers/$role
+        if mountpoint -q "$directory" && ! umount "$directory"; then
+            echo "NVX-SANDBOX-ERROR: failed to unmount the $role layer" >&2
+            status=1
+        fi
+    done
+    if ! umount "$scratch"; then
+        echo "NVX-SANDBOX-ERROR: failed to unmount scratch" >&2
+        status=1
+    fi
+    echo "NVX-SANDBOX-EXIT: status=$status"
+    /sbin/nvx-exit "$status"
+    while :; do
+        sleep 3600
+    done
 }
 
 mkdir -p "$layers" "$scratch" "$rootfs"
@@ -251,13 +354,25 @@ case "$workload_lifecycle" in
         control_tty=$(cmdline_value nvx_control_tty || true)
         [ "$control_tty" = hvc2 ] ||
             fatal "managed lifecycle requires the dedicated control tty"
-        echo "NVX-SANDBOX-READY: managed layers=$layer_count"
-        exec /sbin/nvx-managed-agent \
-            "/dev/$control_tty" "$rootfs" "$hostname_value" \
-            "$workload_uid" "$workload_gid" "$workload_name" "$workload_home"
         ;;
     *) fatal "unsupported workload lifecycle: $workload_lifecycle" ;;
 esac
+
+mount_live_share
+workload_machine_id=$(tr -d - </proc/sys/kernel/random/uuid)
+printf '%s\n' "$workload_machine_id" >"$runtime/workload-machine-id"
+
+if [ "$workload_lifecycle" = managed ]; then
+    echo "NVX-SANDBOX-READY: managed layers=$layer_count"
+    # The agent returns after a stop request, so managed sandboxes share the
+    # one-shot teardown instead of powering off with their mounts in place.
+    status=0
+    /sbin/nvx-managed-agent \
+        "/dev/$control_tty" "$rootfs" "$hostname_value" \
+        "$workload_uid" "$workload_gid" "$workload_name" "$workload_home" ||
+        status=$?
+    teardown "$status"
+fi
 
 set -- "$entrypoint"
 # Kernel command-line tokens are deliberately split on spaces.
@@ -271,8 +386,6 @@ done
 set +f
 
 barrier=$runtime/container-start
-workload_machine_id=$(tr -d - </proc/sys/kernel/random/uuid)
-printf '%s\n' "$workload_machine_id" >"$runtime/workload-machine-id"
 mkfifo "$barrier"
 /sbin/nvx-container-launch \
     "$barrier" "$rootfs" "$hostname_value" \
@@ -290,24 +403,4 @@ rm -f "$barrier"
 echo "NVX-SANDBOX-READY: pid=$container_pid layers=$layer_count"
 status=0
 wait "$container_pid" || status=$?
-rm -f "$runtime/container.pid" "$runtime/workload-machine-id"
-if ! umount "$rootfs"; then
-    echo "NVX-SANDBOX-ERROR: failed to unmount the container overlay" >&2
-    status=1
-fi
-for role in custom runtime distro; do
-    directory=$layers/$role
-    if mountpoint -q "$directory" && ! umount "$directory"; then
-        echo "NVX-SANDBOX-ERROR: failed to unmount the $role layer" >&2
-        status=1
-    fi
-done
-if ! umount "$scratch"; then
-    echo "NVX-SANDBOX-ERROR: failed to unmount scratch" >&2
-    status=1
-fi
-echo "NVX-SANDBOX-EXIT: status=$status"
-/sbin/nvx-exit "$status"
-while :; do
-    sleep 3600
-done
+teardown "$status"

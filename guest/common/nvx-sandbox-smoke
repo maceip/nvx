@@ -7,4 +7,23 @@ set -eu
 grep -qx 'ID=ubuntu' /etc/os-release
 printf 'scratch-backed-write\n' >/tmp/nvx-ubuntu-sandbox-smoke
 [ "$(cat /tmp/nvx-ubuntu-sandbox-smoke)" = scratch-backed-write ]
+if [ "$#" -gt 0 ]; then
+    share=$1
+    share_mode=${2:-ro}
+    [ "$(cat "$share/nvx-host-marker")" = host-to-guest ]
+    [ ! -e "$share/nvx-denied" ]
+    case "$share_mode" in
+        rw)
+            printf 'guest-to-host\n' >"$share/nvx-guest-marker"
+            mkdir "$share/nvx-guest-directory"
+            ;;
+        ro)
+            if touch "$share/nvx-guest-marker" 2>/dev/null; then
+                exit 1
+            fi
+            ;;
+        *) exit 2 ;;
+    esac
+    echo "NVX-UBUNTU-SANDBOX-SHARE-OK target=$share mode=$share_mode"
+fi
 echo "NVX-UBUNTU-SANDBOX-OK uid=65534 gid=65534"

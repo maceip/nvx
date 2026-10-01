@@ -73,6 +73,10 @@ Docker on a GitHub-hosted runner instead.
 Linux provisioning runs through the SSH administrator, but the listener and
 workflow jobs run as the dedicated `nvx-runner` account, which has neither sudo
 nor Docker access.
+Linux provisioning and check mode stop unless the host CPU exposes an invariant
+TSC (`nonstop_tsc` in `/proc/cpuinfo`). Guests on an Azure VM without one hit
+cross-vCPU TSC warps during CPU activation, so redeploy such a VM instead of
+registering it.
 Persistent runners execute pushes and same-repository pull requests only. Fork
 pull requests remain on GitHub-hosted jobs until a maintainer stages the change
 on a trusted repository branch.

@@ -20,5 +20,5 @@ yet implemented; they are not part of the current machine contract.
 12. [Current limits](design/current-limits.md)
 13. [Remaining production work](design/remaining-production-work.md)
 14. [Integrated implementation status](design/integrated-implementation-status.md)
-15. [Code ownership map](design/code-ownership-map.md)
+15. [Component responsibility map](design/code-ownership-map.md)
 16. [Copilot-driven adversarial testing](design/copilot-adversarial-testing.md)

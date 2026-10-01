@@ -26,7 +26,7 @@ from .control_session import (
     ControlSession,
     ManagedExecResult,
 )
-from .sandbox import SandboxLaunch, SandboxLayer
+from .sandbox import SandboxLaunch, SandboxLayer, SandboxMount
 
 CONFIG_NAME = "config.json"
 RUNTIME_NAME = "runtime.json"
@@ -35,6 +35,11 @@ LOG_NAME = "openvmm.log"
 CONTROL_SOCKET_NAME = "control.sock"
 OUTCOME_NAME = "outcome.json"
 STATE_FORMAT = 1
+CONFIG_FORMAT = 1
+# Format-1 readers ignore unknown fields, so a configuration with a live share
+# uses a format that older NVX releases reject instead of starting without it.
+MOUNT_CONFIG_FORMAT = 2
+CONFIG_FORMATS = (CONFIG_FORMAT, MOUNT_CONFIG_FORMAT)
 OUTCOME_SCHEMA_VERSION = 1
 
 
@@ -56,7 +61,7 @@ def _read_json(
     description: str,
     *,
     version_field: str = "format",
-    version: int = STATE_FORMAT,
+    version: int | tuple[int, ...] = STATE_FORMAT,
 ) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -65,7 +70,8 @@ def _read_json(
     if not isinstance(value, dict):
         raise ScriptError(f"{description} has an unsupported format: {path}")
     typed = cast(dict[str, Any], value)
-    if typed.get(version_field) != version:
+    accepted = (version,) if isinstance(version, int) else version
+    if typed.get(version_field) not in accepted:
         raise ScriptError(f"{description} has an unsupported format: {path}")
     return typed
 
@@ -174,7 +180,7 @@ def _serialize_launch(
     cmdline: str,
 ) -> dict[str, Any]:
     return {
-        "format": STATE_FORMAT,
+        "format": CONFIG_FORMAT if launch.mount is None else MOUNT_CONFIG_FORMAT,
         "layers": [
             {
                 "role": layer.role,
@@ -201,7 +207,37 @@ def _serialize_launch(
         "network_proxy": network_proxy,
         "host_loopback_forward": list(host_loopback_forward),
         "cmdline": cmdline,
+        "mount": _serialize_mount(launch.mount),
     }
+
+
+def _serialize_mount(mount: SandboxMount | None) -> dict[str, Any] | None:
+    if mount is None:
+        return None
+    absolute = mount.absolute()
+    return {
+        "guest_target": absolute.guest_target,
+        "host_path": os.fspath(absolute.host_path),
+        "access": absolute.access,
+        "denied_paths": list(absolute.denied_paths),
+    }
+
+
+def _deserialize_mount(value: object) -> SandboxMount | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("sandbox mount configuration must be an object")
+    mount = cast(dict[str, Any], value)
+    denied_paths = mount["denied_paths"]
+    if not isinstance(denied_paths, list):
+        raise TypeError("sandbox mount denied paths must be a list")
+    return SandboxMount(
+        guest_target=str(mount["guest_target"]),
+        host_path=Path(str(mount["host_path"])),
+        access=str(mount["access"]),
+        denied_paths=tuple(str(path) for path in cast(list[object], denied_paths)),
+    )
 
 
 def _deserialize_launch(config: dict[str, Any]) -> SandboxLaunch:
@@ -224,9 +260,12 @@ def _deserialize_launch(config: dict[str, Any]) -> SandboxLaunch:
                 None if config["memory_max"] is None else int(config["memory_max"])
             ),
             pids_max=None if config["pids_max"] is None else int(config["pids_max"]),
+            mount=_deserialize_mount(config.get("mount")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ScriptError("sandbox configuration is malformed") from error
+    if (config.get("format") == MOUNT_CONFIG_FORMAT) != (launch.mount is not None):
+        raise ScriptError("sandbox configuration format does not match its mount")
     return launch.validated()
 
 
@@ -334,6 +373,7 @@ def start(state_path: Path, timeout: float) -> None:
     config = _read_json(
         require_file(state_dir / CONFIG_NAME, "sandbox configuration"),
         "sandbox configuration",
+        version=CONFIG_FORMATS,
     )
     if (state_dir / RUNTIME_NAME).exists():
         raise ScriptError("sandbox is already running or has stale runtime state")
@@ -392,7 +432,10 @@ def start(state_path: Path, timeout: float) -> None:
         "network_egress_deny",
         "host_loopback_forward",
     ):
-        for value in config.get(name, []):
+        values = config.get(name, [])
+        if not isinstance(values, list):
+            raise ScriptError("sandbox configuration is malformed")
+        for value in cast(list[object], values):
             command.extend([f"--{name.replace('_', '-')}", str(value)])
     network_proxy = config.get("network_proxy")
     if network_proxy is not None:

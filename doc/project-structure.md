@@ -122,7 +122,9 @@ initramfs. The sandbox helpers resolve fixed virtio-blk roles through
 sysfs, assemble EROFS lower layers over ext4 scratch, place the workload in its
 cgroup before release, construct its mount/PID/UTS namespaces, enter its
 filesystem root after dropping capabilities, and retain the agent as the outer
-PID 1. The remaining common helpers handle shutdown, virtio-fs mounting, and
+PID 1. In a managed sandbox, the agent supervises `nvx-managed-agent` and
+performs the ordered unmount teardown after a stop request. The remaining
+common helpers handle shutdown, virtio-fs mounting, and
 snapshot preparation. `ubuntu/packages.lock.json` pins the complete
 supplemental `.deb` closure installed without maintainer-script execution.
 

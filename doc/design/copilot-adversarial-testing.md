@@ -53,13 +53,11 @@ result.
 
 ### Controller and typed broker
 
-[`adversarial.py`](../../scripts/nvx_tools/adversarial.py) owns Copilot
-preflight, budgets, the adaptive loop, replay, prefix minimization, target
-heartbeats, and controller artifacts.
-[`adversarial_broker.py`](../../scripts/nvx_tools/adversarial_broker.py) loads
-the tracked case catalogs, validates the one-action schema, records each
-accepted action before execution, validates executor observations, and keeps
-guest text encoded.
+The controller owns Copilot preflight, budgets, the adaptive loop, replay,
+prefix minimization, target heartbeats, and controller artifacts. The typed
+broker loads the tracked case catalogs, validates the one-action schema,
+records each accepted action before execution, validates executor
+observations, and keeps guest text encoded.
 
 The initial catalogs expose deterministic primitives only:
 
@@ -76,11 +74,12 @@ processor-prefix cases provide bounded process, signal, output, CPU, disk,
 inode, and memory churn without allowing the model to synthesize host code.
 
 Each primitive maps to an existing `test-microvm` scenario. Those scenarios
-reuse `OpenvmmProcess`, `TcpConsole`, `ControlSession`, managed sandbox
-lifecycle, strict console markers, immutable snapshot fingerprints, and
-structured outcome reports. Expected workload termination or a deliberately
-tested guest failure passes only when the deterministic scenario recognizes
-the expected outcome and OpenVMM tears down correctly.
+reuse the deterministic suite's OpenVMM process, console, and control-session
+harnesses, the managed sandbox lifecycle, strict console markers, immutable
+snapshot fingerprints, and structured outcome reports. Expected workload
+termination or a deliberately tested guest failure passes only when the
+deterministic scenario recognizes the expected outcome and OpenVMM tears down
+correctly.
 
 The initial workload catalog exercises the same managed control and isolation
 mechanisms through `test-microvm`; it does not yet drive the public persistent
@@ -93,9 +92,7 @@ builder; it must never add host shell access to the strategist.
 
 ### Executor
 
-[`nvx_adversarial_executor.py`](../../scripts/nvx_adversarial_executor.py)
-starts the JSON-lines executor protocol implemented by
-[`adversarial_executor.py`](../../scripts/nvx_tools/adversarial_executor.py).
+A dedicated executor entry point starts the JSON-lines executor protocol.
 The executor:
 
 1. requires the exact controller NVX commit;
@@ -129,7 +126,7 @@ The wrapper and target provisioner must:
 - stage the exact NVX commit and provenance-bound artifacts before exposure;
 - provide KVM, MSHV, or WHP without production or GitHub credentials;
 - deny production network access and bound target CPU, memory, disk, and time;
-- run only `nvx_adversarial_executor.py` for the restricted principal;
+- run only the executor entry point for the restricted principal;
 - let the controller classify connection loss or timeout as target
   unavailability;
 - quarantine and reimage the target after every run; and
@@ -146,8 +143,7 @@ metadata and summary record the absolute target artifact root.
 
 ### Independent oracles
 
-[`adversarial_oracles.py`](../../scripts/nvx_tools/adversarial_oracles.py)
-implements the executor-side watchdog without consulting Copilot. It
+The executor-side oracle watchdog runs without consulting Copilot. It
 continuously records monotonic heartbeats, child CPU time, disk use, load where
 available, a synthetic filesystem-canary hash, and unexpected connections to
 a loopback canary service.
@@ -267,9 +263,9 @@ controller and target directories.
 
 ## CI policy
 
-[`adversarial.yml`](../../.github/workflows/adversarial.yml) runs only by
-trusted manual dispatch or a schedule on `dev`. It does not handle pull
-requests or fork code and does not install or authenticate Copilot CLI.
+The adversarial GitHub Actions workflow runs only by trusted manual dispatch or
+a schedule on `dev`. It does not handle pull requests or fork code and does not
+install or authenticate Copilot CLI.
 
 The workflow runs on a dedicated `nvx-adversarial-controller` runner and
 requires the `NVX_ADVERSARIAL_EXECUTOR` repository variable to name its

@@ -4,16 +4,15 @@
 
 ## Linux direct MP-table loader
 
-The dedicated mode in
-[`vm/loader/src/linux.rs`](../../openvmm/vm/loader/src/linux.rs) and the shared
-builder in [`vm/loader/src/mptable.rs`](../../openvmm/vm/loader/src/mptable.rs)
+The dedicated Linux direct MP-table loader and its shared MP-table builder
 treat the kernel, initramfs, command line, topology, reservations, and guest
-addresses as untrusted. It:
+addresses as untrusted. The loader:
 
-1. requires a little-endian uncompressed ELF64 image for `EM_X86_64`;
+1. requires a little-endian uncompressed ELF64 image for `EM_X86_64` and
+   rejects a bzImage;
 2. loads validated `PT_LOAD` segments at their physical addresses and zeros
    BSS tails;
-3. places an optional page-aligned initramfs after the kernel;
+3. places an optional initramfs at the first 2-MiB boundary after the kernel;
 4. builds Intel MP 1.4 processor, ISA bus, IOAPIC, and legacy IRQ entries;
 5. builds Linux `boot_params` with the canonical e820 RAM and reservation map;
 6. imports a bootstrap GDT and 4-GiB identity page table; and
@@ -33,7 +32,7 @@ The fixed boot reservations are:
 | `0x0400...` | MP configuration table (`180 + 20 * vCPU count` bytes) |
 | `0x1000` | Linux-direct bootstrap GDT |
 | `0x2000` | Linux `boot_params` zero page |
-| `0x4000..0x17fff` | Linux-direct identity page tables |
+| `0x4000..0x9fff` | Linux-direct 4-GiB identity page tables: one PML4, one PDPT, and four 2-MiB-page directories |
 | `0x20000..0x2ffff` | NUL-terminated kernel command line |
 | `0x30000..0x30fff` | Shared virtio interrupt-status page |
 | `0x100000` and above | Kernel load segments and ordinary RAM |
@@ -63,45 +62,62 @@ flowchart LR
 
 Active RAM occupies `[0, min(size, 3 GiB))`. Memory displaced by the fixed
 one-GiB MMIO aperture resumes at 4 GiB. There is no high-MMIO or VTL2 aperture.
-The central OpenVMM layout engine owns this split; the profile does not
-maintain a second allocator. The resulting active RAM ranges are also the authoritative Linux e820 and
-snapshot memory-range inventory.
+The central OpenVMM memory-layout engine owns this split, using the base
+chipset's fixed MMIO reservation; the profile does not maintain a second
+allocator. The resulting active RAM ranges are also the authoritative Linux
+e820 and snapshot memory-range inventory.
 
 When capture uses `--memory-capacity`, the layout engine reserves addresses for
 the full capacity before publishing only the active base-size prefix as RAM.
 Consequently, selecting a larger restore target does not move the MMIO gap or
-any device. The machine contract records the canonical suffix ranges that are absent from
-the captured e820 RAM map and `memory.bin`; a suffix that crosses the
-three-GiB boundary is represented as separate low- and high-RAM ranges.
+any device. The machine contract records the canonical suffix ranges that are
+absent from the captured e820 RAM map and `memory.bin`; a suffix that crosses
+the three-GiB boundary is represented as separate low- and high-RAM ranges.
 
-The fixed layout is implemented by
-[`vm_manifest_builder`](../../openvmm/vmm_core/vm_manifest_builder/src/lib.rs) and
-[`openvmm_core::worker::memory_layout`](../../openvmm/openvmm/openvmm_core/src/worker/memory_layout.rs).
 Loader writes and DMA ranges must fit wholly inside a RAM range and may not
 cross the MMIO gap or a reserved boot structure.
 
 ## Effective command line
 
-The profile, not the caller, owns console and device-discovery tokens. The base
-command line is:
+The profile, not the caller, owns console, device-discovery, and host policy
+tokens. The base command line is:
 
 ```text
 earlycon=xe9 console=hvc0 reboot=t panic=-1
 ```
 
-OpenVMM appends the profile-owned `nr_cpus=<capacity>` token for fresh boots so
-Linux sizes processor state to the validated 1, 2, 4, or 8-vCPU topology.
-
 When virtio-console is present, `console=hvc0` becomes `console=hvc1`; the raw
-portb console remains the early console. User arguments are inserted after the
-base tokens. Device-discovery tokens follow in fixed address order: network,
-filesystem, boot console, sandbox blocks, and the control console when present
-in an internally constructed configuration. Network and filesystem bootstrap
-tokens follow device discovery.
+portb console remains the early console. User arguments follow the base
+tokens. A fresh boot then appends host-owned tokens in this order:
+
+1. `nr_cpus=<capacity>`, so Linux sizes processor state to the validated 1,
+   2, 4, or 8-vCPU topology;
+2. the optional fixed workload identity (`nvx_workload_uid=` and
+   `nvx_workload_gid=`) and workload lifecycle (`nvx_lifecycle=`);
+3. `nvx_snapshot_tier=<tier>` for a capture with sandbox blocks;
+4. the backend-reported TSC frequency as `tsc_early_khz=` when the boot can
+   publish a snapshot, and the backend-reported LAPIC timer frequency as
+   `lapic_timer_hz=` whenever the backend reports one;
+5. device-discovery tokens in fixed address order: network, filesystem, boot
+   console, sandbox blocks, and the control console followed by
+   `nvx_control_tty=hvc2`; and
+6. network bootstrap tokens, including gateway DNS only when the egress
+   policy permits it, followed by filesystem bootstrap tokens for an active
+   HostFs export.
+
+The worker inserts the frequency tokens before device discovery and before any
+`--` delimiter. When it propagates a frequency, a caller-supplied token for the
+same parameter is accepted only when it matches the backend value and is then
+rewritten in canonical form; conflicting, duplicate, or malformed values fail
+the boot.
 
 Callers may not supply `earlycon=`, `console=`, `virtio_mmio.device=`,
 `virtnet_ip=`, `virtnet_mask=`, `virtnet_gw=`, `virtnet_dns=`, `virtfs_dir=`,
-`virtfs_tag=`, `virtfs_mode=`, or `nvx_snapshot_tier=` tokens. Embedded NULs are
-rejected, and the complete NUL-terminated command line must fit in 64 KiB. The
-same effective string and its SHA-256 digest become part of the snapshot
-machine contract.
+`virtfs_tag=`, `virtfs_mode=`, `nvx_snapshot_tier=`, `nr_cpus=`,
+`nvx_workload_uid=`, `nvx_workload_gid=`, or `nvx_lifecycle=` tokens. A
+machine with a control console also applies the
+[control-console command-line rules](machine-and-device-abi.md#control-console).
+Embedded NULs are rejected, and the complete NUL-terminated command line must
+fit in 64 KiB. The same effective string and its SHA-256 digest become part of
+the snapshot machine contract; a restore reuses that string verbatim and
+appends no tokens.

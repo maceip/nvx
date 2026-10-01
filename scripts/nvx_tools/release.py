@@ -48,9 +48,8 @@ from .common import (
     credential_safe_opener,
     download,
     openvmm_binary_path,
+    openvmm_git_state,
     require_file,
-    require_success,
-    run_capture,
     sha256_file,
     verify_sha256_sums,
     write_sha256_sums,
@@ -173,7 +172,7 @@ def _latest_release_asset(
         headers=_github_headers(token, "application/vnd.github+json"),
     )
     try:
-        with urllib.request.urlopen(request) as response:
+        with credential_safe_opener().open(request) as response:
             releases: object = json.load(response)
     except urllib.error.HTTPError as error:
         message = _github_error_message(error)
@@ -836,34 +835,12 @@ def _read_json_object(path: Path, description: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
-def _openvmm_git_state() -> tuple[str, bool]:
-    head = run_capture(
-        ["git", "-C", OpenVMMBuildConstants.DIRECTORY, "rev-parse", "HEAD"]
-    )
-    require_success(head, "OpenVMM revision query")
-    gitlink = run_capture(
-        ["git", "-C", BuildConstants.REPO_ROOT, "rev-parse", ":openvmm"]
-    )
-    require_success(gitlink, "OpenVMM gitlink query")
-    status = run_capture(
-        ["git", "-C", OpenVMMBuildConstants.DIRECTORY, "status", "--porcelain"]
-    )
-    require_success(status, "OpenVMM status query")
-    revision = head.stdout.decode("ascii").strip()
-    expected_revision = gitlink.stdout.decode("ascii").strip()
-    if revision != expected_revision:
-        raise ScriptError(
-            f"OpenVMM submodule is at {revision}, expected {expected_revision}"
-        )
-    return revision, not status.stdout.strip()
-
-
 def _validate_openvmm_provenance(
     binary: Path,
     provenance_path: Path,
 ) -> dict[str, object]:
     provenance = _read_json_object(provenance_path, "OpenVMM build provenance")
-    revision, source_clean = _openvmm_git_state()
+    revision, source_clean = openvmm_git_state(OpenVMMBuildConstants.DIRECTORY)
     if (
         provenance.get("format") != OpenVMMBuildConstants.PROVENANCE_FORMAT
         or provenance.get("source_revision") != revision
@@ -922,6 +899,23 @@ def _validate_initramfs_provenance(
     return provenance
 
 
+def _require_runtime_provenance_paths() -> tuple[Path, Path, Path]:
+    return (
+        require_file(
+            artifact_path(OpenVMMBuildConstants.PROVENANCE_NAME),
+            "OpenVMM build provenance",
+        ),
+        require_file(
+            artifact_path(KernelBuildConstants.PROVENANCE_NAME),
+            "kernel build provenance",
+        ),
+        require_file(
+            artifact_path(InitramfsBuildConstants.PROVENANCE_NAME),
+            "initramfs build provenance",
+        ),
+    )
+
+
 def validate_runtime_artifact_provenance() -> None:
     binary = require_file(openvmm_binary_path(), "OpenVMM release binary")
     kernel = require_file(
@@ -940,18 +934,11 @@ def validate_runtime_artifact_provenance() -> None:
         artifact_path(KernelBuildConstants.CONFIG_NAME),
         "required guest artifact vmlinux.config",
     )
-    openvmm_provenance_path = require_file(
-        artifact_path(OpenVMMBuildConstants.PROVENANCE_NAME),
-        "OpenVMM build provenance",
-    )
-    kernel_provenance_path = require_file(
-        artifact_path(KernelBuildConstants.PROVENANCE_NAME),
-        "kernel build provenance",
-    )
-    initramfs_provenance_path = require_file(
-        artifact_path(InitramfsBuildConstants.PROVENANCE_NAME),
-        "initramfs build provenance",
-    )
+    (
+        openvmm_provenance_path,
+        kernel_provenance_path,
+        initramfs_provenance_path,
+    ) = _require_runtime_provenance_paths()
     _validate_openvmm_provenance(binary, openvmm_provenance_path)
     _validate_kernel_provenance(kernel, kernel_config, kernel_provenance_path)
     _validate_initramfs_provenance(
@@ -1303,18 +1290,11 @@ def package_release(
         artifact_path(AlpineBuildConstants.PACKAGE_MANIFEST_NAME),
         "initramfs package manifest",
     )
-    openvmm_provenance_path = require_file(
-        artifact_path(OpenVMMBuildConstants.PROVENANCE_NAME),
-        "OpenVMM build provenance",
-    )
-    kernel_provenance_path = require_file(
-        artifact_path(KernelBuildConstants.PROVENANCE_NAME),
-        "kernel build provenance",
-    )
-    initramfs_provenance_path = require_file(
-        artifact_path(InitramfsBuildConstants.PROVENANCE_NAME),
-        "initramfs build provenance",
-    )
+    (
+        openvmm_provenance_path,
+        kernel_provenance_path,
+        initramfs_provenance_path,
+    ) = _require_runtime_provenance_paths()
     openvmm_provenance = _validate_openvmm_provenance(
         binary,
         openvmm_provenance_path,

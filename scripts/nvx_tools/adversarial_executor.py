@@ -197,7 +197,7 @@ def _artifact_metadata() -> dict[str, object]:
             "initramfs package manifest",
         ),
         "initramfs_provenance": require_file(
-            BuildConstants.BUILD_DIR / InitramfsBuildConstants.PROVENANCE_NAME,
+            artifact_path(InitramfsBuildConstants.PROVENANCE_NAME),
             "initramfs provenance",
         ),
         "openvmm": require_file(
@@ -205,11 +205,11 @@ def _artifact_metadata() -> dict[str, object]:
             "OpenVMM release binary",
         ),
         "kernel_provenance": require_file(
-            BuildConstants.BUILD_DIR / KernelBuildConstants.PROVENANCE_NAME,
+            artifact_path(KernelBuildConstants.PROVENANCE_NAME),
             "kernel provenance",
         ),
         "openvmm_provenance": require_file(
-            BuildConstants.BUILD_DIR / OpenVMMBuildConstants.PROVENANCE_NAME,
+            artifact_path(OpenVMMBuildConstants.PROVENANCE_NAME),
             "OpenVMM provenance",
         ),
     }
@@ -650,6 +650,15 @@ class _InitializedSession:
         }
 
 
+def _close_oracles_after_failure(oracles: OracleSession, error: Exception) -> None:
+    try:
+        oracles.close()
+    except ScriptError as cleanup_error:
+        raise ScriptError(
+            f"{error}; oracle cleanup also failed: {cleanup_error}"
+        ) from error
+
+
 class AdversarialExecutor:
     """Stateful stdio protocol endpoint intended for a forced launcher."""
 
@@ -836,12 +845,7 @@ class AdversarialExecutor:
             ValueError,
         ) as error:
             self._session = None
-            try:
-                session.oracles.close()
-            except ScriptError as cleanup_error:
-                raise ScriptError(
-                    f"{error}; oracle cleanup also failed: {cleanup_error}"
-                ) from error
+            _close_oracles_after_failure(session.oracles, error)
             raise
         passed = (
             verification.returncode == 0
@@ -966,12 +970,7 @@ class AdversarialExecutor:
             ValueError,
         ) as error:
             self._session = None
-            try:
-                session.oracles.close()
-            except ScriptError as cleanup_error:
-                raise ScriptError(
-                    f"{error}; oracle cleanup also failed: {cleanup_error}"
-                ) from error
+            _close_oracles_after_failure(session.oracles, error)
             raise
         oracle_result = session.oracles.close()
         canary_violation = (

@@ -24,9 +24,39 @@ CLI. Alpine-control-only scenarios remain explicit and are rejected for the
 Ubuntu initramfs. Failure logs from the NVX layer are uploaded per backend.
 The restore-processor scenario also rejects Linux TSC instability diagnostics,
 even if the requested CPUs came online, so clock skew cannot silently pass by
-falling back to a different clocksource.
+falling back to a different clocksource. After the 1/2/4/8-CPU restores, it
+restores the same snapshot once without `--restore-processors`. Every restore
+runs with OpenVMM lifecycle profiling and must report exactly one
+`startup.vp_thread_bind` record. Its `startup.vp_bind_*` records must show that
+an explicit MSHV target binds exactly VPs `0..N-1`, while untargeted MSHV
+restores and all KVM and WHP restores bind the full capacity.
+On MSHV and WHP, the capture waits until Linux replaces its transitional
+`tsc-early` clocksource. A snapshot taken earlier can fail after restore
+without any cross-CPU skew, because the clocksource watchdog compares
+`tsc-early` with jiffies across the restore downtime, as described in
+[the benchmark guide](benchmarks.md).
+A restore fails as soon as its guest prints `NVX-RESTORE-PROCESSORS-FAIL`,
+rather than waiting for the phase timeout. Restore logs also record OpenVMM's
+`adjusted restored vCPU TSC` event for each VP, which includes the applied
+snapshot downtime, and its `aligning restored AP TSCs to the BSP` event, which
+reports how many created MSHV APs were aligned. When the guest reports
+`unstable-tsc`, the harness boots a never-restored eight-vCPU guest with the
+same forced warp check and reactivates each AP 20 times. The error then states
+whether this control also found TSC instability, which points to host or
+hypervisor clock skew rather than restore alignment, and whether the host CPU
+exposes an invariant TSC. The control log is kept as
+`restore-processors-tsc-control.log`. The control only classifies the
+failure; the restore still fails.
 
-The `restore-tsc-sync` scenario repeats the 1/2/4/8-CPU restore sequence with
+Linux runners must expose an invariant TSC, reported as `nonstop_tsc` in
+`/proc/cpuinfo`. The `validate-runner` action prints each runner's kernel, CPU
+model, clocksource, and TSC flags, and fails the job when `nonstop_tsc` is
+missing. On an MSHV runner VM whose Azure host hid the invariant TSC,
+never-restored guests also hit cross-vCPU TSC warps during CPU activation, and
+keeping every host CPU out of idle removed them (#211). Redeploy such a VM on a
+host that exposes an invariant TSC instead of retrying its jobs.
+
+The `restore-tsc-sync` scenario repeats the restore-processor sequence with
 the test-only kernel option `clearcpuid=tsc_adjust`. Linux normally skips its
 cross-CPU TSC warp test when `IA32_TSC_ADJUST` is available and consistent
 within a package. This scenario verifies that the feature is masked, forcing
@@ -58,8 +88,15 @@ descriptor modules, converter implementation, and Dockerfile. Artifact upload
 retains the Alpine filenames and adds the distinct Ubuntu filenames. Each
 backend also boots the Ubuntu initramfs and runs
 `/sbin/nvx-sandbox-smoke` from the Ubuntu EROFS layer as UID/GID 65534 over a
-fresh ext4 scratch copy. Linux/KVM runs the broader Ubuntu SMP, managed
-lifecycle, network snapshot, blockless snapshot, and workload-identity set.
+fresh ext4 scratch copy. The same entrypoint then verifies a live virtio-fs
+share inside the container: a read-write `/workspace` share with a denied
+subdirectory must round-trip guest writes to the host, and a read-only
+`/opt/hostedtoolcache` share must reject writes. A managed sandbox then repeats
+the read-write check through `provision`, `start`, `exec`, and `stop`, and must
+report a successful outcome with a cleanly unmounted scratch filesystem, which
+shows that `stop` unmounted the share and overlay first. Linux/KVM runs the
+broader Ubuntu SMP, managed lifecycle, network snapshot, blockless snapshot,
+and workload-identity set.
 
 OpenVMM release executables and provenance are built once by the independently
 addressable `build-openvmm-linux-gnu`, `build-openvmm-linux-musl`, and
