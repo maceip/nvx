@@ -159,8 +159,12 @@ struct WorkspaceTests {
         #expect(tab.title == "Mine")
     }
     @Test func snapshotsTabTitleShowsRootLeaf() {
+        UserDefaults.standard.removeObject(forKey: "snapshotRoot")
         let tab = ShowcasePageTab(.snapshots)
-        defer { tab.stop() }
+        defer {
+            tab.stop()
+            UserDefaults.standard.removeObject(forKey: "snapshotRoot")
+        }
         #expect(tab.title == "Snapshots")
         tab.snapshots.rootURL = URL(fileURLWithPath: "/private/tmp/nvxsave-01")
         #expect(tab.title == "Snapshots · nvxsave-01")
