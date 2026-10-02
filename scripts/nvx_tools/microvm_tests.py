@@ -49,16 +49,20 @@ from .ci import validate_openvmm_test_backend
 # Backends that support the NVX microVM machine profile. HVF is excluded:
 # the microVM profile is x86-only (MP-table boot, fixed x86 APIC topology).
 MICROVM_TEST_BACKENDS = ("kvm", "mshv", "whp")
-from .common import (
+from .common import (  # noqa: E402
     ScriptError,
     artifact_path,
     openvmm_binary_path,
     require_file,
     sha256_file,
 )
-from .control_session import ControlSession
-from .guests import GUEST_NAMES, GuestDescriptor, guest_descriptor
-from .openvmm_process import OpenvmmProcess, TcpConsole
+from .control_session import ControlSession  # noqa: E402
+from .guests import (  # noqa: E402
+    GUEST_NAMES,
+    GuestDescriptor,
+    guest_descriptor,
+)
+from .openvmm_process import OpenvmmProcess, TcpConsole  # noqa: E402
 
 MICROVM_TEST_SCENARIOS = (
     "console-exit",

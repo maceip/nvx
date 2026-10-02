@@ -120,8 +120,10 @@ def _get_string(fields: dict[int, int | bytes], number: int, name: str) -> str:
         raise ScriptError(f"snapshot manifest field {name} has the wrong type")
     try:
         return bytes(value).decode("utf-8")
-    except UnicodeDecodeError:
-        raise ScriptError(f"snapshot manifest field {name} is not valid UTF-8")
+    except UnicodeDecodeError as err:
+        raise ScriptError(
+            f"snapshot manifest field {name} is not valid UTF-8"
+        ) from err
 
 
 def _parse_timestamp(raw: int | bytes) -> int:

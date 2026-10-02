@@ -468,9 +468,9 @@ def _repl_enter_sync(proc, buf, stdin_lock, timeout) -> None:
         try:
             _wait_for_marker_sync(proc, buf, REPL_PROBE_HIT, 3, "repl probe")
             return
-        except ScriptError:
+        except ScriptError as err:
             if proc.poll() is not None:
-                raise ScriptError("VM exited while entering the REPL")
+                raise ScriptError("VM exited while entering the REPL") from err
     raise ScriptError("timed out entering the openvmm REPL")
 
 
@@ -578,7 +578,7 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
                 proc, buf, REPL_SAVE_OK,
                 args.save_timeout, "snapshot-saved marker",
             )
-        except ScriptError:
+        except ScriptError as err:
             failed = REPL_SAVE_FAILED in buf
             if failed:
                 raise ScriptError(
@@ -586,7 +586,7 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
                     "(fresh hvf boots need --memory-backing-file; "
                     "the NIC needs the `snapshot` option, added "
                     "automatically with --save-snapshot on hvf)"
-                )
+                ) from err
             raise
         print(f">> snapshot saved to {save_dir}", flush=True)
         _repl_write(proc, stdin_lock, b"shutdown\n")

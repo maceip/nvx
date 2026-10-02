@@ -12,7 +12,6 @@ Used with the consomme `gwloopback` mapping: the guest mounts
 import argparse
 import errno
 import os
-import socket
 import socketserver
 import stat
 import struct
@@ -489,7 +488,7 @@ class Connection:
         return R_WALK, w.bytes()
 
     def _rwalk(self, path):
-        st = self.share.stat_path(path)
+        self.share.stat_path(path)
         w = Writer()
         w.u16(0)
         return R_WALK, w.bytes()
