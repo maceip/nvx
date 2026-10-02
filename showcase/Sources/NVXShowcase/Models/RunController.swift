@@ -1,4 +1,5 @@
 import Foundation
+import NVXCore
 
 /// Owns one live runtime run: launches `nvx.py run`, tails its combined
 /// output, and derives attempted/denied counts plus the verdict.
@@ -67,6 +68,40 @@ final class RunController {
             "--save-timeout", String(timeoutSeconds),
         ], saveTarget: dir, backingFileName: "membacking.bin")
         return true
+    }
+
+    /// Execute an arbitrary agent command in the sandbox using the native NVXEngine.
+    func runAgentCommand(_ command: String, preferWarmSnapshot: Bool = true) async {
+        guard phase == .idle || phase == .done else { return }
+        reset()
+        phase = .launching
+        verdict = .running
+        events.append(GuestEvent(kind: .info, text: "Launching agent command: \(command)"))
+        phase = .live
+
+        do {
+            let res = try await NVXEngine.shared.runCommand(
+                command: command,
+                preferWarmSnapshot: preferWarmSnapshot,
+                onOutput: { [weak self] line in
+                    Task { @MainActor in
+                        self?.consoleLines.append(line)
+                        if self?.consoleLines.count ?? 0 > 2000 {
+                            self?.consoleLines.removeFirst(100)
+                        }
+                    }
+                }
+            )
+            let statusText = res.wasRestored
+                ? "Restored warm snapshot in \(String(format: "%.1f", res.durationMs))ms"
+                : "Cold boot in \(String(format: "%.1f", res.durationMs))ms"
+            events.append(GuestEvent(kind: .info, text: "\(statusText) (Exit code: \(res.exitCode))"))
+            verdict = res.isSuccess ? .contained : .failed
+        } catch {
+            events.append(GuestEvent(kind: .denied, text: "Execution failed: \(error.localizedDescription)"))
+            verdict = .failed
+        }
+        phase = .done
     }
 
     /// Resolve `dir` through any symlinked parent components (/tmp on

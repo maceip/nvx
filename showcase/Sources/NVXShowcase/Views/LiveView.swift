@@ -9,6 +9,7 @@ struct LiveView: View {
     /// snapshot captured by the Save sheet.
     var onSnapshotSaved: ((URL) -> Void)? = nil
     @State private var showingSave = false
+    @State private var commandInput = "uname -a; uptime"
 
     private var canLaunch: Bool {
         controller.phase == .idle || controller.phase == .done
@@ -20,6 +21,10 @@ struct LiveView: View {
             Divider()
             verdictBanner
             Divider()
+            if controller.payload.id == "agent-sandbox" {
+                sandboxCommandBar
+                Divider()
+            }
             HSplitView {
                 consolePane
                     .frame(minWidth: 400)
@@ -89,6 +94,25 @@ struct LiveView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private var sandboxCommandBar: some View {
+        HStack(spacing: 12) {
+            TextField("Shell command", text: $commandInput)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .onSubmit(runSandboxCommand)
+            Button("Run in Sandbox", action: runSandboxCommand)
+        }
+        .disabled(!canLaunch)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func runSandboxCommand() {
+        guard canLaunch else { return }
+        Task { await controller.runAgentCommand(commandInput) }
     }
 
     private var verdictBanner: some View {

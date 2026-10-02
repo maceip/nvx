@@ -16,3 +16,6 @@ __pycache__/
 Thumbs.db
 /nvx-disk.raw
 *-mem.bin
+/.agents/
+/.playwright-mcp/
+showcase/validation/

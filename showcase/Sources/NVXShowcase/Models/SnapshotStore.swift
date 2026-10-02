@@ -1,4 +1,5 @@
 import Foundation
+import NVXCore
 
 /// One artifact file inside a snapshot generation.
 struct SnapshotFile: Identifiable, Hashable {

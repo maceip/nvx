@@ -65,5 +65,17 @@ struct Payload: Identifiable, Hashable {
         saveMarker: "NVX-GUEST-BOOT-OK"
     )
 
-    static let all: [Payload] = [.exfiltrator]
+    static let agentSandbox = Payload(
+        id: "agent-sandbox",
+        name: "Agent Sandbox",
+        blurb: "Hardware-isolated microVM execution sandbox with sub-200ms warm snapshot restore.",
+        arguments: [
+            "--virtio-net", "consomme:192.168.127.0/24",
+            "--network-egress", "allow",
+            "--cmdline", "virtnet_probe=192.168.127.1",
+        ],
+        saveMarker: "NVX-GUEST-BOOT-OK"
+    )
+
+    static let all: [Payload] = [.exfiltrator, .agentSandbox]
 }

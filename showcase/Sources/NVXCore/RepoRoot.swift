@@ -3,10 +3,10 @@ import Foundation
 /// Locates the nvx checkout (`scripts/nvx.py`) and owns process-tree
 /// teardown. Shared by RunController and SnapshotStore so neither
 /// hardcodes a machine-specific path and no VM outlives its run.
-enum RepoRoot {
+public enum RepoRoot {
     private static let overrideKey = "repoRoot"
 
-    static var override: URL? {
+    public static var override: URL? {
         get {
             UserDefaults.standard.string(forKey: overrideKey)
                 .map { URL(fileURLWithPath: $0) }
@@ -24,7 +24,7 @@ enum RepoRoot {
     /// Order: user override, $NVX_REPO, bundle-relative walk-up
     /// (covers both the .app in showcase/dist and SPM .build output),
     /// then ~/nvx.
-    static func resolve() -> URL? {
+    public static func resolve() -> URL? {
         var candidates: [URL] = []
         if let o = override { candidates.append(o) }
         if let env = ProcessInfo.processInfo.environment["NVX_REPO"] {
@@ -45,8 +45,6 @@ enum RepoRoot {
         candidates.append(fm.homeDirectoryForCurrentUser
             .appending(path: "nvx", directoryHint: .isDirectory))
         for dir in candidates {
-            // Existence, not executability: nvx.py runs via an
-            // interpreter and may lack the +x bit.
             let script = dir.appending(path: "scripts/nvx.py")
             if fm.fileExists(atPath: script.path) { return dir }
         }
@@ -73,8 +71,8 @@ enum RepoRoot {
     /// safe from the main thread. A plain `terminate()` only kills the
     /// `nvx.py` shim and orphans the openvmm child, which keeps the
     /// guest running indefinitely.
-    static func killProcessTree(_ proc: Process,
-                                graceSeconds: UInt32 = 2) {
+    public static func killProcessTree(_ proc: Process,
+                                       graceSeconds: UInt32 = 2) {
         let root = proc.processIdentifier
         guard root > 0 else { proc.terminate(); return }
         var all: [Int32] = []
