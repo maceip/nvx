@@ -16,6 +16,8 @@ struct LiveView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            runControls
+            Divider()
             verdictBanner
             Divider()
             HSplitView {
@@ -40,8 +42,14 @@ struct LiveView: View {
                 .background(.bar)
             }
         }
-        .toolbar {
-            ToolbarItem {
+        .sheet(isPresented: $showingSave) {
+            SaveSnapshotSheet(controller: controller)
+        }
+    }
+
+    private var runControls: some View {
+        HStack(spacing: 12) {
+            Group {
                 Menu(controller.payload.name) {
                     ForEach(Payload.all) { payload in
                         Button {
@@ -58,13 +66,14 @@ struct LiveView: View {
                 .help(controller.payload.blurb)
                 .disabled(!canLaunch)
             }
-            ToolbarItem {
+            Group {
                 Button("Save snapshot…", systemImage: "tray.and.arrow.down") {
                     showingSave = true
                 }
                 .disabled(!canLaunch)
             }
-            ToolbarItem(placement: .primaryAction) {
+            Spacer()
+            Group {
                 if controller.phase == .live {
                     Button("Stop", systemImage: "stop.fill") {
                         controller.stop()
@@ -77,10 +86,9 @@ struct LiveView: View {
                 }
             }
         }
-        .navigationTitle(controller.payload.name)
-        .sheet(isPresented: $showingSave) {
-            SaveSnapshotSheet(controller: controller)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private var verdictBanner: some View {

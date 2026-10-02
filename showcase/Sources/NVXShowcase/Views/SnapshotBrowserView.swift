@@ -8,42 +8,44 @@ struct SnapshotBrowserView: View {
     @State private var showingPicker = false
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $store.selection) {
-                Section("Generations") {
-                    ForEach(store.snapshots) { snap in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(snap.url.lastPathComponent)
-                                .font(.headline)
-                            Text(ByteCountFormatter.string(fromByteCount: snap.totalBytes,
-                                                           countStyle: .file))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            HStack {
+                Button("Toggle Sidebar", systemImage: "sidebar.left") { store.showsSidebar.toggle() }
+                    .labelStyle(.iconOnly)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                Button("Choose…", systemImage: "folder") { showingPicker = true }
+                Button("Refresh", systemImage: "arrow.clockwise") { store.rescan() }
+                if store.resumeRunning { Button("Stop Restore", systemImage: "stop.fill") { store.stopResume() } }
+                Spacer()
+                Text(store.rootURL?.path ?? "Choose a snapshot directory")
+                    .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }.padding(.horizontal, 16).padding(.vertical, 8).background(.bar)
+            Divider()
+            Group {
+                if store.showsSidebar {
+                    HSplitView {
+                    List(selection: $store.selection) {
+                        Section("Generations") {
+                            ForEach(store.snapshots) { snap in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(snap.url.lastPathComponent).font(.headline)
+                                    Text(ByteCountFormatter.string(fromByteCount: snap.totalBytes, countStyle: .file))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                .tag(snap)
+                            }
                         }
-                        .tag(snap)
                     }
+                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 360, maxHeight: .infinity)
+                    detail
+                    }
+                } else {
+                    detail
                 }
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-            .toolbar {
-                ToolbarItem {
-                    Button("Choose…", systemImage: "folder") {
-                        showingPicker = true
-                    }
-                }
-            }
-        } detail: {
-            if let snap = store.selection {
-                SnapshotDetailView(snapshot: snap, store: store)
-            } else {
-                ContentUnavailableView(
-                    "No snapshots",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("Choose a directory containing snapshot generations.")
-                )
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("Snapshots")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fileImporter(isPresented: $showingPicker,
                       allowedContentTypes: [.folder],
                       allowsMultipleSelection: false) { result in
@@ -57,6 +59,18 @@ struct SnapshotBrowserView: View {
             }
         }
     }
+    private var detail: some View {
+        Group {
+            if let snap = store.selection {
+                SnapshotDetailView(snapshot: snap, store: store)
+            } else {
+                ContentUnavailableView("No snapshots", systemImage: "clock.arrow.circlepath",
+                    description: Text("Choose a directory containing snapshot generations."))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
 }
 
 private struct SnapshotDetailView: View {

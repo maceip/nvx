@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 # Assemble dist/NVXShowcase.app from the SPM build (gitignored output).
-set -e
+set -euo pipefail
 cd "$(dirname "$0")"
 swift build -c release 2>&1 | tail -1
 APP=dist/NVXShowcase.app

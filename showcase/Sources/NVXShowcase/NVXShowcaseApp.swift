@@ -7,9 +7,9 @@ struct NVXShowcaseApp: App {
             ContentView()
                 .frame(minWidth: 1100, minHeight: 700)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .commands {
-            SidebarCommands()
+            ShowcaseTabCommands()
         }
     }
 }

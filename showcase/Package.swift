@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "NVXShowcase",
             path: "Sources/NVXShowcase"
-        )
+        ),
+        .testTarget(name: "NVXShowcaseTests", dependencies: ["NVXShowcase"])
     ]
 )

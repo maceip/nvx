@@ -1,0 +1,20 @@
+[
+  {
+    "source": "/Users/mac/Documents/Pie/PiCode/Features/Tabs/CompactTabStrip.swift",
+    "sourceSHA256": "a4be2507033ed0b64e52d9e1c2c95091b64070a6521b449ae4382004fb214507",
+    "vendored": "showcase/Sources/NVXShowcase/Tabs/Pie/CompactTabStrip.swift",
+    "vendoredSHA256": "f1c1658ac0ab57c8c7b3df0346c3499b4e1dee5d091bcfab7d6f571870547a0c"
+  },
+  {
+    "source": "/Users/mac/Documents/Pie/PiCode/Features/Tabs/TabStripGeometry.swift",
+    "sourceSHA256": "3670985dac9fa53cb49dbab5008bf87d8e0f7bb56c280dfde4981adf36366278",
+    "vendored": "showcase/Sources/NVXShowcase/Tabs/Pie/TabStripGeometry.swift",
+    "vendoredSHA256": "3670985dac9fa53cb49dbab5008bf87d8e0f7bb56c280dfde4981adf36366278"
+  },
+  {
+    "source": "/Users/mac/Documents/Pie/PiCode/Features/Root/TitlebarControlLayout.swift",
+    "sourceSHA256": "1c360886d21c2cfad63b78ea7a14140bf555fed69510ed9daf0d12a6131921be",
+    "vendored": "showcase/Sources/NVXShowcase/Tabs/Pie/TitlebarControlLayout.swift",
+    "vendoredSHA256": "1c360886d21c2cfad63b78ea7a14140bf555fed69510ed9daf0d12a6131921be"
+  }
+]

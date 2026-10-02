@@ -46,6 +46,9 @@ final class SnapshotStore {
     var verifyState: VerifyState = .idle
     var resumeOutput: String = ""
     var resumeRunning = false
+    var showsSidebar = true
+    private var resumeProcess: Process?
+    private var resumeGeneration = UUID()
 
     enum VerifyState: String {
         case idle = "Not verified"
@@ -177,6 +180,7 @@ final class SnapshotStore {
     }
 
     func resume(_ snapshot: SnapshotInfo) {
+        guard !resumeRunning else { return }
         guard let repo = RepoRoot.resolve() else {
             resumeOutput = "resume failed: no nvx checkout found " +
                 "(set NVX_REPO or the repoRoot default)"
@@ -209,20 +213,34 @@ final class SnapshotStore {
             resumeRunning = false
             return
         }
+        resumeProcess = proc
+        let generation = UUID()
+        resumeGeneration = generation
         // If the shim exits while openvmm lingers, the VM would orphan;
         // sweep the tree on the way out. (A restore boot that stays up
         // keeps running until the next resume/stop kills it.)
         DispatchQueue.global().async { [weak self] in
+            // Drain while the process runs; waiting first can fill the pipe
+            // and deadlock a verbose restored guest in an inactive tab.
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
             proc.waitUntilExit()
             if proc.terminationStatus != 0 {
                 RepoRoot.killProcessTree(proc, graceSeconds: 0)
             }
-            let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
-                              encoding: .utf8) ?? ""
+            let text = String(data: data, encoding: .utf8) ?? ""
             Task { @MainActor [weak self] in
-                self?.resumeOutput = text
-                self?.resumeRunning = false
+                guard let self, self.resumeGeneration == generation else { return }
+                self.resumeOutput = text
+                self.resumeRunning = false
+                self.resumeProcess = nil
             }
         }
+    }
+
+    func stopResume() {
+        resumeGeneration = UUID()
+        if let resumeProcess { RepoRoot.killProcessTree(resumeProcess) }
+        resumeProcess = nil
+        resumeRunning = false
     }
 }
