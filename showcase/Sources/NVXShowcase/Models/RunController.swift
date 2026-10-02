@@ -28,9 +28,18 @@ final class RunController {
     private var logReader: FileHandle?
     private var logOffset: UInt64 = 0
     private var saveTargetURL: URL?
+    private static var activeRunDirectories: Set<String> = []
+    private var runDirectory: URL?
+    private let runsRootOverride: URL?
+    private let resolveRepository: () -> URL?
+
+    init(runsRoot: URL? = nil, resolveRepository: @escaping () -> URL? = RepoRoot.resolve) {
+        runsRootOverride = runsRoot
+        self.resolveRepository = resolveRepository
+    }
 
     var runsRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory,
+        runsRootOverride ?? FileManager.default.urls(for: .applicationSupportDirectory,
                                  in: .userDomainMask)[0]
             .appending(path: "NVXShowcase/runs", directoryHint: .isDirectory)
     }
@@ -44,8 +53,10 @@ final class RunController {
     /// when `dir` already exists — `snap` refuses an existing leaf.
     func launchSaving(to origDir: URL, marker: String, timeoutSeconds: Int) -> Bool {
         // openvmm rejects a symlinked snapshot parent (/tmp on macOS),
-        // so resolve before anything touches the path.
-        let dir = origDir.resolvingSymlinksInPath()
+        // so resolve before anything touches the path. (URL's
+        // resolvingSymlinksInPath leaves /tmp unresolved; realpath on
+        // the existing parent does not.)
+        let dir = RunController.resolvedDirectory(origDir)
         guard phase == .idle || phase == .done else { return false }
         guard FileManager.default.fileExists(atPath: dir.path) == false else {
             return false
@@ -58,6 +69,16 @@ final class RunController {
         return true
     }
 
+    /// Resolve `dir` through any symlinked parent components (/tmp on
+    /// macOS). Falls back to `dir` unchanged when the parent is missing.
+    static func resolvedDirectory(_ dir: URL) -> URL {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let parent = dir.deletingLastPathComponent().path
+        guard realpath(parent, &buffer) != nil else { return dir }
+        return URL(filePath: String(cString: buffer))
+            .appending(path: dir.lastPathComponent)
+    }
+
     private func beginRun(extraArgs: [String], saveTarget: URL?,
                           backingFileName: String? = nil) {
         guard phase == .idle || phase == .done else { return }
@@ -65,7 +86,7 @@ final class RunController {
         saveTargetURL = saveTarget
         phase = .launching
 
-        guard let repo = RepoRoot.resolve() else {
+        guard let repo = resolveRepository() else {
             events.append(GuestEvent(
                 kind: .info,
                 text: "launch failed: no nvx checkout found " +
@@ -77,10 +98,12 @@ final class RunController {
 
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
-        let dir = runsRoot.appending(path: "\(payload.id)-\(stamp)",
+        let dir = runsRoot.appending(path: "\(payload.id)-\(stamp)-\(UUID().uuidString)",
                                      directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: dir,
                                                  withIntermediateDirectories: true)
+        runDirectory = dir
+        Self.activeRunDirectories.insert(dir.path)
         pruneRuns(keeping: 20)
         let log = dir.appending(path: "console.log")
         FileManager.default.createFile(atPath: log.path, contents: nil)
@@ -102,6 +125,7 @@ final class RunController {
                     text: "launch failed: cannot create memory backing file: \(error)"))
                 phase = .done
                 verdict = .failed
+                releaseRunDirectory()
                 return
             }
             extraArgs += ["--memory-backing-file", backing.path]
@@ -124,6 +148,7 @@ final class RunController {
             events.append(GuestEvent(kind: .info, text: "launch failed: \(error)"))
             phase = .done
             verdict = .failed
+            releaseRunDirectory()
             return
         }
         process = proc
@@ -157,6 +182,12 @@ final class RunController {
         logOffset = 0
         savedSnapshotURL = nil
         saveTargetURL = nil
+        releaseRunDirectory()
+    }
+
+    private func releaseRunDirectory() {
+        if let runDirectory { Self.activeRunDirectories.remove(runDirectory.path) }
+        runDirectory = nil
     }
 
     /// Drop all but the newest `keeping` run directories so repeated
@@ -169,7 +200,7 @@ final class RunController {
         func mtime(_ url: URL) -> Date {
             (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
         }
-        let ordered = dirs.sorted { mtime($0) < mtime($1) }
+        let ordered = dirs.filter { !Self.activeRunDirectories.contains($0.path) }.sorted { mtime($0) < mtime($1) }
         for stale in ordered.dropLast(keeping) {
             try? fm.removeItem(at: stale)
         }
@@ -240,6 +271,7 @@ final class RunController {
         try? logReader?.close()
         logReader = nil
         process = nil
+        releaseRunDirectory()
         if phase == .live {
             phase = .done
             if verdict == .running {
