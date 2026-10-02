@@ -7,6 +7,9 @@ import Foundation
 enum StreamParser {
     /// Guest-side markers printed by the initramfs init.
     static func guestEvent(for line: String) -> GuestEvent.Kind? {
+        if line.contains("snapshot saved to") {
+            return .snapshotSaved
+        }
         if line.contains("NVX-GUEST-BOOT-OK") || line.contains("BOOT-OK:") {
             return .boot
         }

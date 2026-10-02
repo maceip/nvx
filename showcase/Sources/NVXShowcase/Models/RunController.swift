@@ -19,12 +19,15 @@ final class RunController {
     var denied = 0
     var verdict: Verdict = .running
     var payload: Payload = .exfiltrator
+    /// Snapshot directory captured by the last save run, if any.
+    var savedSnapshotURL: URL?
 
     private var process: Process?
     private var timer: Timer?
     private var logURL: URL?
     private var logReader: FileHandle?
     private var logOffset: UInt64 = 0
+    private var saveTargetURL: URL?
 
     var runsRoot: URL {
         FileManager.default.urls(for: .applicationSupportDirectory,
@@ -33,8 +36,33 @@ final class RunController {
     }
 
     func launch() {
+        beginRun(extraArgs: [], saveTarget: nil)
+    }
+
+    /// Boot the payload and drive the openvmm REPL to save a snapshot
+    /// into `dir` once `marker` appears. Returns false (running nothing)
+    /// when `dir` already exists — `snap` refuses an existing leaf.
+    func launchSaving(to origDir: URL, marker: String, timeoutSeconds: Int) -> Bool {
+        // openvmm rejects a symlinked snapshot parent (/tmp on macOS),
+        // so resolve before anything touches the path.
+        let dir = origDir.resolvingSymlinksInPath()
+        guard phase == .idle || phase == .done else { return false }
+        guard FileManager.default.fileExists(atPath: dir.path) == false else {
+            return false
+        }
+        beginRun(extraArgs: [
+            "--save-snapshot", dir.path,
+            "--save-on", marker,
+            "--save-timeout", String(timeoutSeconds),
+        ], saveTarget: dir, backingFileName: "membacking.bin")
+        return true
+    }
+
+    private func beginRun(extraArgs: [String], saveTarget: URL?,
+                          backingFileName: String? = nil) {
         guard phase == .idle || phase == .done else { return }
         reset()
+        saveTargetURL = saveTarget
         phase = .launching
 
         guard let repo = RepoRoot.resolve() else {
@@ -57,6 +85,27 @@ final class RunController {
         let log = dir.appending(path: "console.log")
         FileManager.default.createFile(atPath: log.path, contents: nil)
         logURL = log
+        var extraArgs = extraArgs
+        if let backingFileName {
+            // Fresh hvf boots need file-backed guest RAM before the REPL
+            // can save. nvx.py floors hvf runs at 512 MiB, so a sparse
+            // file that size always covers the UI's fixed memory shape.
+            let backing = dir.appending(path: backingFileName)
+            do {
+                FileManager.default.createFile(atPath: backing.path, contents: nil)
+                let handle = try FileHandle(forWritingTo: backing)
+                try handle.truncate(atOffset: 512 * 1024 * 1024)
+                try handle.close()
+            } catch {
+                events.append(GuestEvent(
+                    kind: .info,
+                    text: "launch failed: cannot create memory backing file: \(error)"))
+                phase = .done
+                verdict = .failed
+                return
+            }
+            extraArgs += ["--memory-backing-file", backing.path]
+        }
 
         let proc = Process()
         // /usr/bin/python3 is Apple Python 3.9 (no dataclass slots);
@@ -64,7 +113,7 @@ final class RunController {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python3",
                           repo.appending(path: "scripts/nvx.py").path,
-                          "run", "--hypervisor", "hvf"] + payload.arguments
+                          "run", "--hypervisor", "hvf"] + payload.arguments + extraArgs
         proc.standardInput = FileHandle.nullDevice
         proc.standardOutput = try? FileHandle(forWritingTo: log)
         proc.standardError = proc.standardOutput
@@ -106,6 +155,8 @@ final class RunController {
         denied = 0
         verdict = .running
         logOffset = 0
+        savedSnapshotURL = nil
+        saveTargetURL = nil
     }
 
     /// Drop all but the newest `keeping` run directories so repeated
@@ -150,6 +201,8 @@ final class RunController {
                 case .probeFailed, .probeSucceeded:
                     attempted += 1
                     if kind == .probeFailed { denied += 1 }
+                case .snapshotSaved:
+                    savedSnapshotURL = saveTargetURL
                 default:
                     break
                 }

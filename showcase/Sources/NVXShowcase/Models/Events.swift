@@ -10,6 +10,8 @@ struct GuestEvent: Identifiable, Hashable {
         case probeFailed
         /// A host-side denial (policy drop, EPERM, read-only refusal).
         case denied
+        /// A `--save-snapshot` capture completed on the openvmm REPL.
+        case snapshotSaved
         case info
     }
 
@@ -45,6 +47,8 @@ struct Payload: Identifiable, Hashable {
     let blurb: String
     /// Extra `nvx.py run` arguments for this payload.
     let arguments: [String]
+    /// Boot marker this payload always prints; the Save sheet default.
+    let saveMarker: String
 
     static let exfiltrator = Payload(
         id: "exfiltrator",
@@ -54,7 +58,11 @@ struct Payload: Identifiable, Hashable {
             "--virtio-net", "consomme:192.168.127.0/24",
             "--network-egress", "deny",
             "--cmdline", "virtnet_probe=192.168.127.1",
-        ]
+        ],
+        // Fires at the end of every boot regardless of network policy
+        // (egress-deny blackholes DHCP, so VIRTNET-DHCP-OK never prints
+        // for this payload), capturing the fully booted shell.
+        saveMarker: "NVX-GUEST-BOOT-OK"
     )
 
     static let all: [Payload] = [.exfiltrator]

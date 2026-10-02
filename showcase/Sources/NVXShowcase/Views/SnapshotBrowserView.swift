@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// The time machine: browse snapshot generations, inspect the frozen
 /// moment, and resume it.
 struct SnapshotBrowserView: View {
-    @State private var store = SnapshotStore()
+    @Bindable var store: SnapshotStore
     @State private var showingPicker = false
 
     var body: some View {

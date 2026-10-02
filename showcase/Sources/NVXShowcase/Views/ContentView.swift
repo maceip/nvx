@@ -1,50 +1,28 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selection: SidebarSection? = .live
+    @State private var tab: ShowcaseTab = .runtime
     @State private var controller = RunController()
+    @State private var snapshotStore = SnapshotStore()
 
-    enum SidebarSection: Hashable {
-        case live
+    enum ShowcaseTab: Hashable {
+        case runtime
         case snapshots
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("Showcase") {
-                    Label("Runtime", systemImage: "cpu")
-                        .tag(SidebarSection.live)
-                    Label("Snapshots", systemImage: "clock.arrow.circlepath")
-                        .tag(SidebarSection.snapshots)
-                }
-                Section("Payload") {
-                    ForEach(Payload.all) { payload in
-                        HStack {
-                            Button(payload.name) {
-                                controller.payload = payload
-                            }
-                            .buttonStyle(.plain)
-                            Spacer()
-                            if controller.payload == payload {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .help(payload.blurb)
-                    }
-                }
-                .disabled(controller.phase == .live ||
-                    controller.phase == .launching)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-        } detail: {
-            switch selection {
-            case .live, nil:
-                LiveView(controller: controller)
-            case .snapshots:
-                SnapshotBrowserView()
-            }
+        // Top tab bar (Pie pattern: TabView + selection + tags) so the
+        // demo switches between the live runtime and saved moments.
+        TabView(selection: $tab) {
+            LiveView(controller: controller, onSnapshotSaved: { parent in
+                snapshotStore.rootURL = parent
+                tab = .snapshots
+            })
+            .tabItem { Label("Runtime", systemImage: "cpu") }
+            .tag(ShowcaseTab.runtime)
+            SnapshotBrowserView(store: snapshotStore)
+                .tabItem { Label("Snapshots", systemImage: "clock.arrow.circlepath") }
+                .tag(ShowcaseTab.snapshots)
         }
         .navigationTitle("NVX Showcase")
     }
