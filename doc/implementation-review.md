@@ -1,5 +1,33 @@
 # Implementation review — 2026-10-02
 
+## Addendum — F1 re-test, 2026-10-03 (supersedes F1 above; reviewer's text kept verbatim)
+
+F1's premise is wrong and its prescribed probe already exists. Do not act on F1:
+
+- `BPF_DEVCG_DEV_CHAR` is `(1 << 1) == 2`, not `(1 << 5) == 32` — the code's own
+  `_Static_assert` says so, and it matches the uapi encoding
+  (`access_type == (ACC << 16) | DEV`). Masking with `0xffff` and comparing
+  against `2` correctly admits character devices. All jump targets in
+  `nvx-device-policy.c` were hand-verified against the instruction indices.
+- The "missing positive control" already exists and is enforced:
+  `policy_tests.STANDARD_DEVICES` opens + IO-checks null/zero/urandom/full and
+  allocates a pty + `/dev/tty`; `validate("device-policy")` requires all six
+  `"ok"`, and the runner additionally executes STANDARD_DEVICES under the pure
+  default profile, raising "default profile denied a permitted private device"
+  otherwise. A deny-all filter fails this validation, not silently passes it.
+- Live evidence on the current tree (HVF, 2026-10-03):
+  `build/test-results/f1-device-policy/` — protected (ci+MKNOD), risky control,
+  and default-profile standard devices all validate in both directions
+  (`F1-DEVICE-POLICY-VALIDATE-OK`). Direct probe: all six permitted devices open
+  with working IO; mknod of mem/kmsg/disk denied.
+- The 12:54 `review-policy` failure cited nowhere above was a transient empty-pipe
+  flake (guest child died before writing); the 12:56 re-run passed both scenarios.
+- One adjacent thorn, not a blocker: `nvx.py run --profile default` auto-selects a
+  warm-snapshot restore, and a restore from the stale
+  `build/snapshot-proof/generation` template wedged (25+ min at full CPU, killed).
+  Fresh boots via the image path take ~1 min. Stale templates should be pruned or
+  the restore should time out loudly before the talk demo.
+
 Scope: the P0–P5 work in the working tree (uncommitted, plus new untracked modules), reviewed
 against [roadmap-best-in-class-sandbox.md](roadmap-best-in-class-sandbox.md) and
 [implementation-plan.md](implementation-plan.md). This is a review, not a change.
