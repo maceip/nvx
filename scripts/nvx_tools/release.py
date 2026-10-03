@@ -26,6 +26,7 @@ from typing import cast
 from .archive import create_reproducible_release_archive, create_reproducible_tar_gz
 from .build import (
     assert_required_kernel_config,
+    host_guest_arch,
     initramfs_provenance_inputs,
     kernel_provenance_inputs,
 )
@@ -1143,6 +1144,23 @@ def _validate_source_manifest_metadata(
     ubuntu = cast(dict[str, object], ubuntu_value)
     source = cast(dict[str, object], source_value)
     input_config = cast(dict[str, object], config_value)
+    arm = (
+        input_config.get("path") == KernelBuildConstants.INPUT_CONFIG_AARCH64.as_posix()
+    )
+    if arm:
+        variants_value = manifest.get("architectures")
+        if not isinstance(variants_value, dict):
+            raise ScriptError("SOURCE-MANIFEST.json must declare aarch64 build pins")
+        variants = cast(dict[str, object], variants_value)
+        variant_value = variants.get("aarch64")
+        if not isinstance(variant_value, dict):
+            raise ScriptError("SOURCE-MANIFEST.json must declare aarch64 build pins")
+        variant = cast(dict[str, object], variant_value)
+        linux_arm, alpine_arm = variant.get("linux"), variant.get("alpine")
+        if not isinstance(linux_arm, dict) or not isinstance(alpine_arm, dict):
+            raise ScriptError("SOURCE-MANIFEST.json aarch64 source pins are incomplete")
+        linux = {**linux, **cast(dict[str, object], linux_arm)}
+        alpine = {**alpine, **cast(dict[str, object], alpine_arm)}
     source_patches = source.get("patches")
     if not isinstance(source_patches, list):
         raise ScriptError("kernel provenance source patches must be a list")
@@ -1183,9 +1201,21 @@ def _validate_source_manifest_metadata(
     expected_alpine: dict[str, object] = {
         "version": AlpineBuildConstants.VERSION,
         "branch": AlpineBuildConstants.BRANCH,
-        "architecture": AlpineBuildConstants.ARCHITECTURE,
-        "minirootfs_url": AlpineBuildConstants.MINIROOTFS_URL,
-        "minirootfs_sha256": AlpineBuildConstants.MINIROOTFS_SHA256,
+        "architecture": (
+            AlpineBuildConstants.AARCH64_ARCHITECTURE
+            if arm
+            else AlpineBuildConstants.ARCHITECTURE
+        ),
+        "minirootfs_url": (
+            AlpineBuildConstants.MINIROOTFS_AARCH64_URL
+            if arm
+            else AlpineBuildConstants.MINIROOTFS_URL
+        ),
+        "minirootfs_sha256": (
+            AlpineBuildConstants.MINIROOTFS_AARCH64_SHA256
+            if arm
+            else AlpineBuildConstants.MINIROOTFS_SHA256
+        ),
         "guest_sources": [
             path.as_posix() for path in AlpineBuildConstants.GUEST_SOURCE_DIRECTORIES
         ],
@@ -1623,16 +1653,16 @@ def verify_source_tree() -> None:
             "generated third-party sources must not be checked out here: "
             + ", ".join(present)
         )
-    config_path = BuildConstants.REPO_ROOT / "kernel" / "config-microvm"
-    config = config_path.read_text(encoding="utf-8")
-    for setting in (
-        *KernelBuildConstants.REQUIRED_DIRECT_BOOT_CONFIG,
-        "CONFIG_HVC_XE9=y",
-        "CONFIG_VIRTIO_FS=y",
-        "CONFIG_FUSE_FS=y",
-        *KernelBuildConstants.REQUIRED_SANDBOX_CONFIG,
-    ):
-        if setting not in config.splitlines():
+    config_path = BuildConstants.REPO_ROOT / (
+        KernelBuildConstants.INPUT_CONFIG_AARCH64
+        if host_guest_arch() == "aarch64"
+        else KernelBuildConstants.INPUT_CONFIG
+    )
+    require_file(config_path, "native kernel build configuration")
+    assert_required_kernel_config(config_path)
+    config = config_path.read_text(encoding="utf-8").splitlines()
+    for setting in ("CONFIG_VIRTIO_FS=y", "CONFIG_FUSE_FS=y"):
+        if setting not in config:
             raise ScriptError(f"{config_path} is missing {setting}")
     hvc_patch_text = (
         BuildConstants.REPO_ROOT / "kernel" / "patches" / "0002-microvm-hvc-xe9.patch"
@@ -1642,14 +1672,7 @@ def verify_source_tree() -> None:
             raise ScriptError(f"xe9 HVC patch is missing {marker}")
     generated_config = artifact_path(KernelBuildConstants.CONFIG_NAME)
     if generated_config.is_file():
-        generated = generated_config.read_text(encoding="utf-8").splitlines()
-        for setting in (
-            *KernelBuildConstants.REQUIRED_DIRECT_BOOT_CONFIG,
-            "CONFIG_HVC_XE9=y",
-            *KernelBuildConstants.REQUIRED_SANDBOX_CONFIG,
-        ):
-            if setting not in generated:
-                raise ScriptError(f"{generated_config} is missing {setting}")
+        assert_required_kernel_config(generated_config)
     head = subprocess.run(
         ["git", "-C", OpenVMMBuildConstants.DIRECTORY, "rev-parse", "HEAD"],
         check=True,

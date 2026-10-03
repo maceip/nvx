@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from nvx_tools.build import kernel_provenance_inputs
 from nvx_tools.build_constants import BuildConstants
 from nvx_tools.common import (
     ScriptError,
@@ -17,12 +18,41 @@ from nvx_tools.common import (
 from nvx_tools.release import (
     _latest_release_asset,  # pyright: ignore[reportPrivateUsage]
     _validate_linux_source_archive,  # pyright: ignore[reportPrivateUsage]
+    _validate_source_manifest_metadata,  # pyright: ignore[reportPrivateUsage]
     download_latest_release,
 )
 from nvx_tools.runtime_release import install, inventory
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_source_pins_validate_each_native_architecture(self) -> None:
+        manifest = json.loads(
+            (BuildConstants.REPO_ROOT / "SOURCE-MANIFEST.json").read_bytes()
+        )
+        for architecture in ("x86_64", "aarch64"):
+            with (
+                self.subTest(architecture=architecture),
+                patch("nvx_tools.build.platform.machine", return_value=architecture),
+            ):
+                _validate_source_manifest_metadata(manifest, kernel_provenance_inputs())
+
+    def test_arm_source_pins_refuse_x86_archive_and_patch_substitution(self) -> None:
+        manifest = json.loads(
+            (BuildConstants.REPO_ROOT / "SOURCE-MANIFEST.json").read_bytes()
+        )
+        with patch("nvx_tools.build.platform.machine", return_value="aarch64"):
+            inputs = kernel_provenance_inputs()
+            manifest["architectures"]["aarch64"]["alpine"]["minirootfs_sha256"] = (
+                manifest["alpine"]["minirootfs_sha256"]
+            )
+            with self.assertRaisesRegex(ScriptError, "Alpine minirootfs_sha256"):
+                _validate_source_manifest_metadata(manifest, inputs)
+            manifest["architectures"]["aarch64"]["linux"]["patches"] = manifest[
+                "linux"
+            ]["patches"]
+            with self.assertRaisesRegex(ScriptError, "Linux patches"):
+                _validate_source_manifest_metadata(manifest, inputs)
+
     def test_matching_arm_sources_do_not_require_x86_driver(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

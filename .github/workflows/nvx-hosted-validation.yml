@@ -16,6 +16,37 @@ permissions:
   contents: read
 
 jobs:
+  kvm-admission:
+    name: Nested KVM admission / ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - name: Diagnose the actual host and admit a KVM VM
+        run: |
+          uname -a
+          lscpu
+          sudo modprobe kvm || true
+          test -c /dev/kvm || { echo '::error::No KVM device is exposed by this runner'; exit 1; }
+          ls -l /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          python3 - <<'PY'
+          import fcntl
+          import os
+          device = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+          try:
+              version = fcntl.ioctl(device, 0xae00, 0)
+              if version != 12:
+                  raise RuntimeError(f'unsupported KVM API version: {version}')
+              vm = fcntl.ioctl(device, 0xae01, 0)
+              os.close(vm)
+              print('KVM API 12: actual VM creation succeeded')
+          finally:
+              os.close(device)
+          PY
   linux:
     name: Actual KVM probe and tests / ${{ matrix.arch }}
     strategy:
@@ -57,6 +88,10 @@ jobs:
       - run: python3 scripts/nvx.py build-guest
       - name: Require real nested virtualization
         run: |
+          sudo modprobe kvm || true
+          if test -c /dev/kvm; then
+            sudo chown "$(id -u):$(id -g)" /dev/kvm
+          fi
           test -r /dev/kvm && test -w /dev/kvm || {
             echo '::error::This hosted runner has no usable /dev/kvm. It cannot provide KVM runtime evidence.'
             exit 1

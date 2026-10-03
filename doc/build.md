@@ -13,6 +13,13 @@ python3 scripts/nvx.py build-guest
 python3 scripts/nvx.py build-openvmm
 ```
 
+`nvx verify` selects native architecture pins from `SOURCE-MANIFEST.json`. The
+top-level Linux/Alpine pins remain x86_64; `architectures.aarch64` supplies the
+ARM kernel configuration, patch list and Alpine archive URL/checksum. Common
+version and source metadata remain pinned for both architectures. ARM validation
+requires the ARM direct-boot settings and the same sandbox protections; it does
+not require the x86 xe9 driver.
+
 Build every guest artifact, including the Ubuntu EROFS distro layer, with:
 
 ```bash
