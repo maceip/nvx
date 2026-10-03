@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from nvx_tools.build_constants import BuildConstants
-from nvx_tools.common import ScriptError, sha256_file
+from nvx_tools.common import ScriptError, openvmm_git_state, sha256_file
 from nvx_tools.containment import render, validate_document
 from nvx_tools.runtime_release import PLATFORMS
 
@@ -30,15 +30,28 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     root = BuildConstants.REPO_ROOT
+
+    def source_state() -> tuple[str, str]:
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            text=True,
+        ).strip()
+        core, clean = openvmm_git_state(root / "openvmm")
+        if dirty or not clean:
+            raise ScriptError(
+                "release acceptance requires clean NVX and pinned OpenVMM source"
+            )
+        return revision, core
+
+    revision, core = source_state()
     proof = args.output_dir.resolve()
     if proof.exists():
         raise ScriptError("release proof must use a new directory")
     proof.mkdir(parents=True)
     backend = BACKENDS[args.platform]
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    core = subprocess.check_output(
-        ["git", "rev-parse", "HEAD:openvmm"], text=True
-    ).strip()
     steps: list[dict[str, object]] = []
 
     def run(name: str, *arguments: str) -> None:
@@ -165,6 +178,10 @@ def main() -> None:
             proof / "scenarios/containment/containment.json"
         ),
     }
+    if source_state() != (revision, core):
+        raise ScriptError(
+            "source changed during acceptance; no release proof was published"
+        )
     (proof / "NVX-ACCEPTANCE.json").write_text(json.dumps(document, indent=2) + "\n")
 
 
