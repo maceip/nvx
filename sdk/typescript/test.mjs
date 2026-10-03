@@ -32,8 +32,8 @@ test('MCP negotiation and split streaming frames preserve both byte streams', as
     assert.equal((await client.initialize()).protocolVersion, PROTOCOL);
     assert.equal((await client.tools())[0].name, 'nvx_run');
     const output = [];
-    const operation = client.operation('nvx_run', {image:'fixture',argv:['/bin/true'],handle:'same'}, {output:(stream, bytes) => output.push([stream, Buffer.from(bytes)])});
-    assert.equal((await operation.result).returncode, 37);
+    const result = await client.run('fixture', ['/bin/true'], 'same', {}, {output:(stream, bytes) => output.push([stream, Buffer.from(bytes)]), timeoutMs:3000});
+    assert.equal(result.returncode, 37);
     assert.deepEqual(output, [['stdout',Buffer.from([0,255])],['stderr',Buffer.from('error')]]);
     assert.deepEqual(requests, ['initialize','notifications/initialized','tools/list','tools/call']);
   } finally { await new Promise(resolve => server.close(resolve)); }
@@ -51,7 +51,7 @@ test('cancellation sends the request ID before aborting its response', async () 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const client = new Client(`http://127.0.0.1:${server.address().port}/mcp`, 'fixture');
-    const operation = client.operation('nvx_run', {image:'fixture',argv:['/bin/true']});
+    const operation = client.startRun('fixture', ['/bin/true'], 'cancelled');
     const rejected = assert.rejects(operation.result, /abort/i);
     await operation.cancel(); await rejected;
     assert.equal(cancelled, operation.id);

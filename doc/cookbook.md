@@ -8,6 +8,18 @@ python3 scripts/nvx.py setup                 # local macOS entitlement
 python3 scripts/nvx.py doctor --backend hvf
 ```
 
+For a published signed runtime, install without a source checkout:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/maceip/nvx/dev/scripts/install-nvx.py | python3 -
+```
+
+Python 3.10+ and GitHub CLI must be installed. The installer uses public downloads and
+offline signature bundles, so GitHub login is unnecessary. It refuses unsupported hosts,
+existing destinations and development archives. Add its printed `bin` directory to `PATH`;
+then use `nvx doctor` and `nvx run --image python:3.12-slim -- python -c 'print(1)'`.
+Publication availability is tracked in the [acceptance ledger](implementation-status.md).
+
 To run a prebuilt EROFS layer on Apple Silicon, supply its filesystem UUID and
 an unused, formatted ext4 scratch image. The workload starts as uid/gid 65534:
 
@@ -199,9 +211,15 @@ from pathlib import Path
 from nvx_sdk import Client
 client = Client('http://127.0.0.1:REPLACE_WITH_PORT/mcp', Path('build/mcp/http.capability'))
 client.initialize()
-result = client.run('alpine:3.20', ['/bin/echo', 'hello'], handle='example-1')
+result = client.run('alpine:3.20', ['/bin/echo', 'hello'], handle='example-1',
+                    timeout=30, output=lambda stream, data: print(stream, data))
 print(result['returncode'])
 ```
+
+`timeout`, `output` and `request_id` belong to the Python request rather than guest tool
+arguments. Use a known `request_id` with `client.cancel(id)` for cancellation from another
+thread. TypeScript exposes `startRun` and `startExec`, each returning `{id, result, cancel}`;
+`run`/`exec` accept tool arguments followed by `{output, timeoutMs}` request options.
 
 ## Verify a self-contained local ARM package
 

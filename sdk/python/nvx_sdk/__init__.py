@@ -155,15 +155,39 @@ class Client:
         return json.loads(result["content"][0]["text"])
 
     def run(
-        self, image: str, argv: list[str], *, handle: str, **options: Any
+        self,
+        image: str,
+        argv: list[str],
+        *,
+        handle: str,
+        timeout: float = 90,
+        output: Callable[[str, bytes], None] | None = None,
+        request_id: int | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         return self.call(
-            "nvx_run", {"image": image, "argv": argv, "handle": handle, **options}
+            "nvx_run",
+            {"image": image, "argv": argv, "handle": handle, **options},
+            timeout=timeout,
+            output=output,
+            request_id=request_id,
         )
 
     def exec(
-        self, identifier: str, argv: list[str], *, handle: str, **options: Any
+        self,
+        identifier: str,
+        argv: list[str],
+        *,
+        handle: str,
+        timeout: float = 90,
+        output: Callable[[str, bytes], None] | None = None,
+        request_id: int | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         return self.call(
-            "nvx_exec", {"id": identifier, "argv": argv, "handle": handle, **options}
+            "nvx_exec",
+            {"id": identifier, "argv": argv, "handle": handle, **options},
+            timeout=timeout,
+            output=output,
+            request_id=request_id,
         )

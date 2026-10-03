@@ -1,0 +1,257 @@
+name: NVX signed release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guests:
+    name: Guest and matching sources / ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            guest: all
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            guest: alpine
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 scripts/nvx.py build-guest --guest "$GUEST"
+        env:
+          GUEST: ${{ matrix.guest }}
+      - run: python3 scripts/nvx.py collect-sources
+      - name: Archive verified corresponding sources
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          version=$(cat VERSION)
+          tar -czf "build/nvx-${version}-${ARCH}-sources.tar.gz" -C build sources
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-guest-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            build/Image
+            build/vmlinux
+            build/vmlinux.config
+            build/vmlinux.provenance.json
+            build/initramfs*.cpio.gz
+            build/initramfs*.packages.json
+            build/initramfs.provenance.json
+            build/ubuntu-*.erofs
+            build/ubuntu-*.json
+            build/nvx-*-sources.tar.gz
+
+  runtime:
+    name: Complete release gates / ${{ matrix.platform }}
+    needs: guests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            arch: aarch64
+            backend: hvf
+            runner: '["self-hosted","macOS","ARM64","nvx-hvf"]'
+          - platform: linux-arm64
+            arch: aarch64
+            backend: kvm
+            runner: '["self-hosted","Linux","ARM64","nvx-kvm"]'
+          - platform: linux-kvm
+            arch: x86_64
+            backend: kvm
+            runner: '["self-hosted","Linux","X64","kvm","virtual-machine"]'
+          - platform: linux-mshv
+            arch: x86_64
+            backend: mshv
+            runner: '["self-hosted","Linux","X64","mshv","virtual-machine"]'
+          - platform: windows-whp
+            arch: x86_64
+            backend: whp
+            runner: '["self-hosted","Windows","X64","whp","virtual-machine"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      BACKEND: ${{ matrix.backend }}
+      ARCH: ${{ matrix.arch }}
+      NVX_DEVELOPER_ID: ${{ vars.NVX_DEVELOPER_ID }}
+      NVX_NOTARY_PROFILE: ${{ vars.NVX_NOTARY_PROFILE }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+        with:
+          ssh-key: ${{ secrets.OPENVMM_DEPLOY_KEY }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-guest-${{ matrix.arch }}
+          path: build
+      - run: python3 -m pip install -r requirements-dev.txt
+      - run: ./scripts/check.sh
+      - run: python3 -m pyright
+      - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
+      - run: python3 scripts/nvx.py build-openvmm --backend "$BACKEND"
+      - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/release-proof
+      - name: Sign and notarize macOS executable
+        if: matrix.platform == 'darwin-arm64'
+        run: |
+          test -n "$NVX_DEVELOPER_ID" && test -n "$NVX_NOTARY_PROFILE"
+          codesign --force --options runtime --timestamp --sign "$NVX_DEVELOPER_ID" --entitlements openvmm/build_support/macos/entitlements.xml openvmm/target/release/openvmm
+          ditto -c -k openvmm/target/release/openvmm build/notary.zip
+          xcrun notarytool submit build/notary.zip --keychain-profile "$NVX_NOTARY_PROFILE" --wait --output-format json > build/release-proof/notary-result.json
+          spctl --assess --type execute openvmm/target/release/openvmm
+          PYTHONPATH=scripts python3 -c 'from nvx_tools.build import record_openvmm_provenance; from nvx_tools.build_config import OpenVmmBuildConfig; record_openvmm_provenance(OpenVmmBuildConfig(backend="hvf"))'
+      - name: Validate corresponding sources and stage strict package
+        run: |
+          version=$(cat VERSION)
+          tar -xzf "build/nvx-${version}-${ARCH}-sources.tar.gz" -C build
+          PYTHONPATH=scripts python3 -c 'from nvx_tools.release import validate_corresponding_sources; validate_corresponding_sources()'
+          python3 scripts/nvx.py package --platform "$PLATFORM" --binary-only --destination build/nvx-package
+          python3 scripts/nvx.py archive-release --source build/nvx-package --destination "build/nvx-${version}-${PLATFORM}.tar.gz"
+      - name: Sign complete runtime and source archives
+        id: attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: build/nvx-*.tar.gz
+      - name: Include offline signature bundles for public installation
+        env:
+          BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
+        run: |
+          for archive in build/nvx-*.tar.gz; do
+            cp "$BUNDLE" "${archive}.sigstore.jsonl"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-runtime-${{ matrix.platform }}
+          path: |
+            build/nvx-*.tar.gz
+            build/nvx-*.sigstore.jsonl
+            build/release-proof
+          if-no-files-found: error
+
+  publish:
+    needs: runtime
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-runtime-*
+          path: build/releases
+      - name: Check the complete matrix before publication
+        run: python3 scripts/verify-release-matrix.py build/releases --revision "$GITHUB_SHA" --version "$(cat VERSION)"
+      - name: Publish candidate with signed archives and complete evidence
+        run: |
+          test "$RELEASE_TAG" = "v$(cat VERSION)"
+          for archive in build/publish/*.tar.gz; do
+            gh attestation verify "$archive" --bundle "${archive}.sigstore.jsonl" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/nvx-release.yml" --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$GITHUB_SHA"
+          done
+          gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --verify-tag --draft --title "NVX $RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" build/publish/*
+          tar -czf build/nvx-release-evidence.tar.gz -C build/releases .
+          gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" build/nvx-release-evidence.tar.gz
+          gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --draft=false --prerelease
+
+  download-smoke:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            backend: hvf
+            runner: '["self-hosted","macOS","ARM64","nvx-hvf"]'
+          - platform: linux-arm64
+            backend: kvm
+            runner: '["self-hosted","Linux","ARM64","nvx-kvm"]'
+          - platform: linux-kvm
+            backend: kvm
+            runner: '["self-hosted","Linux","X64","kvm","virtual-machine"]'
+          - platform: linux-mshv
+            backend: mshv
+            runner: '["self-hosted","Linux","X64","mshv","virtual-machine"]'
+          - platform: windows-whp
+            backend: whp
+            runner: '["self-hosted","Windows","X64","whp","virtual-machine"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      PLATFORM: ${{ matrix.platform }}
+      BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - name: Download the public candidate and verify its signature
+        env:
+          NVX_IMAGE_CACHE: ${{ runner.temp }}/nvx-clean-image-cache-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          version=$(cat VERSION)
+          mkdir -p build/download
+          gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --pattern "nvx-${version}-${PLATFORM}.tar.gz" --dir build/download
+          gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --pattern "nvx-${version}-${PLATFORM}.tar.gz.sigstore.jsonl" --dir build/download
+          gh attestation verify "build/download/nvx-${version}-${PLATFORM}.tar.gz" --bundle "build/download/nvx-${version}-${PLATFORM}.tar.gz.sigstore.jsonl" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/nvx-release.yml" --source-ref "refs/tags/$RELEASE_TAG" --source-digest "$GITHUB_SHA"
+          python3 scripts/nvx.py install --archive "build/download/nvx-${version}-${PLATFORM}.tar.gz" --destination build/clean-install
+          python3 build/clean-install/scripts/nvx.py doctor --backend "$BACKEND"
+          python3 build/clean-install/scripts/nvx.py run --image alpine:3.20 --hypervisor "$BACKEND" -- /bin/echo NVX-GUEST-BOOT-OK
+
+  promote:
+    needs: [publish, download-smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - run: gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --prerelease=false --latest

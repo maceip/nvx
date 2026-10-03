@@ -94,7 +94,7 @@ from nvx_tools.sandbox import (
 )
 from nvx_tools.snapshot import format_report, verify_snapshot
 
-DEFAULT_RELEASE_REPOSITORY = "microsoft/nvx"
+DEFAULT_RELEASE_REPOSITORY = "maceip/nvx"
 HYPERVISORS = ("auto", "whp", "kvm", "mshv", "hvf", "hypervisor-framework")
 # Canonical name for each --hypervisor choice. hypervisor-framework is an
 # alias for hvf (macOS Hypervisor.framework).
@@ -319,7 +319,11 @@ def _release_platform(hypervisor: str) -> str:
 
 
 def command_download(args: argparse.Namespace) -> None:
-    download_latest_release(args.repository, _release_platform(args.hypervisor))
+    download_latest_release(
+        args.repository,
+        _release_platform(args.hypervisor),
+        allow_unsigned=args.allow_unsigned,
+    )
 
 
 def _format_command(command: list[str]) -> str:
@@ -1538,6 +1542,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="OWNER/REPOSITORY",
     )
     download.add_argument("--hypervisor", choices=HYPERVISORS, default="auto")
+    download.add_argument(
+        "--allow-unsigned",
+        action="store_true",
+        help="explicitly permit an unsigned development or legacy upstream archive",
+    )
     download.set_defaults(handler=command_download)
 
     run = subparsers.add_parser("run", help="run an OpenVMM microVM")

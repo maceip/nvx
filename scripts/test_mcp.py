@@ -204,6 +204,54 @@ class MCPTests(unittest.TestCase):
                         ],
                         37,
                     )
+                execute = service._program
+
+                def fixture_program(
+                    command: list[str],
+                    job: mcp.Job,
+                    emit: Any,
+                    progress: Any,
+                    redactions: Any,
+                    deadline: float,
+                    identifier_hint: str | None = None,
+                ) -> dict[str, Any]:
+                    return execute(
+                        [
+                            sys.executable,
+                            "-c",
+                            "import os;os.write(1,b'output');os.write(2,b'error');raise SystemExit(37)",
+                        ],
+                        job,
+                        emit,
+                        progress,
+                        redactions,
+                        deadline,
+                        identifier_hint=identifier_hint,
+                    )
+
+                streamed: list[tuple[str, bytes]] = []
+                with patch.object(service, "_program", side_effect=fixture_program):
+                    result = client.run(
+                        "fixture",
+                        ["/bin/true"],
+                        handle="streaming",
+                        timeout=3,
+                        request_id=41,
+                        output=lambda stream, data: streamed.append((stream, data)),
+                    )
+                    self.assertEqual(result["returncode"], 37)
+                    self.assertEqual(
+                        b"".join(
+                            data for stream, data in streamed if stream == "stdout"
+                        ),
+                        b"output",
+                    )
+                    self.assertEqual(
+                        b"".join(
+                            data for stream, data in streamed if stream == "stderr"
+                        ),
+                        b"error",
+                    )
                 capability.write_text("wrong-capability")
                 with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
                     Client(

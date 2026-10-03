@@ -2,6 +2,8 @@
 export const PROTOCOL = "2025-06-18";
 export type Arguments = Record<string, unknown>;
 export type Output = (stream: "stdout" | "stderr", bytes: Uint8Array) => void;
+export type RequestOptions = {output?: Output; timeoutMs?: number};
+export type Operation = {id: number; result: Promise<Arguments>; cancel: () => Promise<void>};
 export class Client {
   private sequence = 0;
   constructor(private url: string, private capability: string) {
@@ -52,7 +54,7 @@ export class Client {
   }
   async tools(): Promise<Arguments[]> { return (await this.request("tools/list", {}, ++this.sequence)).tools; }
   async cancel(id: number): Promise<void> { await this.request("notifications/cancelled", {requestId: id, reason: "SDK cancellation"}, undefined); }
-  operation(name: string, args: Arguments, options: {output?: Output; timeoutMs?: number} = {}): {id: number; result: Promise<Arguments>; cancel: () => Promise<void>} {
+  operation(name: string, args: Arguments, options: RequestOptions = {}): Operation {
     const id = ++this.sequence;
     const controller = new AbortController();
     const cancel = async () => { try { await this.cancel(id); } finally { controller.abort(); } };
@@ -63,10 +65,16 @@ export class Client {
     }).finally(() => clearTimeout(timer));
     return {id, result, cancel};
   }
-  run(image: string, argv: string[], handle: string, options: Arguments = {}): Promise<Arguments> {
-    return this.operation("nvx_run", {image, argv, handle, ...options}).result;
+  startRun(image: string, argv: string[], handle: string, args: Arguments = {}, options: RequestOptions = {}): Operation {
+    return this.operation("nvx_run", {image, argv, handle, ...args}, options);
   }
-  exec(id: string, argv: string[], handle: string, options: Arguments = {}): Promise<Arguments> {
-    return this.operation("nvx_exec", {id, argv, handle, ...options}).result;
+  startExec(id: string, argv: string[], handle: string, args: Arguments = {}, options: RequestOptions = {}): Operation {
+    return this.operation("nvx_exec", {id, argv, handle, ...args}, options);
+  }
+  run(image: string, argv: string[], handle: string, args: Arguments = {}, options: RequestOptions = {}): Promise<Arguments> {
+    return this.startRun(image, argv, handle, args, options).result;
+  }
+  exec(id: string, argv: string[], handle: string, args: Arguments = {}, options: RequestOptions = {}): Promise<Arguments> {
+    return this.startExec(id, argv, handle, args, options).result;
   }
 }

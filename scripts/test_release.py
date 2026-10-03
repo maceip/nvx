@@ -1,6 +1,7 @@
 import io
 import json
 import struct
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,11 +16,82 @@ from nvx_tools.common import (
 )
 from nvx_tools.release import (
     _latest_release_asset,  # pyright: ignore[reportPrivateUsage]
+    _validate_linux_source_archive,  # pyright: ignore[reportPrivateUsage]
+    download_latest_release,
 )
 from nvx_tools.runtime_release import install, inventory
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_matching_arm_sources_do_not_require_x86_driver(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "build").mkdir()
+            config = b"CONFIG_ARM64=y\n"
+            manifest = b'{"linux":{"patches":["x86-only.patch"]}}'
+            (root / "build/vmlinux.config").write_bytes(config)
+            (root / "SOURCE-MANIFEST.json").write_bytes(manifest)
+            (root / "build/vmlinux.provenance.json").write_text(
+                json.dumps({"source": {"patches": []}})
+            )
+            header = bytearray(64)
+            header[:6] = b"\x7fELF\x02\x01"
+            struct.pack_into("<H", header, 18, 183)
+            (root / "build/vmlinux").write_bytes(header)
+            archive_path = root / "source.tar.gz"
+            with tarfile.open(archive_path, "w:gz") as archive:
+                for name, body in (
+                    ("source/vmlinux.config", config),
+                    ("source/SOURCE-MANIFEST.json", manifest),
+                    ("source/linux-6.18.38/arch/arm64/Kconfig", b"arm source"),
+                ):
+                    row = tarfile.TarInfo(name)
+                    row.size = len(body)
+                    archive.addfile(row, io.BytesIO(body))
+            with (
+                patch.object(BuildConstants, "REPO_ROOT", root),
+                patch.object(BuildConstants, "BUILD_DIR", root / "build"),
+            ):
+                _validate_linux_source_archive(archive_path)
+                struct.pack_into("<H", header, 18, 62)
+                (root / "build/vmlinux").write_bytes(header)
+                with self.assertRaisesRegex(ScriptError, "matching kernel sources"):
+                    _validate_linux_source_archive(archive_path)
+
+    def test_untrusted_release_is_never_installed(self) -> None:
+        from nvx_tools.release import (
+            _ReleaseAsset,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        def fixture_download(url: str, destination: Path, **kwargs: object) -> None:
+            destination.write_bytes(b"archive")
+
+        with (
+            patch(
+                "nvx_tools.release._latest_release_asset_with_fallback",
+                return_value=(
+                    _ReleaseAsset(
+                        "v0.1.0",
+                        "nvx-0.1.0-linux-arm64.tar.gz",
+                        "https://example.test/archive",
+                        7,
+                    ),
+                    None,
+                ),
+            ),
+            patch("nvx_tools.release.download", side_effect=fixture_download),
+            patch(
+                "nvx_tools.release_auth.verify_release_attestation",
+                side_effect=ScriptError("invalid signature"),
+            ),
+            patch("nvx_tools.release._install_release_archive") as install_archive,
+        ):
+            with self.assertRaisesRegex(ScriptError, "invalid signature"):
+                download_latest_release("example/nvx", "linux-arm64")
+            install_archive.assert_not_called()
+            download_latest_release("example/nvx", "linux-arm64", allow_unsigned=True)
+            install_archive.assert_called_once()
+
     def test_shipped_cli_resolves_both_release_layouts_and_checkout_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

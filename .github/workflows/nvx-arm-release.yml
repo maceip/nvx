@@ -37,7 +37,7 @@ jobs:
       - run: python3 scripts/nvx.py build-openvmm --backend "$BACKEND"
       - run: python3 scripts/nvx.py build-guest
       - run: python3 scripts/nvx.py doctor --backend "$BACKEND"
-      - run: python3 scripts/nvx.py test-microvm --backend "$BACKEND" --scenario sandbox-blocks --scenario managed-lifecycle --scenario workload-identity --scenario image-run --scenario resource-caps --scenario showcase-simulants --scenario workspace-lifecycle --scenario secret-isolation --scenario warm-clone --scenario mcp-portable --output-dir build/release-proof
+      - run: python3 scripts/nvx.py test-microvm --backend "$BACKEND" --output-dir build/release-proof
       - name: Sign and notarize macOS executable
         if: inputs.platform == 'darwin-arm64'
         run: |

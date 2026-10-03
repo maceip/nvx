@@ -15,8 +15,13 @@ files, build tools, and benchmarks needed to use NVX.
 
 ## Quick Start
 
-Python 3.10 or newer is required. The commands below download the latest NVX release for the
-selected platform, so no local build is required. A successful boot prints
+Python 3.10 or newer is required. OCI conversion also needs a running Docker engine.
+This fork downloads signed releases from `maceip/nvx` and verifies their workflow and
+tag before installation; GitHub CLI (`gh`) performs the signature verification.
+The [release acceptance ledger](doc/implementation-status.md) records which publication
+and host gates have actually passed. Until a signed fork release exists, build from source
+with `build-openvmm --backend BACKEND` and `build-guest`.
+A successful raw guest boot prints
 `NVX-GUEST-BOOT-OK: alpine` and opens a root shell. Select Ubuntu userland
 with the same NVX kernel by passing `--guest ubuntu`.
 
@@ -31,7 +36,7 @@ see [Run OpenVMM directly](doc/run.md#run-openvmm-directly).
 Requires [KVM configured with read/write access to `/dev/kvm`](doc/setup.md#linux--kvm).
 
 ```bash
-git clone https://github.com/microsoft/nvx.git && cd nvx
+git clone --recurse-submodules https://github.com/maceip/nvx.git && cd nvx
 python3 scripts/nvx.py download
 python3 scripts/nvx.py run
 ```
@@ -41,7 +46,7 @@ python3 scripts/nvx.py run
 Requires [MSHV configured with read/write access to `/dev/mshv`](doc/setup.md#linux--mshv).
 
 ```bash
-git clone https://github.com/microsoft/nvx.git && cd nvx
+git clone --recurse-submodules https://github.com/maceip/nvx.git && cd nvx
 python3 scripts/nvx.py download --hypervisor mshv
 python3 scripts/nvx.py run --hypervisor mshv
 ```
@@ -51,10 +56,32 @@ python3 scripts/nvx.py run --hypervisor mshv
 Requires [Windows Hypervisor Platform enabled](doc/setup.md#windows--whp).
 
 ```powershell
-git clone https://github.com/microsoft/nvx.git; Set-Location nvx
+git clone --recurse-submodules https://github.com/maceip/nvx.git; Set-Location nvx
 python scripts\nvx.py download
 python scripts\nvx.py run
 ```
+
+### Managed images on Apple Silicon and Linux
+
+Once a signed release is published, this public installer verifies its included signature
+bundle without a GitHub account (Python and `gh` must already be installed):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/maceip/nvx/dev/scripts/install-nvx.py | python3 -
+```
+
+Add the printed directory to `PATH`, then run:
+
+```sh
+nvx doctor
+nvx run --image python:3.12-slim -- python -c 'print(1)'
+nvx run --image alpine:3.20 --workspace ./src:/src:ro --out ./artifacts -- /bin/sh -c 'cp /src/result.txt /out/result.txt'
+```
+
+The default policy runs the workload as uid 65534 with bounded resources and denied egress.
+See the [cookbook](doc/cookbook.md) for workspace, credentials, warm pools and SDK use.
+For an older unsigned upstream archive, explicitly select `--repository microsoft/nvx
+--allow-unsigned`; the unsigned exception is never selected automatically.
 
 ## running claude & codex in an nvx guest on macos
 

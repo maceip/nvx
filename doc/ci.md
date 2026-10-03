@@ -243,3 +243,32 @@ The local Mac has no Developer ID Application identity. Ad-hoc development signi
 successful local archive install are reported as local evidence only. A Linux ARM executable,
 other backend matrices, an accepted Apple notarization ticket, signed release downloads, and
 an integration built by another person remain required external results.
+
+## Signed publication pipeline
+
+`nvx-release.yml` builds architecture-specific guests and validates their matching Linux,
+Alpine and (on x86) Ubuntu sources. It then requires all five currently supported package
+platforms: darwin-arm64, linux-arm64, linux-kvm, linux-mshv and windows-whp. Each runtime
+lane runs the entire correctness suite, all eight containment families with opposite controls,
+OCI determinism, 20 warm/cold measurements, the SDK tests and strict clean-source packaging.
+`release-proof.py` records command exits and hashes; `verify-release-matrix.py` rejects missing
+platforms, stale commits, changed logs, contained controls, missing sources and zero-metric
+performance Warmup. New platforms need a separately measured baseline before promotion.
+
+The checkout action resolves its fork from `.gitmodules` and its revision from the Git index.
+Public submodules need no deploy key. Every PR quality job runs all `scripts/test_*.py` tests.
+
+Tag pushes sign the complete archives with [GitHub/Sigstore build attestations](https://github.com/actions/attest).
+The selected signature binds the archive digest to this repository, release workflow and tag.
+Offline bundles ship alongside each archive. A complete matrix publishes a prerelease candidate;
+new jobs download it from the public release, verify the expected workflow/tag/commit, install
+into an empty directory and cache, run doctor and boot a real workload. Only successful public
+download smoke promotes the candidate to a stable release. A failed candidate stays prerelease.
+Workflow dispatch builds and records evidence without publishing.
+
+`nvx-hosted-validation.yml` probes actual `/dev/kvm` access on hosted x86 and ARM Linux runners.
+It then builds and runs the full acceptance battery. An unavailable hypervisor fails the lane;
+it never becomes a skipped runtime pass. Hosted results cannot establish MSHV, WHP or HVF
+coverage. The full publication pipeline still requires the documented self-hosted runner labels
+and the Mac's Developer ID/notary profiles. Intel macOS is still a missing OpenVMM backend,
+outside the current five-platform package inventory; the roadmap's requirement remains open.

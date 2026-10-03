@@ -122,16 +122,34 @@ def package(
             "release kernel/core architecture does not match its platform"
         )
     revision, clean = openvmm_git_state(OpenVMMBuildConstants.DIRECTORY)
+    nvx_revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=BuildConstants.REPO_ROOT,
+        text=True,
+    ).strip()
+    nvx_clean = not subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=BuildConstants.REPO_ROOT,
+        text=True,
+    ).strip()
+    pinned = subprocess.check_output(
+        ["git", "rev-parse", "HEAD:openvmm"],
+        cwd=BuildConstants.REPO_ROOT,
+        text=True,
+    ).strip()
     core_provenance = json.loads(artifact_path("openvmm.provenance.json").read_bytes())
     if core_provenance.get("source_revision") != revision or core_provenance.get(
         "executable_sha256"
     ) != sha256_file(core):
         raise ScriptError("core provenance does not match the packaged executable")
     if not development and (
-        not clean or core_provenance.get("source_clean") is not True
+        not clean
+        or not nvx_clean
+        or pinned != revision
+        or core_provenance.get("source_clean") is not True
     ):
         raise ScriptError(
-            "published releases require a clean, pinned core build; --development creates a labelled local preview"
+            "published releases require clean NVX source and a clean, pinned core build; --development creates a labelled local preview"
         )
     signing: dict[str, Any] = {"signed": False, "notarized": False}
     if platform == "darwin-arm64":
@@ -195,11 +213,14 @@ def package(
             staging / "licenses/COPYING-LINUX",
         )
         if source:
+            from .release import validate_corresponding_sources
+
             sources = BuildConstants.SOURCE_DIR
             if not sources.is_dir():
                 raise ScriptError(
                     "matching corresponding sources must be collected before packaging"
                 )
+            validate_corresponding_sources()
             shutil.copytree(sources, staging / "source")
         metadata = {
             "release_version": 1,
@@ -209,6 +230,8 @@ def package(
             "development": development,
             "core_revision": revision,
             "source_clean": clean,
+            "nvx_revision": nvx_revision,
+            "nvx_source_clean": nvx_clean,
             "signing": signing,
             "guest_artifacts": list(inventory(platform)),
             "commands": ["nvx", "nvx mcp serve"],

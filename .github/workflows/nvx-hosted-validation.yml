@@ -1,0 +1,60 @@
+name: NVX hosted Linux validation
+
+on:
+  push:
+    branches: [dev, completion/ten-items]
+    paths:
+      - '.github/workflows/nvx-hosted-validation.yml'
+      - '.github/actions/checkout-openvmm/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Actual KVM probe and tests / ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            platform: linux-kvm
+            runner: ubuntu-24.04
+          - arch: aarch64
+            platform: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - run: ./scripts/check.sh
+      - run: python3 -m pyright
+      - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
+      - name: Require real nested virtualization
+        run: |
+          test -r /dev/kvm && test -w /dev/kvm || {
+            echo '::error::This hosted runner has no usable /dev/kvm. It cannot provide KVM runtime evidence.'
+            exit 1
+          }
+      - run: python3 scripts/nvx.py build-openvmm --backend kvm
+      - run: python3 scripts/nvx.py build-guest
+      - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/hosted-proof
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hosted-linux-${{ matrix.arch }}-proof
+          path: build/hosted-proof
+          if-no-files-found: warn

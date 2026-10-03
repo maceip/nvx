@@ -28,6 +28,23 @@ from .common import (
 )
 
 OPENVMM_TEST_BACKENDS = ("kvm", "mshv", "whp", "hvf")
+
+
+def github_submodule_repository(url: str) -> str:
+    """Resolve a GitHub submodule URL without assuming a particular fork."""
+    match = re.fullmatch(
+        r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+        r"([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9_.-]+?)(?:\.git)?",
+        url,
+    )
+    if match is None or match.group(2) in (".", ".."):
+        # URLs can contain credentials; never reproduce a rejected URL in logs.
+        raise ScriptError(
+            "OpenVMM submodule must use an uncredentialed GitHub repository URL"
+        )
+    return "/".join(match.groups())
+
+
 REQUIRED_CI_RESULT_ENVIRONMENTS = {
     "quality": "QUALITY_RESULT",
     "openvmm-changes": "CHANGES_RESULT",

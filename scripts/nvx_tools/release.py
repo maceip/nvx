@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -25,7 +26,6 @@ from typing import cast
 from .archive import create_reproducible_release_archive, create_reproducible_tar_gz
 from .build import (
     assert_required_kernel_config,
-    build_docker_linux_source,
     initramfs_provenance_inputs,
     kernel_provenance_inputs,
 )
@@ -54,6 +54,7 @@ from .common import (
     verify_sha256_sums,
     write_sha256_sums,
 )
+from .doctor import binary_arch
 from .ubuntu import converter_input_sha256, customization_files, package_lock_sha256
 
 GITHUB_API_VERSION = "2022-11-28"
@@ -65,6 +66,8 @@ class _ReleaseAsset:
     name: str
     url: str
     size: int
+    bundle_url: str | None = None
+    bundle_size: int | None = None
 
 
 class _GitHubReleaseQueryError(ScriptError):
@@ -188,8 +191,10 @@ def _latest_release_asset(
     if not isinstance(releases, list):
         raise ScriptError("GitHub release query returned an invalid response")
 
-    extension = ".zip" if platform.startswith("windows-") else ".tar.gz"
-    asset_pattern = re.compile(rf"^nvx-.+-{re.escape(platform)}{re.escape(extension)}$")
+    extension = (
+        r"(?:\.zip|\.tar\.gz)" if platform.startswith("windows-") else r"\.tar\.gz"
+    )
+    asset_pattern = re.compile(rf"^nvx-.+-{re.escape(platform)}{extension}$")
     for release_value in cast(list[object], releases):
         if not isinstance(release_value, dict):
             continue
@@ -214,7 +219,26 @@ def _latest_release_asset(
                 and isinstance(size, int)
                 and not isinstance(size, bool)
             ):
-                return _ReleaseAsset(tag, name, asset_url, size)
+                bundle: dict[str, object] = {}
+                for value in cast(list[object], assets):
+                    if isinstance(value, dict):
+                        candidate = cast(dict[str, object], value)
+                        if candidate.get("name") == name + ".sigstore.jsonl":
+                            bundle = candidate
+                            break
+                bundle_url = bundle.get("url")
+                bundle_size = bundle.get("size")
+                return _ReleaseAsset(
+                    tag,
+                    name,
+                    asset_url,
+                    size,
+                    bundle_url if isinstance(bundle_url, str) else None,
+                    bundle_size
+                    if isinstance(bundle_size, int)
+                    and not isinstance(bundle_size, bool)
+                    else None,
+                )
     raise ScriptError(f"no GitHub release contains an NVX package for {platform}")
 
 
@@ -606,7 +630,9 @@ def _install_release_archive(archive_path: Path) -> None:
             _replace_runtime_file(source, artifact_path(name))
 
 
-def download_latest_release(repository: str, platform: str) -> None:
+def download_latest_release(
+    repository: str, platform: str, *, allow_unsigned: bool = False
+) -> None:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     asset, download_token = _latest_release_asset_with_fallback(
         repository,
@@ -626,6 +652,26 @@ def download_latest_release(repository: str, platform: str) -> None:
         if actual_size != asset.size:
             raise ScriptError(
                 f"downloaded {asset.name} is {actual_size} bytes, expected {asset.size}"
+            )
+        if not allow_unsigned:
+            from .release_auth import verify_release_attestation
+
+            bundle_path: Path | None = None
+            if asset.bundle_url is not None:
+                bundle_path = Path(temporary) / (asset.name + ".sigstore.jsonl")
+                download(
+                    asset.bundle_url,
+                    bundle_path,
+                    headers=_github_headers(download_token, "application/octet-stream"),
+                    opener=credential_safe_opener(),
+                )
+                if (
+                    bundle_path.stat().st_size != asset.bundle_size
+                    or bundle_path.stat().st_size > 16 << 20
+                ):
+                    raise ScriptError("release signature bundle has an invalid size")
+            verify_release_attestation(
+                archive_path, repository, asset.tag, bundle=bundle_path
             )
         _install_release_archive(archive_path)
     print(f">> installed {asset.tag} for {platform}")
@@ -794,23 +840,29 @@ def _validate_linux_source_archive(path: Path) -> None:
             BuildConstants.REPO_ROOT / "SOURCE-MANIFEST.json"
         ).read_bytes(),
     }
-    manifest = json.loads(expected_members["SOURCE-MANIFEST.json"])
+    provenance = _read_json_object(
+        artifact_path("vmlinux.provenance.json"), "kernel provenance"
+    )
+    source = cast(dict[str, object], provenance["source"])
     expected_members.update(
         {
-            patch: (BuildConstants.REPO_ROOT / patch).read_bytes()
-            for patch in manifest["linux"]["patches"]
+            row["path"]: (BuildConstants.REPO_ROOT / row["path"]).read_bytes()
+            for row in cast(list[dict[str, str]], source["patches"])
         }
     )
     with tarfile.open(path, "r:gz") as archive:
         members = archive.getmembers()
         names = [member.name for member in members]
+        required_source = (
+            "arch/arm64/Kconfig"
+            if binary_arch(artifact_path("vmlinux")) == "aarch64"
+            else "drivers/tty/hvc/hvc_xe9.c"
+        )
         if not any(
-            name.endswith(
-                f"{KernelBuildConstants.SOURCE_NAME}/drivers/tty/hvc/hvc_xe9.c"
-            )
+            name.endswith(f"{KernelBuildConstants.SOURCE_NAME}/{required_source}")
             for name in names
         ):
-            raise ScriptError(f"{path} does not contain the patched xe9 HVC driver")
+            raise ScriptError(f"{path} does not contain the matching kernel sources")
         for suffix, expected in expected_members.items():
             matches = [member for member in members if member.name.endswith(suffix)]
             if len(matches) != 1:
@@ -1243,8 +1295,34 @@ def _publish_release_directory(
         shutil.rmtree(backup)
 
 
+def validate_corresponding_sources() -> Path:
+    """Require byte-matching kernel inputs and sources for every shipped package."""
+    root = BuildConstants.SOURCE_DIR
+    _validate_alpine_sources([artifact_path("initramfs.cpio.gz.packages.json")])
+    _validate_linux_source_archive(
+        root / "linux" / KernelBuildConstants.SOURCE_ARCHIVE_NAME
+    )
+    if binary_arch(artifact_path("vmlinux")) == "x86_64":
+        _validate_ubuntu_sources(
+            [
+                artifact_path("initramfs-ubuntu.cpio.gz.packages.json"),
+                artifact_path("ubuntu-distro.erofs.manifest.json"),
+            ]
+        )
+    return root
+
+
 def collect_release_sources(config: DockerBuildConfig) -> None:
-    _guest_names, alpine_manifests, ubuntu_manifests = _guest_release_inputs()
+    if binary_arch(artifact_path("vmlinux")) == "aarch64":
+        alpine_manifests = [artifact_path(AlpineBuildConstants.PACKAGE_MANIFEST_NAME)]
+        ubuntu_manifests: list[Path] = []
+        validate_initramfs_provenance(
+            artifact_path("initramfs.cpio.gz"),
+            alpine_manifests[0],
+            artifact_path("initramfs.provenance.json"),
+        )
+    else:
+        _guest_names, alpine_manifests, ubuntu_manifests = _guest_release_inputs()
     collect_alpine_sources(
         alpine_manifests,
         BuildConstants.SOURCE_DIR / AlpineBuildConstants.GUEST_NAME,
@@ -1252,14 +1330,24 @@ def collect_release_sources(config: DockerBuildConfig) -> None:
         / BuildConstants.CACHE_DIRECTORY_NAME
         / AlpineBuildConstants.APORTS_CACHE_DIRECTORY_NAME,
     )
-    collect_ubuntu_sources(
-        ubuntu_manifests,
-        BuildConstants.SOURCE_DIR / UbuntuBuildConstants.GUEST_NAME,
-        BuildConstants.REPO_ROOT
-        / BuildConstants.CACHE_DIRECTORY_NAME
-        / UbuntuBuildConstants.SOURCE_CACHE_DIRECTORY_NAME,
+    if ubuntu_manifests:
+        collect_ubuntu_sources(
+            ubuntu_manifests,
+            BuildConstants.SOURCE_DIR / UbuntuBuildConstants.GUEST_NAME,
+            BuildConstants.REPO_ROOT
+            / BuildConstants.CACHE_DIRECTORY_NAME
+            / UbuntuBuildConstants.SOURCE_CACHE_DIRECTORY_NAME,
+        )
+    from .create_linux_source_archive import command_create_linux_source_archive
+
+    command_create_linux_source_archive(
+        argparse.Namespace(
+            config=artifact_path("vmlinux.config"),
+            output=config.linux_source_destination
+            / KernelBuildConstants.SOURCE_ARCHIVE_NAME,
+        )
     )
-    build_docker_linux_source(config)
+    validate_corresponding_sources()
     print(f">> collected release sources under {BuildConstants.SOURCE_DIR}")
 
 
