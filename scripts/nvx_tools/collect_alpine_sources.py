@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -19,6 +20,27 @@ from .common import write_sha256_sums
 
 class SourceError(RuntimeError):
     """An actionable source-collection failure."""
+
+
+def materialize_recipe_links(output: Path, known: dict[str, str]) -> dict[str, str]:
+    """Retain recipe aliases as identical regular files plus reconstruction metadata."""
+    output = output.resolve()
+    root = (output / "recipes").resolve()
+    links = dict(known)
+    for path in sorted(root.rglob("*")):
+        if not path.is_symlink():
+            continue
+        target = path.resolve(strict=True)
+        if not target.is_file() or root not in target.parents:
+            raise SourceError(
+                f"recipe symlink escapes its source tree: {path.relative_to(output)}"
+            )
+        relative = path.relative_to(output).as_posix()
+        links[relative] = os.readlink(path)
+        temporary = path.with_name(path.name + ".nvx-copy")
+        shutil.copy2(target, temporary)
+        temporary.replace(path)
+    return links
 
 
 def _package_metadata(
@@ -272,11 +294,18 @@ def collect_alpine_sources(
     output.mkdir(parents=True, exist_ok=True)
     for item in metadata:
         item["recipe"] = _extract_recipe(cache, output, item)
+    prior = output / "manifest.json"
+    links: dict[str, str] = (
+        json.loads(prior.read_bytes()).get("recipe_symlinks", {})
+        if prior.is_file()
+        else {}
+    )
     manifest: dict[str, object] = {
         "format": AlpineBuildConstants.SOURCE_MANIFEST_FORMAT,
         "alpine_branch": branch,
         "architecture": architecture,
         "packages": metadata,
+        "recipe_symlinks": materialize_recipe_links(output, links),
     }
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n",
