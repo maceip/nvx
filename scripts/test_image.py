@@ -1,5 +1,6 @@
 import errno
 import io
+import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +10,14 @@ from tarfile import open as tar_open
 from unittest.mock import patch
 
 from nvx_tools.common import ScriptError
-from nvx_tools.image import ImageCache, apply_layer, canonical, ensure, split_prefix
+from nvx_tools.image import (
+    ImageCache,
+    apply_layer,
+    canonical,
+    convert,
+    ensure,
+    split_prefix,
+)
 
 
 def layer(path: Path, entries: list[tuple[str, bytes | str]]) -> Path:
@@ -31,6 +39,30 @@ def layer(path: Path, entries: list[tuple[str, bytes | str]]) -> Path:
 
 
 class ImageTests(unittest.TestCase):
+    def test_converter_setup_failure_preserves_the_actionable_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = ImageCache(Path(directory))
+
+            def run(
+                command: list[str], **options: object
+            ) -> subprocess.CompletedProcess[bytes]:
+                if command[1] == "build":
+                    output = options["stdout"]
+                    assert hasattr(output, "write")
+                    output.write(b"dpkg: No space left on device\n")
+                    return subprocess.CompletedProcess(command, 100)
+                return subprocess.CompletedProcess(command, 0)
+
+            with (
+                patch("nvx_tools.image.ImageCache", return_value=cache),
+                patch("nvx_tools.image.subprocess.run", side_effect=run),
+            ):
+                with self.assertRaisesRegex(
+                    ScriptError,
+                    "OCI converter setup failed:[\\s\\S]*No space left on device",
+                ):
+                    convert("fixture", pull=False)
+
     def test_whiteout_and_opaque_are_order_independent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)

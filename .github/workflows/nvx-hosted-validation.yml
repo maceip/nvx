@@ -43,18 +43,28 @@ jobs:
       - run: ./scripts/check.sh
       - run: python3 -m pyright
       - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
+      - run: python3 scripts/nvx.py build-openvmm --backend kvm
+      - run: python3 scripts/nvx.py build-guest
       - name: Require real nested virtualization
         run: |
           test -r /dev/kvm && test -w /dev/kvm || {
             echo '::error::This hosted runner has no usable /dev/kvm. It cannot provide KVM runtime evidence.'
             exit 1
           }
-      - run: python3 scripts/nvx.py build-openvmm --backend kvm
-      - run: python3 scripts/nvx.py build-guest
       - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/hosted-proof
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: hosted-linux-${{ matrix.arch }}-proof
           path: build/hosted-proof
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hosted-linux-${{ matrix.arch }}-build
+          path: |
+            build/openvmm.provenance.json
+            build/vmlinux.provenance.json
+            build/initramfs.provenance.json
+            openvmm/target/release/openvmm
           if-no-files-found: warn

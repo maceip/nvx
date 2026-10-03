@@ -454,7 +454,7 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
             ["docker", "save", "--output", str(work / "image.tar"), ref], check=True
         )
         with (work / "convert.log").open("wb") as log:
-            subprocess.run(
+            build = subprocess.run(
                 [
                     "docker",
                     "build",
@@ -466,10 +466,13 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
                     str(BuildConstants.REPO_ROOT / "docker/Dockerfile"),
                     str(BuildConstants.REPO_ROOT),
                 ],
-                check=True,
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
+            if build.returncode:
+                log.flush()
+                detail = (work / "convert.log").read_text(errors="replace")[-4000:]
+                raise ScriptError(f"OCI converter setup failed:\n{detail}")
             result = subprocess.run(
                 [
                     "docker",
