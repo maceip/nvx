@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/nvx-hosted-validation.yml'
       - '.github/actions/checkout-openvmm/**'
+      - 'scripts/**'
+      - 'sdk/**'
   workflow_dispatch:
 
 permissions:

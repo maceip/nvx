@@ -220,6 +220,8 @@ done
             "docker",
             "run",
             "--rm",
+            "--env",
+            f"DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/v{alpine_version}",
             "--volume",
             f"{output.resolve()}:/bundle",
             f"alpine:{alpine_version}",

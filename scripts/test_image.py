@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tarfile import TarInfo
 from tarfile import open as tar_open
+from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from nvx_tools.common import ScriptError
@@ -47,8 +48,7 @@ class ImageTests(unittest.TestCase):
                 command: list[str], **options: object
             ) -> subprocess.CompletedProcess[bytes]:
                 if command[1] == "build":
-                    output = options["stdout"]
-                    assert hasattr(output, "write")
+                    output = cast(BinaryIO, options["stdout"])
                     output.write(b"dpkg: No space left on device\n")
                     return subprocess.CompletedProcess(command, 100)
                 return subprocess.CompletedProcess(command, 0)
