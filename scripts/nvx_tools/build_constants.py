@@ -312,6 +312,9 @@ class InitramfsBuildConstants:
         "-s",
     )
     STATIC_HELPERS: Final = (
+        "nvx-seccomp",
+        "nvx-device-policy",
+        "nvx-clock",
         "nvx-reseed",
         "nvx-mmio-write",
         "nvx-port-io",

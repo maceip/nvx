@@ -165,3 +165,81 @@ must collect controller transcripts and complete target logs into
 access-controlled security storage. See
 [Copilot-driven adversarial testing](design/copilot-adversarial-testing.md)
 for the architecture and operational contract.
+
+## Apple Silicon manual pre-release gate
+
+The [NVX microVM tests / HVF workflow](../.github/workflows/nvx-microvm-tests-hvf.yml)
+is triggered manually with GitHub Actions **Run workflow** (`workflow_dispatch`).
+It selects a trusted Apple Silicon
+runner labeled `nvx-hvf`. Until that runner is enrolled, run this gate locally
+and attach the entire `build/test-results/microvm-hvf` directory to the release:
+
+```sh
+python3 scripts/nvx.py setup
+python3 scripts/nvx.py doctor --backend hvf
+python3 scripts/nvx.py test-microvm --backend hvf --output-dir build/test-results/microvm-hvf
+```
+
+Docker, the Rust build tools, a matching ARM kernel/initramfs, and the signed
+OpenVMM executable must be installed. The HVF harness builds its EROFS and ext4
+fixtures from this checkout. It checks real guest TLS with a current certificate
+and repeats with clock sampling disabled; the latter must fail certificate
+validity, rather than merely lose network access. Both captures are retained.
+
+The workflow checks out this repository and its pinned OpenVMM submodule, installs
+`requirements-dev.txt`, then runs the offline tests, pyright, builds, doctor, all
+HVF scenarios and the warm benchmark. It has no dependency on `showcase/`; the
+optional Swift app now lives in `maceip/nvx-showcase` and its tests belong there.
+This manual workflow supplies **no automatic macOS pull-request coverage**. Until
+a persistent trusted runner is enrolled, every release must attach its complete
+local `build/test-results/microvm-hvf` directory, generated containment matrix,
+warm benchmark JSON, collected CSVs and gate logs. A dispatched run uploads the
+scenario directory as `microvm-hvf-evidence`; benchmark and gate files are included
+in the same artifact. Promote this to the trusted PR lane when that runner exists.
+
+| Scenario | KVM | MSHV | WHP | HVF |
+| --- | --- | --- | --- | --- |
+| sandbox-blocks | automated lane | automated lane | automated lane | manual gate |
+| structured-outcome | automated lane | automated lane | automated lane | manual gate |
+| managed-lifecycle | automated lane | automated lane | automated lane | manual gate |
+| workload-identity | automated lane | automated lane | automated lane | manual gate |
+| hvf-parity | not applicable | not applicable | not applicable | manual gate with clock negative control |
+
+This table describes gate wiring, not a claim that every backend has passed a
+particular checkout. The fixed x86 machine profile and ARM direct-boot platform
+use the same sandbox agent and authenticated managed control protocol. HVF
+currently supports the listed scenarios; requesting an unsupported scenario is
+an error. Snapshots remain architecture and backend bound.
+
+
+## Plan completion gates and recorded local evidence
+
+The common correctness dispatcher includes `showcase-simulants`, `workspace-lifecycle`, `secret-isolation`,
+`warm-clone`, and `mcp-portable`; the Alpine-only set rejects these for Ubuntu. The same
+registered scenarios run on the existing KVM/MSHV/WHP lanes. ARM KVM uses the ARM direct
+boot device layout and the ARM scenario adapter. No remote result is inferred from wiring.
+The configured-host resolver currently reports no `.nvx-hosts.json` profiles in this checkout.
+
+The HVF lane runs a 20-run warm/cold benchmark. Its
+three metrics go through `performance collect-warm` and the existing regression gate against
+`data/warm`. The first local measured point starts baseline history; `--minimum-history 1`
+is an explicit bootstrap guard with 20% relative and 1 ms absolute tolerance. A second
+gate always requests the normal ten-point history and reports **Warmup** until enough
+independent points exist; it must not be quoted as a measured trend before then.
+Request timing starts against an already-resumed ready clone and ends at first workload
+stdout; preparation, full-file admission hashing and refill are excluded. This is not the
+older x86 bare-guest boot metric. The gate's offline control triples latency and must fail.
+
+`nvx-arm-release.yml` is a manual strict packaging/signing gate for `darwin-arm64` and
+`linux-arm64`. It requires enrolled `nvx-hvf`/`nvx-kvm` ARM64 runners. macOS requires the
+runner's `NVX_DEVELOPER_ID` and existing `NVX_NOTARY_PROFILE`; Linux requires a private-key
+file identified by `NVX_RELEASE_SIGNING_KEY` and signs the inventory as a separate artifact.
+Private key material stays on the runner. The workflow packages the CLI and both SDKs,
+checks complete artifact inventory, installs into a new directory, runs doctor and a guest
+smoke, and retains evidence. Publishing a release and testing remote `download` are separate
+gates; the workflow uploads reviewable artifacts and does not publish automatically.
+
+The local Mac has no Developer ID Application identity. Ad-hoc development signing and a
+successful local archive install are reported as local evidence only. A Linux ARM executable,
+other backend matrices, an accepted Apple notarization ticket, signed release downloads, and
+an integration built by another person remain required external results.

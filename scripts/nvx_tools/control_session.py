@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 import secrets
 import socket
 import struct
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -30,11 +32,14 @@ OUTER_ERROR = 8
 APP_PING = 1
 APP_EXEC = 2
 APP_STOP = 3
+APP_METRICS = 4
+APP_WARM = 5
 APP_READY = 0x81
 APP_STDOUT = 0x82
 APP_STDERR = 0x83
 APP_EXIT = 0x84
 APP_STOPPED = 0x85
+APP_METRICS_RESULT = 0x86
 APP_ERROR = 0xFF
 MANAGED_EXIT_CATEGORIES = frozenset(
     {"exit", "timeout", "output-limit", "signal", "failed"}
@@ -342,17 +347,40 @@ class ControlSession:
         if kind != APP_READY or response_id != request_id or status != 0 or payload:
             raise ScriptError("managed guest did not acknowledge readiness")
 
-    def exec(
-        self,
-        arguments: tuple[str, ...],
-        *,
-        timeout_ms: int,
-        response_timeout: float,
-    ) -> ManagedExecResult:
-        if not 0 < response_timeout < float("inf"):
-            raise ValueError(
-                "managed exec response timeout must be positive and finite"
-            )
+    def generation(self, timeout: float) -> str:
+        request_id = self._request_id()
+        self._send_app(6, request_id)
+        kind, response_id, status, payload = self._read_app(time.monotonic() + timeout)
+        if (
+            kind != APP_READY
+            or response_id != request_id
+            or status
+            or len(payload) != 32
+            or any(c not in b"0123456789abcdef" for c in payload)
+        ):
+            raise ScriptError("guest returned an invalid trusted generation sample")
+        return payload.decode("ascii")
+
+    def warm(
+        self, timeout: float, *, repair: bool = True, runtime: tuple[str, ...] = ()
+    ) -> None:
+        """Hold the single-threaded dispatcher with its private disk frozen."""
+        request_id = self._request_id()
+        payload = bytes((2 if runtime else 1, int(repair)))
+        if runtime:
+            payload += self._encode_exec(runtime, 0)
+        self._send_app(APP_WARM, request_id, payload)
+        kind, response_id, status, payload = self._read_app(time.monotonic() + timeout)
+        if (kind, response_id, status, payload) != (
+            APP_READY,
+            request_id,
+            0,
+            b"warm-v1",
+        ):
+            raise ScriptError("managed guest did not acknowledge its warm barrier")
+
+    @staticmethod
+    def _encode_exec(arguments: tuple[str, ...], timeout_ms: int) -> bytes:
         if not 1 <= len(arguments) <= APP_MAX_ARGUMENTS:
             raise ValueError("managed exec requires 1 through 64 arguments")
         encoded: list[bytes] = []
@@ -369,6 +397,22 @@ class ControlSession:
         if len(payload) + APP_HEADER.size > OUTER_MAX_PAYLOAD:
             raise ValueError("managed exec request exceeds the protocol limit")
 
+        return payload
+
+    def exec(
+        self,
+        arguments: tuple[str, ...],
+        *,
+        timeout_ms: int,
+        response_timeout: float,
+        output: Callable[[str, bytes], None] | None = None,
+    ) -> ManagedExecResult:
+        if not 0 < response_timeout < float("inf"):
+            raise ValueError(
+                "managed exec response timeout must be positive and finite"
+            )
+        payload = self._encode_exec(arguments, timeout_ms)
+
         request_id = self._request_id()
         self._send_app(APP_EXEC, request_id, payload)
         stdout = bytearray()
@@ -380,8 +424,12 @@ class ControlSession:
                 raise ScriptError("managed guest returned a mismatched request ID")
             if kind == APP_STDOUT:
                 stdout.extend(response)
+                if output is not None:
+                    output("stdout", response)
             elif kind == APP_STDERR:
                 stderr.extend(response)
+                if output is not None:
+                    output("stderr", response)
             elif kind == APP_EXIT:
                 try:
                     category = response.decode("ascii")
@@ -401,6 +449,31 @@ class ControlSession:
                 )
             else:
                 raise ScriptError("managed guest returned an invalid exec response")
+
+    def metrics(self, timeout: float) -> dict[str, int]:
+        request_id = self._request_id()
+        self._send_app(APP_METRICS, request_id)
+        kind, response_id, status, payload = self._read_app(time.monotonic() + timeout)
+        if kind != APP_METRICS_RESULT or response_id != request_id or status != 0:
+            raise ScriptError("managed guest did not return trusted resource metrics")
+        value: object = json.loads(payload)
+        keys = {
+            "resource_version",
+            "wall_ms",
+            "cpu_usec",
+            "memory_peak_bytes",
+            "pids_peak",
+            "memory_oom_kills",
+            "pids_denials",
+        }
+        if not isinstance(value, dict) or set(cast(dict[str, object], value)) != keys:
+            raise ScriptError("unsupported resource metrics schema")
+        document = cast(dict[str, object], value)
+        if document["resource_version"] != 1 or any(
+            type(item) is not int or item < 0 for item in document.values()
+        ):
+            raise ScriptError("invalid resource metrics")
+        return cast(dict[str, int], document)
 
     def stop(self, timeout: float) -> None:
         request_id = self._request_id()

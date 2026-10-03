@@ -1,0 +1,4 @@
+platform,microvm_abi_version,processors,commit,metric,unit,direction,p50
+darwin-arm64-hvf,2,1,local-working-tree-20261002,warm_pool_first_stdout,ms,lower,4.230917
+darwin-arm64-hvf,2,1,local-working-tree-20261002,warm_pool_completion,ms,lower,6.6376875
+darwin-arm64-hvf,2,1,local-working-tree-20261002,cold_image_first_stdout,ms,lower,1164.437625

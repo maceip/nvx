@@ -673,7 +673,7 @@ python3 scripts/nvx.py package
 | `--destination PATH` | Override the staging destination. |
 | `--include-source` | Include the corresponding source artifacts in the package. |
 | `--binary-only` | Stage binaries only; publish corresponding source separately. |
-| `--force` | Replace an existing staging destination. |
+| `--force` | Replace a legacy staging directory beneath `dist/`. Self-contained packages require a new destination. |
 
 Exactly one of `--include-source` and `--binary-only` is required. See
 [Package and source delivery](distribution.md) for release procedures and
@@ -691,3 +691,168 @@ Validates the staged distribution against its `SHA256SUMS`, snapshots the
 accepted inventory, and creates a deterministic archive at the destination.
 The destination must be outside the source directory and end in `.tar.gz` or
 `.zip`.
+
+## Diagnostics and ARM sandbox parity
+
+| Command or option | Behavior |
+| --- | --- |
+| `doctor [--backend kvm\|mshv\|whp\|hvf] [--json]` | Check artifacts, host hypervisor access, entitlement, Docker, cache, and provenance; any failed check exits nonzero. |
+| `setup` | Apply and verify the macOS hypervisor entitlement with ad-hoc signing for local development. |
+| `explain STATE_DIR` | Explain recorded policy denials and print the specific enabling option. |
+| `run --events PATH` | Write bounded, redacted, host-side JSON-lines lifecycle events. |
+| `sandbox --hypervisor hvf` | Run EROFS layers over a private ext4 overlay on Apple Silicon. Supports managed provision/start/exec/stop. |
+| `sandbox --memory-mib N` | Default RAM is 1024 MiB on HVF and 256 MiB on x86 sandbox backends. |
+| `run --cmdline nvx_host_clock=off` | Disable boot clock repair for the clock negative control. Normal boots sample the current host clock. |
+
+The host resolves snapshot parent paths before passing them to OpenVMM, so the
+macOS `/tmp` alias is accepted. File members of a snapshot are still checked
+without following symlinks. See [cookbook](cookbook.md) for complete commands.
+
+### OCI images and resolved policy
+
+The image front door runs through the authenticated managed agent. Conversion happens
+before launch, using a networkless Linux tools container; it never executes the image's
+entrypoint. `image pull` contacts the registry through Docker. The manifest records the
+resolved OCI config/layer digests and the generated EROFS/scratch digests.
+
+| Command / option | Behavior |
+| --- | --- |
+| `image pull REF` / `image convert REF` | Pull then convert, or convert an existing Docker image |
+| `--curated-base` on conversion | Register an exact ordered layer-digest prefix as a distro base |
+| `image ls` / `image verify REF` / `image rm REF` | List, rehash, or remove an unreferenced image; live/snapshot leases prevent removal |
+| `run --image REF -- COMMAND ARG...` | Use implicit read-only layers and private preformatted scratch; preserves argv and image environment defaults |
+| `--profile default` | UID/GID 65534, empty capabilities, NNP, allowlist seccomp, device filter, masked paths, deny egress, 128 workload PIDs, 256 MiB workload memory and 60 s wall cap |
+| `--profile ci` | Same isolation defaults; permits explicit egress allow rules and `--cap-add MKNOD` for device-filter testing |
+| `--profile risky` | Root, all capabilities, no seccomp/device/mask/NNP/resource restrictions, allow egress; explicit negative-control profile |
+| `--seccomp unconfined` | Disable seccomp while retaining the other selected-profile restrictions |
+| `--config FILE` / `policy show` / `policy lint` | Resolve `[policy]` in TOML; explicit CLI settings override file settings, which override the selected profile |
+| `--pids-max N` / `--memory-max BYTES` / `--exec-timeout-ms MS` | Override workload resource caps; zero wall timeout disables that cap |
+| `verify-guest-determinism --image REF` | Reconvert twice and compare the complete manifest identity; repeat for two or more images |
+
+The high-level image path defaults to portable networking on `192.168.127.0/24` and
+records packet decisions. Denied canonical TCP/UDP traffic gets a local TCP reset or
+ICMP administrative prohibition. Other malformed/spoofed traffic is dropped. The
+`NVX_NETWORK_LEGACY_DROP` host environment variable is a test control that restores
+blackhole behavior; the fast-fail scenario requires that control to time out.
+
+Use numeric IPv4 policy destinations with the existing
+`--network-egress-allow IPV4:tcp:PORT` form. `default` rejects allow rules; use `ci`.
+A live-share or gateway-loopback opt-in remains an explicit authorization.
+
+`nvx-default` also filters arguments: `clone` rejects new user, mount, network,
+PID, UTS, IPC and cgroup namespace flags. `clone3` returns `ENOSYS`, allowing libc
+to fall back to filtered `clone`, because classic seccomp cannot inspect its
+pointed-to argument structure. `socket` permits only Unix, IPv4 and IPv6 domains;
+netlink and packet sockets return `EPERM`. A kernel without IPv6 support can still
+return `EAFNOSUPPORT` for that permitted domain. Ordinary forks and threads are
+tested alongside the denials.
+
+### Run receipts and containment
+
+| Command / option | Behavior |
+| --- | --- |
+| `run --image REF --receipt FILE` | Publish receipt v1 after confirmed teardown; the instance retains its receipt and evidence |
+| `--receipt-signing-key FILE` | Sign canonical receipt body bytes with an Ed25519 PEM private key in process using `cryptography` |
+| `receipt verify FILE [--evidence-dir DIR]` | Verify body integrity and every referenced local evidence file |
+| `receipt verify FILE --public-key FILE` | Additionally verify an Ed25519 signature against the caller's trusted public key |
+| `containment run --backend BACKEND --format md` | Run all eight probe families; each requires an observed failing negative control |
+| `containment render RESULT.json --format md` | Render a completed, validated result document |
+
+An unsigned digest detects changed content; authenticity requires a signature and a
+trusted key. Receipt flow verdicts describe endpoint policy decisions, not remote
+application success. Resource numbers come from the outer agent's cgroup counters.
+The existing `--outcome-report` schema and separated exec streams remain available.
+
+Install the optional pinned signing dependency with
+`python3 -m pip install -r requirements-signing.txt` in the NVX installation.
+Signing and verification read the supplied PEM key but create no temporary message,
+signature or key files and invoke no external crypto command. Development and CI
+dependencies include this library, so signing tests run rather than skip on macOS.
+
+New snapshot format 6 verifies SHA-256 of RAM and device state on restore, both in the
+CLI and in OpenVMM's opened-artifact admission. Versions 2–5 retain their previous
+structural compatibility contract; `snapshot verify` labels that limitation. The
+containment control deliberately downgrades an isolated test snapshot to version 5 and
+shows that its same-length RAM change is admitted. Snapshots are not portable across
+architecture or hypervisor. Full RAM hashing adds restore work. Warm-pool measurements
+state when admission occurs; this pool admits and hashes clones before marking them ready,
+and separately measures requests against those ready clones.
+
+
+### Workspaces, files, retained instances, and credentials
+
+| Command / option | Behavior |
+| --- | --- |
+| `--workspace HOST:GUEST[:ro|rw]` | Export one directory through virtio-fs; defaults to read-only. Reserved guest roots and symlink escapes are rejected. |
+| `--out NEW_DIR` | Publish successful private `/out` regular files after teardown; failed workloads publish no outputs. The destination must be new. |
+| `--keep-alive` | Retain the managed VM after the first command; use its printed `NVX-ID` for later operations. |
+| `exec ID -- COMMAND ARG...` | Execute with separate stdout/stderr and the guest's numeric exit status; `--stream` forwards frames immediately. |
+| `cp LOCAL ID:/guest/path` / `cp ID:/guest/path LOCAL` | Transfer regular files byte-exact, with a 256 MiB bound and new destinations. |
+| `logs ID --json [--follow]` / `ps` / `stop ID` | Ordered events, actual process/RSS/status, and idempotent confirmed teardown with a final receipt. |
+| `bundle ID --output FILE` / `bundle verify FILE` | Reproducible evidence archive with checked inventory; excludes capabilities and VM RAM. |
+| `--secret NAME` | Bind a host environment value to a disposable host proxy. API values never enter argv or guest environment. |
+| `--egress-allow HOST:PORT` with `--secret` | Admit an exact TLS destination to credential injection; request Authorization/Cookie headers are stripped. |
+| `--secret-header NAME:HEADER` / `--proxy-log FILE` / `--proxy-ca FILE` | Override injection header, retain redacted proxy decisions, or add a trusted upstream CA. |
+| `--env NAME=VALUE` | Ordinary guest environment data; values are visible in guest RAM and snapshots. |
+
+Mac exports pin their root directory and map the admitted workload identity to the host
+export owner. They do not impersonate Linux process credentials. Special files and host
+symlink escapes are denied. File outputs are bounded to 256 MiB and 10,000 entries.
+Credential bindings are excluded from warm snapshots; cloning a credential-bound template
+requires a fresh host binding and is currently rejected rather than reusing stale state.
+
+### Warm templates, pools, and performance
+
+| Command / option | Behavior |
+| --- | --- |
+| `warm --image REF [--backend BACKEND] --output DIR` | Capture a version-6 snapshot and frozen private scratch, bound to image, policy, artifact versions, architecture and backend. The default backend is HVF on macOS, KVM on Linux, or WHP on Windows. |
+| `--runtime auto\|python\|dispatcher` | Python images retain a single-threaded initialized Python process behind a command barrier; other images retain the managed dispatcher. |
+| `--profile ci --egress-allow IP:PORT` on `warm` | Bake an explicit default-deny network policy into the template. |
+| `pool start --template DIR --size N` | Admit and restore N private clones before reporting readiness. Quota admission precedes VM creation. |
+| `pool start --image REF --backend BACKEND --size N` | Prepare a template and then populate the pool. |
+| `run --pool ID -- COMMAND ARG...` | Lease one ready clone, execute, retire it, write its receipt, and refill with a fresh clone. |
+| `pool status ID` / `pool stop ID` | Inspect ready/leased/retired accounting, or stop all owned clones and wait for refill cleanup. |
+| `benchmark --suite warm-pool --backend BACKEND --template DIR --runs 20 --output FILE` | Measure client request to first workload stdout, full completion, and the same workload's cold path. |
+| `performance collect-warm --platform NAME --commit SHA --input FILE --output-dir DIR` | Validate sample medians and collect the three metrics as ordinary gated CSV results. |
+
+Each restored clone repairs its trusted generation ID, machine ID, hostname, host clock,
+and CRNG before admitting work. Python workload children close the private control FDs;
+the parent is non-dumpable. A pool lease is never returned for reuse. RAM/state hashing and
+clone initialization occur before a clone enters the ready pool. The benchmark explicitly
+excludes pool preparation and refill from request timing.
+
+`test-microvm --scenario showcase-simulants` runs ransomware, identity, fork spawning,
+and exfiltration under the default policy, then requires each risky control to fail containment.
+
+### Portable MCP and SDKs
+
+`mcp serve [--backend BACKEND]` selects the host backend and uses stdio by default. `--transport http` binds only
+127.0.0.1, prints its URL and a private capability-file path, and requires bearer
+authentication. It implements MCP **2025-06-18**, including initialization, tool discovery,
+streaming progress and `notifications/cancelled`. HTTP disconnect alone does not cancel work.
+
+The six tools are `nvx_run`, `nvx_exec`, `nvx_status`, `nvx_snapshot`, `nvx_files`, and
+`nvx_secrets`. The server owns only instances it created. File transfers stay beneath its
+private `files` directory; secret discovery returns names and availability only.
+`--secret-name NAME` explicitly admits a host binding. Duplicate idempotence handles replay
+the same result; reuse with different arguments fails. Default limits are four concurrent
+sandboxes, one vCPU per VM/four aggregate, 1024 MiB per VM/2048 MiB aggregate, 60 s wall,
+and 4096 MiB retained snapshot storage. CLI quota options can lower or raise these bounds.
+Python and TypeScript clients are in `sdk/`; installed packages include both clients and
+compiled TypeScript output. Python and Swift consume the committed MCP contract vectors.
+
+### ARM packages and installation
+
+`package --platform darwin-arm64|linux-arm64 --binary-only --destination DIR` stages a
+self-contained CLI, both SDKs, core executable, architecture-specific guest artifacts,
+licenses, provenance and SHA256SUMS. Strict packages require a clean pinned core build.
+macOS additionally requires Developer ID signing, its hypervisor entitlement and a
+successful notarization assessment. `--development` labels a local preview explicitly.
+Use `--include-source` when matching corresponding sources have been collected.
+
+`archive-release --source DIR --destination FILE.tar.gz` snapshots the accepted inventory.
+`install --archive FILE.tar.gz --destination NEW_DIR` verifies and installs the whole
+runtime without overwriting another installation. Its entry point is `NEW_DIR/bin/nvx`.
+`download` selects the host's ARM asset and retains the complete runtime alongside installed
+artifacts. A published release and signing credentials are required for the remote
+`download → doctor → run` release gate; a local archive smoke is reported separately.

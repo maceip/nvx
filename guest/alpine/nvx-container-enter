@@ -19,8 +19,10 @@ mkdir -p \
     "$rootfs/proc" \
     "$rootfs/sys"
 mount -t tmpfs -o mode=755,nosuid,nodev tmpfs "$tools"
-cp /lib/ld-musl-x86_64.so.1 "$tools/ld-musl-x86_64.so.1"
+loader=/lib/ld-musl-$(uname -m).so.1
+cp "$loader" "$tools/${loader##*/}"
 cp /bin/setpriv "$tools/setpriv"
+cp /sbin/nvx-seccomp "$tools/nvx-seccomp"
 cp -L /usr/lib/libcap-ng.so.0 "$tools/libcap-ng.so.0"
 cp -L /usr/lib/libeconf.so.0 "$tools/libeconf.so.0"
 chmod 0555 "$tools"/*
@@ -55,16 +57,55 @@ ln -s /proc/self/fd/0 "$rootfs/dev/stdin"
 ln -s /proc/self/fd/1 "$rootfs/dev/stdout"
 ln -s /proc/self/fd/2 "$rootfs/dev/stderr"
 
+if [ "${NVX_MASKED_PATHS:-1}" = 1 ]; then
+    mkdir -p /run/nvx/masks/empty
+    : >/run/nvx/masks/file
+    chmod 000 /run/nvx/masks/file
+    for path in /proc/kcore /proc/keys /proc/timer_list /proc/sysrq-trigger; do
+        if [ -e "$rootfs$path" ]; then
+            mount --bind /run/nvx/masks/file "$rootfs$path"
+            mount -o remount,bind,ro,nosuid,nodev,noexec "$rootfs$path"
+        fi
+    done
+    for path in /proc/acpi /proc/scsi /sys/firmware /sys/devices/virtual/powercap; do
+        if [ -d "$rootfs$path" ]; then
+            mount --bind /run/nvx/masks/empty "$rootfs$path"
+            mount -o remount,bind,ro,nosuid,nodev,noexec "$rootfs$path"
+        fi
+    done
+    mount --bind "$rootfs/proc/sys" "$rootfs/proc/sys"
+    mount -o remount,bind,ro,nosuid,nodev,noexec "$rootfs/proc/sys"
+fi
 hostname "$hostname_value"
 export HOME="$workload_home" USER="$workload_name" LOGNAME="$workload_name"
-exec chroot "$rootfs" /.nvx-agent/ld-musl-x86_64.so.1 \
-    --library-path /.nvx-agent \
-    /.nvx-agent/setpriv \
-    --reuid "$workload_uid" \
-    --regid "$workload_gid" \
-    --clear-groups \
-    --no-new-privs \
-    --bounding-set=-all \
-    --inh-caps=-all \
-    --ambient-caps=-all \
+seccomp=${NVX_SECCOMP:-nvx-default}
+caps=${NVX_CAPS:-none}
+nnp=${NVX_NO_NEW_PRIVS:-1}
+unset NVX_SECURITY_PROFILE NVX_SECCOMP NVX_CAPS NVX_MASKED_PATHS NVX_NO_NEW_PRIVS
+case "$caps" in
+    none)
+        bounding=-all
+        inherited=-all
+        ambient=-all
+        ;;
+    MKNOD)
+        bounding=-all,+mknod
+        inherited=-all,+mknod
+        ambient=-all,+mknod
+        ;;
+    ALL)
+        bounding=+all
+        inherited=-all
+        ambient=-all
+        ;;
+    *) exit 125 ;;
+esac
+set -- /.nvx-agent/nvx-seccomp "$seccomp" "$@"
+if [ "$nnp" = 1 ]; then
+    set -- --no-new-privs "$@"
+fi
+exec chroot "$rootfs" "/.nvx-agent/${loader##*/}" \
+    --library-path /.nvx-agent /.nvx-agent/setpriv \
+    --reuid "$workload_uid" --regid "$workload_gid" --clear-groups \
+    --bounding-set="$bounding" --inh-caps="$inherited" --ambient-caps="$ambient" \
     "$@"

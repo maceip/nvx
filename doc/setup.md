@@ -29,6 +29,22 @@ python3 scripts/nvx.py init
 
 Python 3.10 or newer and Git are required on every platform.
 
+Before running the offline development gate, install its pinned dependencies in a
+virtual environment. `scripts/check.sh` invokes ruff through that same Python;
+it does not require a separate ruff executable on the shell PATH.
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r requirements-dev.txt
+./scripts/check.sh
+```
+
+Receipt signing and signed-receipt verification optionally require
+`python3 -m pip install -r requirements-signing.txt`. This uses the packaged
+`cryptography` backend and works independently of the system OpenSSL/LibreSSL
+command. Unsigned receipts and ordinary sandbox runs use the standard library.
+
 For Debian/Ubuntu hosts:
 
 ```bash

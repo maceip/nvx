@@ -13,15 +13,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from nvx_tools.common import ScriptError
+from nvx_tools.common import ScriptError, sha256_file
 
 MANIFEST_FILE_NAME = "manifest.bin"
 STATE_FILE_NAME = "state.bin"
 MEMORY_FILE_NAME = "memory.bin"
 
-# Manifest versions restore accepts (v2 legacy through v5 current).
+# Manifest versions restore accepts (v2 legacy through v6 current).
 MANIFEST_VERSION_MIN = 2
-MANIFEST_VERSION_MAX = 5
+MANIFEST_VERSION_MAX = 6
 
 # Known snapshot format magics, oldest to newest. Very old manifests may
 # omit the magic; an unrecognized non-empty magic is rejected.
@@ -30,6 +30,7 @@ KNOWN_FORMAT_MAGICS = (
     b"OPENVMM_SNAPSHOT_V3\0",
     b"OPENVMM_SNAPSHOT_V4\0",
     b"OPENVMM_SNAPSHOT_V5\0",
+    b"OPENVMM_SNAPSHOT_V6\0",
 )
 
 
@@ -121,9 +122,7 @@ def _get_string(fields: dict[int, int | bytes], number: int, name: str) -> str:
     try:
         return bytes(value).decode("utf-8")
     except UnicodeDecodeError as err:
-        raise ScriptError(
-            f"snapshot manifest field {name} is not valid UTF-8"
-        ) from err
+        raise ScriptError(f"snapshot manifest field {name} is not valid UTF-8") from err
 
 
 def _parse_timestamp(raw: int | bytes) -> int:
@@ -141,7 +140,9 @@ def _require_regular_file(path: Path, description: str) -> int:
     return path.stat().st_size
 
 
-def verify_snapshot(snapshot_dir: Path) -> SnapshotReport:
+def verify_snapshot(
+    snapshot_dir: Path, *, expected_arch: str | None = None
+) -> SnapshotReport:
     """Validate a snapshot directory and return its manifest summary."""
     if not snapshot_dir.is_dir() or snapshot_dir.is_symlink():
         raise ScriptError(f"snapshot directory not found: {snapshot_dir}")
@@ -185,6 +186,19 @@ def verify_snapshot(snapshot_dir: Path) -> SnapshotReport:
     architecture = _get_string(fields, 7, "architecture")
     if not architecture:
         raise ScriptError("snapshot manifest has no architecture")
+    if expected_arch is not None and architecture != expected_arch:
+        raise ScriptError(
+            f"snapshot architecture {architecture} does not match host {expected_arch}; "
+            "cross-architecture restore is unsupported"
+        )
+
+    if version >= 6:
+        for number, filename in ((9, STATE_FILE_NAME), (10, MEMORY_FILE_NAME)):
+            digest = fields.get(number)
+            if not isinstance(digest, bytes) or len(digest) != 32:
+                raise ScriptError(f"snapshot {filename} has no valid SHA-256 digest")
+            if sha256_file(snapshot_dir / filename) != digest.hex():
+                raise ScriptError(f"snapshot {filename} SHA-256 digest mismatch")
 
     return SnapshotReport(
         path=snapshot_dir,
@@ -195,7 +209,9 @@ def verify_snapshot(snapshot_dir: Path) -> SnapshotReport:
         page_size=_get_varint(fields, 6, "page_size"),
         architecture=architecture,
         state_size_bytes=state_size_bytes,
-        saved_state_schema_version=_get_varint(fields, 13, "saved_state_schema_version"),
+        saved_state_schema_version=_get_varint(
+            fields, 13, "saved_state_schema_version"
+        ),
         saved_state_root_type=_get_string(fields, 14, "saved_state_root_type"),
         restore_policy=_get_string(fields, 16, "restore_policy"),
         # Absent means false: snapshots written before the field existed.
@@ -212,6 +228,12 @@ def format_report(report: SnapshotReport) -> str:
         f"  manifest version: {report.version}",
         f"  created by openvmm: {report.openvmm_version or '(unknown)'}",
         f"  architecture: {report.architecture}",
+        "  payload integrity: "
+        + (
+            "SHA-256 verified"
+            if report.version >= 6
+            else "legacy structural checks only"
+        ),
         f"  guest RAM: {report.memory_size_bytes} bytes",
         f"  vCPUs: {report.vp_count}",
         f"  boot mode: {boot}",

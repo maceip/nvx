@@ -93,6 +93,22 @@ jobs:
           --backend "${{ inputs.backend }}"
           --output-dir "build/test-results/microvm-${{ inputs.backend }}"
 
+      - name: Render generated containment matrix on Linux
+        if: runner.os != 'Windows'
+        shell: bash
+        run: >-
+          python3 scripts/nvx.py containment render
+          "build/test-results/microvm-${{ inputs.backend }}/containment/containment.json"
+          --format md > "build/test-results/microvm-${{ inputs.backend }}/containment-matrix.md"
+
+      - name: Render generated containment matrix on Windows
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: >-
+          python scripts\nvx.py containment render
+          "build/test-results/microvm-${{ inputs.backend }}/containment/containment.json"
+          --format md > "build/test-results/microvm-${{ inputs.backend }}/containment-matrix.md"
+
       - name: Run Ubuntu guest smoke tests on Linux
         if: runner.os != 'Windows'
         shell: bash

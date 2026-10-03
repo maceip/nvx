@@ -1,0 +1,10 @@
+{
+  "name": "@nvx/sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {"node": ">=20"},
+  "scripts": {"build": "tsc", "test": "node --test test.mjs"},
+  "devDependencies": {"typescript": "5.9.3"}
+}

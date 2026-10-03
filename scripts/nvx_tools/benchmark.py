@@ -278,6 +278,8 @@ def configure_parser(
         "Build and benchmark OpenVMM microVM boot or the host-side phase 2 "
         "snapshot foundations. No NVX VMM binary is built or run."
     )
+    parser.add_argument("--template", type=Path)
+    parser.add_argument("--pool-size", type=int, default=2)
     parser.add_argument(
         "--suite",
         choices=(
@@ -286,6 +288,7 @@ def configure_parser(
             "restore",
             "e2e",
             "phase2",
+            "warm-pool",
             "snapshot-profile",
             "all",
             *sorted(WORKLOAD_SUITES),
@@ -299,7 +302,7 @@ def configure_parser(
     )
     parser.add_argument(
         "--backend",
-        choices=("whp", "kvm", "mshv", "both"),
+        choices=("whp", "kvm", "mshv", "hvf", "both"),
         default="both" if os.name == "nt" else "kvm",
         help="backend to benchmark (default: both on Windows, kvm on Linux)",
     )
@@ -5889,6 +5892,10 @@ def scratch_directory_control(args: argparse.Namespace) -> str:
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.suite == "warm-pool":
+        from .warm_benchmark import run as run_warm
+
+        return run_warm(args)
     with benchmark_scratch_directory(args):
         return run_benchmark(args)
 

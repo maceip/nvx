@@ -1,0 +1,7 @@
+{
+  "initialize": {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"golden","version":"1"}}},
+  "initialize_response": {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"nvx","version":"1.0"}}},
+  "tool_names": ["nvx_run","nvx_exec","nvx_status","nvx_snapshot","nvx_files","nvx_secrets"],
+  "unsupported_version": "1900-01-01",
+  "negotiated_version": "2025-06-18"
+}

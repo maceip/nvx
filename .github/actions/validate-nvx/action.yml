@@ -4,13 +4,23 @@ description: Compile, test, and smoke-test the NVX CLI
 runs:
   using: composite
   steps:
+    - name: Set up test Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.10"
+        cache: pip
+        cache-dependency-path: |
+          requirements-dev.txt
+          requirements-signing.txt
+
     - name: Validate NVX CLI on Linux
       if: runner.os != 'Windows'
       shell: bash
       run: |
         set -euo pipefail
+        python3 -m pip install --requirement requirements-dev.txt
         python3 -m compileall -q scripts
-        python3 -m unittest scripts/test_nvx_9p.py scripts/test_control_session.py -v
+        python3 -m unittest discover -s scripts -p 'test_*.py' -v
         python3 .github/skills/nvx-host-connect/scripts/test_hosts.py -v
         python3 scripts/nvx.py --help
         python3 scripts/nvx.py test-openvmm-unit --help
@@ -24,9 +34,11 @@ runs:
       shell: powershell
       run: |
         $ErrorActionPreference = "Stop"
+        python -m pip install --requirement requirements-dev.txt
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python -m compileall -q scripts
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        python -m unittest scripts/test_nvx_9p.py scripts/test_control_session.py -v
+        python -m unittest discover -s scripts -p 'test_*.py' -v
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python .github\skills\nvx-host-connect\scripts\test_hosts.py -v
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

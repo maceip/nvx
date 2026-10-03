@@ -249,6 +249,13 @@ static int refresh_wall_clock(void)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--clock") == 0) {
+        int status = refresh_wall_clock();
+        if (status == 0) {
+            printf("NVX-CLOCK-SYNC-OK: %lld\n", (long long)time(NULL));
+        }
+        return status == 0 ? 0 : 1;
+    }
     if (argc == 2 && strcmp(argv[1], "--sample") == 0) {
         return print_random_sample() == 0 ? 0 : 1;
     }

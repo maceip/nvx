@@ -195,6 +195,12 @@ class SandboxLaunch:
     memory_max: int | None = None
     pids_max: int | None = None
     mount: SandboxMount | None = None
+    profile: str = "default"
+    seccomp: str = "nvx-default"
+    caps: tuple[str, ...] = ()
+    device_filter: bool = True
+    masked_paths: bool = True
+    no_new_privs: bool = True
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.layers) <= len(LAYER_ROLES):
@@ -221,8 +227,24 @@ class SandboxLaunch:
                 "sandbox hostname must be a lowercase RFC 1123 label up to 63 characters"
             )
         uid, gid = self.workload_identity
-        if not 1 <= uid <= 0xFFFF_FFFF or not 1 <= gid <= 0xFFFF_FFFF:
+        minimum = 0 if self.profile == "risky" else 1
+        if not minimum <= uid <= 0xFFFF_FFFF or not minimum <= gid <= 0xFFFF_FFFF:
             raise ScriptError("sandbox workload identity must be a non-root UID:GID")
+        if self.profile not in ("default", "ci", "risky") or self.seccomp not in (
+            "nvx-default",
+            "unconfined",
+        ):
+            raise ScriptError("unsupported sandbox security profile or seccomp filter")
+        if (
+            self.caps not in ((), ("MKNOD",), ("ALL",))
+            or (self.caps == ("MKNOD",) and self.profile != "ci")
+            or (self.caps == ("ALL",) and self.profile != "risky")
+        ):
+            raise ScriptError("capabilities require ci/MKNOD or risky/ALL")
+        if self.profile != "risky" and not (
+            self.device_filter and self.masked_paths and self.no_new_privs
+        ):
+            raise ScriptError("disabled isolation requires risky profile")
         for name, value in (
             ("memory-max", self.memory_max),
             ("pids-max", self.pids_max),
@@ -244,7 +266,17 @@ class SandboxLaunch:
         by_role = {layer.role: layer for layer in self.layers}
         return tuple(by_role[role] for role in LAYER_ROLES if role in by_role)
 
-    def openvmm_arguments(self) -> list[str]:
+    def openvmm_arguments(
+        self, backend: str = "kvm", *, architecture: str | None = None
+    ) -> list[str]:
+        if backend == "hvf" or architecture == "aarch64":
+            arguments: list[str] = []
+            for layer in self.ordered_layers():
+                arguments.extend(("--virtio-blk", f"file:{layer.path},ro"))
+            arguments.extend(("--virtio-blk", f"file:{self.scratch}"))
+            if self.mount is not None:
+                arguments.extend(self.mount.openvmm_arguments())
+            return arguments
         arguments = ["--machine", "microvm"]
         for layer in self.ordered_layers():
             arguments.extend(
@@ -258,14 +290,23 @@ class SandboxLaunch:
                 "--microvm-sandbox-block",
                 f"scratch:file:{os.fspath(self.scratch)}",
                 "--microvm-workload-identity",
-                f"{self.workload_identity[0]}:{self.workload_identity[1]}",
+                "unsafe-root"
+                if self.workload_identity == (0, 0) and self.profile == "risky"
+                else f"{self.workload_identity[0]}:{self.workload_identity[1]}",
             )
         )
         if self.mount is not None:
             arguments.extend(self.mount.openvmm_arguments())
         return arguments
 
-    def kernel_command_line(self, user_command_line: str = "") -> str:
+    def kernel_command_line(
+        self,
+        user_command_line: str = "",
+        backend: str = "kvm",
+        *,
+        architecture: str | None = None,
+    ) -> str:
+        arm = backend == "hvf" or architecture == "aarch64"
         if "\0" in user_command_line:
             raise ScriptError("kernel command line contains an embedded NUL")
         for token in user_command_line.split():
@@ -278,19 +319,46 @@ class SandboxLaunch:
                     f"{token.split('=', 1)[0]} is owned by the sandbox --mount option"
                 )
         tokens = [user_command_line.strip(), "nvx_sandbox=1"]
-        for layer in self.ordered_layers():
-            tokens.append(
-                "nvx_layer="
-                f"{layer.role},0x{BLOCK_MMIO_BASES[layer.role]:x},{layer.uuid}"
-            )
         tokens.extend(
             (
-                f"nvx_scratch=0x{BLOCK_MMIO_BASES['scratch']:x},ext4",
+                f"nvx_profile={self.profile}",
+                f"nvx_seccomp={self.seccomp}",
+                f"nvx_caps={','.join(self.caps) or 'none'}",
+                f"nvx_device_filter={int(self.device_filter)}",
+                f"nvx_masked_paths={int(self.masked_paths)}",
+                f"nvx_no_new_privs={int(self.no_new_privs)}",
+            )
+        )
+        for index, layer in enumerate(self.ordered_layers()):
+            device = (
+                f"/dev/vd{chr(97 + index)}"
+                if arm
+                else f"0x{BLOCK_MMIO_BASES[layer.role]:x}"
+            )
+            tokens.append(f"nvx_layer={layer.role},{device},{layer.uuid}")
+        scratch_device = (
+            f"/dev/vd{chr(97 + len(self.layers))}"
+            if arm
+            else f"0x{BLOCK_MMIO_BASES['scratch']:x}"
+        )
+        tokens.extend(
+            (
+                f"nvx_scratch={scratch_device},ext4",
                 f"nvx_entrypoint={self.entrypoint}",
                 f"nvx_hostname={self.hostname}",
             )
         )
         tokens.extend(f"nvx_arg={argument}" for argument in self.args)
+        if arm:
+            tokens.extend(
+                (
+                    "console=ttyAMA0",
+                    f"nvx_workload_uid={self.workload_identity[0]}",
+                    f"nvx_workload_gid={self.workload_identity[1]}",
+                )
+            )
+            if self.mount:
+                tokens.append(self.mount.command_line_fragment().strip())
         if self.memory_max is not None:
             tokens.append(f"nvx_memory_max={self.memory_max}")
         if self.pids_max is not None:

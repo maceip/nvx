@@ -427,7 +427,7 @@ def _release_archive_layout(
     raise ScriptError(f"unsupported release archive: {archive_path.name}")
 
 
-def _extract_release_archive(archive_path: Path, destination: Path) -> None:
+def extract_release_archive(archive_path: Path, destination: Path) -> None:
     _release_archive_layout(archive_path)
     try:
         if archive_path.name.endswith(".tar.gz"):
@@ -512,7 +512,7 @@ def _verify_release_archive(
         )
     )
     try:
-        _extract_release_archive(archive_path, extraction)
+        extract_release_archive(archive_path, extraction)
         extracted_layout = _filesystem_archive_layout(extraction)
         if extracted_layout != archived_layout:
             raise ScriptError(
@@ -541,7 +541,7 @@ def _replace_runtime_file(source: Path, destination: Path) -> None:
 def _install_release_archive(archive_path: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="nvx-release-") as temporary:
         extraction_root = Path(temporary)
-        _extract_release_archive(archive_path, extraction_root)
+        extract_release_archive(archive_path, extraction_root)
         checksum_files = list(extraction_root.glob("*/SHA256SUMS"))
         if len(checksum_files) != 1:
             raise ScriptError(
@@ -550,6 +550,33 @@ def _install_release_archive(archive_path: Path) -> None:
         package_root = checksum_files[0].parent
         verify_sha256_sums(package_root)
 
+        if (package_root / "NVX-RELEASE.json").is_file():
+            from .runtime_release import install
+
+            runtime = BuildConstants.BUILD_DIR / "release-runtime" / uuid.uuid4().hex
+            runtime.parent.mkdir(parents=True, exist_ok=True)
+            launcher = install(package_root, runtime)
+            metadata = _read_json_object(
+                package_root / "NVX-RELEASE.json", "release metadata"
+            )
+            names = metadata["guest_artifacts"]
+            for name in cast(list[str], names):
+                _replace_runtime_file(
+                    package_root / "build" / name, artifact_path(name)
+                )
+            for name in (
+                "openvmm.provenance.json",
+                "vmlinux.provenance.json",
+                "initramfs.provenance.json",
+            ):
+                _replace_runtime_file(
+                    package_root / "build" / name, artifact_path(name)
+                )
+            _replace_runtime_file(
+                package_root / "bin" / openvmm_binary_path().name, openvmm_binary_path()
+            )
+            print(">> self-contained CLI and SDKs: " + str(launcher))
+            return
         binary_destination = openvmm_binary_path()
         binary_source = require_file(
             package_root / "bin" / binary_destination.name,
@@ -855,7 +882,7 @@ def _validate_openvmm_provenance(
     return provenance
 
 
-def _validate_kernel_provenance(
+def validate_kernel_provenance(
     kernel: Path,
     kernel_config: Path,
     provenance_path: Path,
@@ -877,7 +904,7 @@ def _validate_kernel_provenance(
     return provenance
 
 
-def _validate_initramfs_provenance(
+def validate_initramfs_provenance(
     initramfs: Path,
     package_manifest: Path,
     provenance_path: Path,
@@ -940,8 +967,8 @@ def validate_runtime_artifact_provenance() -> None:
         initramfs_provenance_path,
     ) = _require_runtime_provenance_paths()
     _validate_openvmm_provenance(binary, openvmm_provenance_path)
-    _validate_kernel_provenance(kernel, kernel_config, kernel_provenance_path)
-    _validate_initramfs_provenance(
+    validate_kernel_provenance(kernel, kernel_config, kernel_provenance_path)
+    validate_initramfs_provenance(
         initramfs,
         package_manifest,
         initramfs_provenance_path,
@@ -1299,12 +1326,12 @@ def package_release(
         binary,
         openvmm_provenance_path,
     )
-    kernel_provenance = _validate_kernel_provenance(
+    kernel_provenance = validate_kernel_provenance(
         kernel,
         kernel_config,
         kernel_provenance_path,
     )
-    initramfs_provenance = _validate_initramfs_provenance(
+    initramfs_provenance = validate_initramfs_provenance(
         initramfs,
         package_manifest,
         initramfs_provenance_path,
@@ -1331,6 +1358,9 @@ def package_release(
     )
     preserve_staging = False
     try:
+        from .runtime_release import copy_cli
+
+        copy_cli(staging)
         _copy_release_file(binary, staging / "bin" / binary.name)
         for name in guest_names:
             _copy_release_file(artifact_path(name), staging / "guest" / name)

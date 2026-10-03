@@ -641,7 +641,7 @@ def _validate_microvm_dimensions(
         )
 
 
-def _result_filename(dimensions: BenchmarkDimensions) -> str:
+def result_filename(dimensions: BenchmarkDimensions) -> str:
     if dimensions.microvm_abi_version == 1 and dimensions.processors == 1:
         return f"{dimensions.platform}.csv"
     return (
@@ -1321,7 +1321,7 @@ def collect_openvmm_results(
     dimensions = BenchmarkDimensions(
         platform, lifecycle.microvm_abi_version, lifecycle.processors
     )
-    output_path = output_dir / _result_filename(dimensions)
+    output_path = output_dir / result_filename(dimensions)
     write_results(output_path, results)
     if summary_path is not None:
         append_results_summary(summary_path, platform, results)
@@ -1597,7 +1597,7 @@ def collect_results(
         )
         for metric, (unit, direction, p50) in sorted(collected.items())
     ]
-    output_path = output_dir / _result_filename(dimensions)
+    output_path = output_dir / result_filename(dimensions)
     write_results(output_path, results)
     if summary_path is not None:
         append_results_summary(summary_path, platform, results)
@@ -1946,6 +1946,13 @@ def _non_negative_float(value: str) -> float:
 def configure_parser(parser: argparse.ArgumentParser) -> None:
     commands = parser.add_subparsers(dest="performance_command", required=True)
 
+    warm = commands.add_parser(
+        "collect-warm", help="collect client warm and cold workload timing"
+    )
+    warm.add_argument("--platform", required=True)
+    warm.add_argument("--commit", required=True)
+    warm.add_argument("--input", type=Path, required=True)
+    warm.add_argument("--output-dir", type=Path, required=True)
     collect = commands.add_parser("collect", help="parse benchmark logs into p50 CSV")
     collect.add_argument("--platform", required=True)
     collect.add_argument("--commit", required=True)
@@ -2028,6 +2035,11 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
 
 def command_performance(args: argparse.Namespace) -> int:
     try:
+        if args.performance_command == "collect-warm":
+            from .warm_benchmark import collect
+
+            print(collect(args.platform, args.commit, args.input, args.output_dir))
+            return 0
         if args.performance_command == "collect":
             collect_results(
                 args.platform,

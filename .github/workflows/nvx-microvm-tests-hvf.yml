@@ -1,0 +1,43 @@
+name: NVX microVM tests / HVF
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nvx-microvm-tests-hvf:
+    runs-on: [self-hosted, macOS, ARM64, nvx-hvf]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+        with:
+          ssh-key: ${{ secrets.OPENVMM_DEPLOY_KEY }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - run: ./scripts/check.sh
+      - run: python3 -m pyright
+      - run: python3 scripts/nvx.py build-openvmm --backend hvf
+      - run: python3 scripts/nvx.py build-guest
+      - run: python3 scripts/nvx.py setup
+      - run: python3 scripts/nvx.py doctor --backend hvf
+      - run: python3 scripts/nvx.py test-microvm --backend hvf --output-dir build/test-results/microvm-hvf
+      - run: python3 scripts/nvx.py warm --image python:3.12-slim --backend hvf --output build/perf-warm-template
+      - run: python3 scripts/nvx.py benchmark --suite warm-pool --backend hvf --template build/perf-warm-template --runs 20 --platform darwin-arm64-hvf --output build/warm-benchmark.json
+      - run: python3 scripts/nvx.py performance collect-warm --platform darwin-arm64-hvf --commit "$GITHUB_SHA" --input build/warm-benchmark.json --output-dir build/warm-performance
+      - name: Bootstrap warm latency guard
+        run: python3 scripts/nvx.py performance gate --baseline-dir data/warm --target-dir build/warm-performance --minimum-history 1 --threshold 20 --absolute-tolerance-ms 1 > build/warm-performance/bootstrap-gate.log
+      - name: Ten-point warm trend gate (Warmup until history exists)
+        run: python3 scripts/nvx.py performance gate --baseline-dir data/warm --target-dir build/warm-performance --minimum-history 10 --threshold 20 --absolute-tolerance-ms 1 > build/warm-performance/trend-gate.log
+      - run: python3 scripts/nvx.py containment render build/test-results/microvm-hvf/containment/containment.json --format md > build/test-results/microvm-hvf/containment-matrix.md
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: microvm-hvf-evidence
+          path: |
+            build/test-results/microvm-hvf
+            build/warm-benchmark.json
+            build/warm-performance

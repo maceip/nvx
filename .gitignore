@@ -6,9 +6,10 @@
 /.cache/
 /.venv/
 /.ruff_cache/
-showcase/.build/
-showcase/dist/
+# The native app is maintained in the separate nvx-showcase repository.
+/showcase/
 /.nvx-hosts.json
+/.workbuddy-ai/
 __pycache__/
 *.py[cod]
 *.log
@@ -18,4 +19,5 @@ Thumbs.db
 *-mem.bin
 /.agents/
 /.playwright-mcp/
-showcase/validation/
+/sdk/typescript/node_modules/
+/sdk/typescript/dist/

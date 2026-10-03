@@ -52,10 +52,12 @@ RUN python3 scripts/nvx.py verify-guest-determinism \
         --guest ubuntu \
         --work-dir build/guest-determinism
 
+FROM kernel AS kernel-export
+RUN mkdir /kernel-out && cp /repo/build/vmlinux /repo/build/vmlinux.config /repo/build/vmlinux.provenance.json /kernel-out/ \
+    && if [ -f /repo/build/Image ]; then cp /repo/build/Image /kernel-out/; fi
+
 FROM scratch AS kernel-artifacts
-COPY --from=kernel /repo/build/vmlinux /vmlinux
-COPY --from=kernel /repo/build/vmlinux.config /vmlinux.config
-COPY --from=kernel /repo/build/vmlinux.provenance.json /vmlinux.provenance.json
+COPY --from=kernel-export /kernel-out/ /
 
 FROM scratch AS initramfs-artifacts
 COPY --from=initramfs /repo/build/initramfs.cpio.gz /initramfs.cpio.gz
@@ -77,24 +79,18 @@ RUN mkdir -p /out \
         --output /out/nvx-linux-source-6.18.38.tar.gz
 
 FROM scratch AS artifacts
-COPY --from=kernel /repo/build/vmlinux /vmlinux
-COPY --from=kernel /repo/build/vmlinux.config /vmlinux.config
-COPY --from=kernel /repo/build/vmlinux.provenance.json /vmlinux.provenance.json
+COPY --from=kernel-export /kernel-out/ /
 COPY --from=initramfs /repo/build/initramfs.cpio.gz /initramfs.cpio.gz
 COPY --from=initramfs /repo/build/initramfs.cpio.gz.packages.json /initramfs.cpio.gz.packages.json
 COPY --from=initramfs /repo/build/initramfs.provenance.json /initramfs.provenance.json
 
 FROM scratch AS ubuntu-guest-artifacts
-COPY --from=kernel /repo/build/vmlinux /vmlinux
-COPY --from=kernel /repo/build/vmlinux.config /vmlinux.config
-COPY --from=kernel /repo/build/vmlinux.provenance.json /vmlinux.provenance.json
+COPY --from=kernel-export /kernel-out/ /
 COPY --from=ubuntu-initramfs /repo/build/initramfs-ubuntu.cpio.gz /initramfs-ubuntu.cpio.gz
 COPY --from=ubuntu-initramfs /repo/build/initramfs-ubuntu.cpio.gz.packages.json /initramfs-ubuntu.cpio.gz.packages.json
 
 FROM scratch AS all-guest-artifacts
-COPY --from=kernel /repo/build/vmlinux /vmlinux
-COPY --from=kernel /repo/build/vmlinux.config /vmlinux.config
-COPY --from=kernel /repo/build/vmlinux.provenance.json /vmlinux.provenance.json
+COPY --from=kernel-export /kernel-out/ /
 COPY --from=initramfs /repo/build/initramfs.cpio.gz /initramfs.cpio.gz
 COPY --from=initramfs /repo/build/initramfs.cpio.gz.packages.json /initramfs.cpio.gz.packages.json
 COPY --from=initramfs /repo/build/initramfs.provenance.json /initramfs.provenance.json

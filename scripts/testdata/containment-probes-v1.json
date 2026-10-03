@@ -1,0 +1,42 @@
+[
+  {
+    "control": "risky",
+    "family": "identity",
+    "scope": "non-root, empty capabilities, NNP and seccomp syscall denial"
+  },
+  {
+    "control": "risky",
+    "family": "filesystem",
+    "scope": "system writes denied; scratch writable; mount denied"
+  },
+  {
+    "control": "risky",
+    "family": "process/namespace",
+    "scope": "agent invisible; creation of another network namespace denied"
+  },
+  {
+    "control": "risky",
+    "family": "devices",
+    "scope": "CAP_MKNOD retained in ci; raw memory/block nodes denied; proc mask"
+  },
+  {
+    "control": "risky",
+    "family": "resources",
+    "scope": "bounded fork simulant reaches pids limit without stopping host"
+  },
+  {
+    "control": "risky",
+    "family": "network",
+    "scope": "collector connection denied; actual host observes control request"
+  },
+  {
+    "control": "legacy structural-only format",
+    "family": "snapshot integrity",
+    "scope": "same-length RAM/state tamper rejected; foreign arch refused"
+  },
+  {
+    "control": "risky with deliberately shared test scratch",
+    "family": "tenant isolation",
+    "scope": "private scratch hides previous instance writes"
+  }
+]

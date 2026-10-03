@@ -1,0 +1,42 @@
+{
+  "body": {
+    "argv": [
+      "/bin/echo",
+      "hello"
+    ],
+    "created_ns": 1,
+    "evidence": {},
+    "image": {
+      "layers": [],
+      "manifest_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ref": "alpine:3.20"
+    },
+    "instance_id": "11111111111111111111111111111111",
+    "network": {
+      "complete": true,
+      "flows": [],
+      "source": "host-endpoint-policy"
+    },
+    "outcome": {
+      "category": "exit",
+      "operation": "exec",
+      "status_code": 0
+    },
+    "policy": {
+      "egress": "deny",
+      "profile": "default"
+    },
+    "resources": {
+      "cpu_usec": 300,
+      "memory_peak_bytes": 4096,
+      "pids_peak": 2,
+      "resource_version": 1,
+      "wall_ms": 10
+    },
+    "versions": {
+      "nvx": "0.1.0"
+    }
+  },
+  "body_sha256": "ca5c4488b11ce8ef39fb46b9e7263c78b8d49a97e841b621c7aa5a84059c58a9",
+  "receipt_version": 1
+}

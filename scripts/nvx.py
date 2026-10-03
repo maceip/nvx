@@ -7,6 +7,7 @@ import argparse
 import ipaddress
 import json
 import os
+import platform
 import select
 import shlex
 import subprocess
@@ -69,7 +70,13 @@ from nvx_tools.common import (
 from nvx_tools.create_linux_source_archive import (
     configure_parser as configure_linux_source_archive_parser,
 )
+from nvx_tools.doctor import command_setup
+from nvx_tools.doctor import configure_parser as configure_doctor_parser
+from nvx_tools.events import EventLog
+from nvx_tools.explain import configure_parser as configure_explain_parser
 from nvx_tools.guests import GUEST_NAMES, guest_descriptor
+from nvx_tools.hvf import boot_tokens as hvf_boot_tokens
+from nvx_tools.hvf import network_arguments as hvf_network_arguments
 from nvx_tools.microvm_tests import configure_parser as configure_microvm_test_parser
 from nvx_tools.performance import configure_parser as configure_performance_parser
 from nvx_tools.release import (
@@ -205,7 +212,12 @@ def command_build_distro_layer(args: argparse.Namespace) -> None:
 
 
 def command_verify_guest_determinism(args: argparse.Namespace) -> None:
-    verify_guest_determinism(args.work_dir, args.guest)
+    if args.image:
+        from nvx_tools.image import verify_image_determinism
+
+        verify_image_determinism(tuple(args.image), args.work_dir)
+    else:
+        verify_guest_determinism(args.work_dir, args.guest)
 
 
 def command_build_openvmm(args: argparse.Namespace) -> None:
@@ -273,10 +285,15 @@ def _hypervisor(selected: str) -> str:
     return "kvm"
 
 
+def _arm_direct(hypervisor: str) -> bool:
+    machine = platform.machine()
+    return machine.lower() in ("arm64", "aarch64") and hypervisor in ("hvf", "kvm")
+
+
 def _require_apple_silicon(hypervisor: str) -> None:
     if hypervisor != "hvf":
         return
-    machine = os.uname().machine if hasattr(os, "uname") else ""
+    machine = platform.machine()
     if machine not in ("arm64", "aarch64"):
         raise ScriptError("the hvf hypervisor requires Apple Silicon (arm64)")
 
@@ -296,6 +313,8 @@ def _release_platform(hypervisor: str) -> str:
         raise ScriptError(f"release downloads are unsupported on {sys.platform}")
     if selected not in supported:
         raise ScriptError(f"{selected} is not supported on {host}")
+    if _arm_direct(selected):
+        return "darwin-arm64" if platform.system() == "Darwin" else "linux-arm64"
     return f"{host}-{selected}"
 
 
@@ -311,13 +330,13 @@ def parse_share_spec(value: str) -> tuple[int, str, str]:
     """Parse `--share PORT:MNTPOINT[:ro|rw]` into (port, mountpoint, mode)."""
     parts = value.split(":")
     if len(parts) not in (2, 3):
-        raise ScriptError(
-            f"--share must be PORT:MNTPOINT[:ro|rw], got {value!r}"
-        )
+        raise ScriptError(f"--share must be PORT:MNTPOINT[:ro|rw], got {value!r}")
     try:
         port = int(parts[0])
     except ValueError:
-        raise ScriptError(f"--share port must be an integer, got {parts[0]!r}") from None
+        raise ScriptError(
+            f"--share port must be an integer, got {parts[0]!r}"
+        ) from None
     if not 1 <= port <= 65535:
         raise ScriptError(f"--share port must be 1-65535, got {port}")
     mountpoint = parts[1]
@@ -339,9 +358,7 @@ def parse_serve_spec(value: str) -> tuple[Path, str, str]:
     """Parse `--serve HOSTDIR:MNTPOINT[:ro|rw]` into (hostdir, mountpoint, mode)."""
     parts = value.split(":")
     if len(parts) not in (2, 3):
-        raise ScriptError(
-            f"--serve must be HOSTDIR:MNTPOINT[:ro|rw], got {value!r}"
-        )
+        raise ScriptError(f"--serve must be HOSTDIR:MNTPOINT[:ro|rw], got {value!r}")
     hostdir = Path(parts[0])
     if not hostdir.is_dir():
         raise ScriptError(f"--serve host directory is missing: {parts[0]!r}")
@@ -365,7 +382,7 @@ def _start_serve_servers(
     """
     from nvx_tools.nvx_9p import Server, Share
 
-    started = []
+    started: list[tuple[object, int, str, str]] = []
     for spec in specs:
         hostdir, mountpoint, mode = parse_serve_spec(spec)
         server = Server(
@@ -407,9 +424,7 @@ def _ensure_disk_image(path: Path, size_mib: int = DEFAULT_DISK_MIB) -> Path:
     return path
 
 
-def _forward_stdin(
-    proc: subprocess.Popen[bytes], stdin_lock: threading.Lock
-) -> None:
+def _forward_stdin(proc: subprocess.Popen[bytes], stdin_lock: threading.Lock) -> None:
     """Forward our stdin to the child (openvmm REPL); hold the pipe open.
 
     The REPL lives on openvmm's stdin (`snap`, `i <text>`, `shutdown`),
@@ -452,7 +467,12 @@ def _repl_write(
         proc.stdin.flush()
 
 
-def _repl_enter_sync(proc, buf, stdin_lock, timeout) -> None:
+def _repl_enter_sync(
+    proc: subprocess.Popen[bytes],
+    buf: bytearray,
+    stdin_lock: threading.Lock,
+    timeout: float,
+) -> None:
     """Switch openvmm's stdin from guest-forward mode to the REPL prompt.
 
     The escape byte and the following line must arrive in separate reads:
@@ -474,7 +494,7 @@ def _repl_enter_sync(proc, buf, stdin_lock, timeout) -> None:
     raise ScriptError("timed out entering the openvmm REPL")
 
 
-def _drain_available(proc, buf) -> None:
+def _drain_available(proc: subprocess.Popen[bytes], buf: bytearray) -> None:
     """Move every currently-readable byte from the child into buf+stdout."""
     assert proc.stdout is not None
     while True:
@@ -490,7 +510,13 @@ def _drain_available(proc, buf) -> None:
         sys.stdout.buffer.flush()
 
 
-def _wait_for_marker_sync(proc, buf, marker, timeout, what) -> None:
+def _wait_for_marker_sync(
+    proc: subprocess.Popen[bytes],
+    buf: bytearray,
+    marker: bytes,
+    timeout: float,
+    what: str,
+) -> None:
     """Single-threaded marker wait: drain-then-scan, no pump thread.
 
     The first version tailed output with a pump thread doing blocking
@@ -536,7 +562,7 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
     so the marker scan and the timeout's buffered= count always agree.
     Returns the process exit code.
     """
-    save_dir = Path(args.save_snapshot)
+    save_dir = Path(args.save_snapshot).resolve()
     # Upstream `snap` creates the leaf and refuses an existing one, so only
     # ensure the parent exists here.
     save_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -575,8 +601,11 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
         _repl_write(proc, stdin_lock, f"snap {save_dir}\n".encode())
         try:
             _wait_for_marker_sync(
-                proc, buf, REPL_SAVE_OK,
-                args.save_timeout, "snapshot-saved marker",
+                proc,
+                buf,
+                REPL_SAVE_OK,
+                args.save_timeout,
+                "snapshot-saved marker",
             )
         except ScriptError as err:
             failed = REPL_SAVE_FAILED in buf
@@ -589,7 +618,9 @@ def _run_repl_driven(command: list[str], args: argparse.Namespace) -> int:
                 ) from err
             raise
         print(f">> snapshot saved to {save_dir}", flush=True)
-        _repl_write(proc, stdin_lock, b"shutdown\n")
+        # Snapshot capture leaves the guest paused. Quit the VMM directly;
+        # an ACPI shutdown request cannot be serviced by a paused guest.
+        _repl_write(proc, stdin_lock, b"quit\n")
         try:
             return proc.wait(timeout=120)
         except subprocess.TimeoutExpired:
@@ -632,7 +663,7 @@ def _consomme_spec_cidr(spec: str) -> str | None:
 
 def _hvf_consomme_policy_fragments(args: argparse.Namespace) -> list[str]:
     """Translate nvx network-policy flags to consomme endpoint options."""
-    fragments = []
+    fragments: list[str] = []
     if args.network_egress is not None:
         fragments.append(f"egress={args.network_egress}")
     if args.network_ingress is not None:
@@ -667,9 +698,7 @@ def _hvf_policy_static_ip(cidr: str) -> tuple[str, str, str]:
     gateway = network.network_address + 1
     guest = network.network_address + 2
     if int(guest) >= int(network.broadcast_address):
-        raise ScriptError(
-            f"consomme CIDR {cidr!r} leaves no usable guest address"
-        )
+        raise ScriptError(f"consomme CIDR {cidr!r} leaves no usable guest address")
     return str(guest), str(network.netmask), str(gateway)
 
 
@@ -680,9 +709,7 @@ def _apply_hvf_consomme_policy(
 
     Returns the static guest identity derived from the first consomme CIDR.
     """
-    indexes = [
-        index for index, spec in enumerate(specs) if spec.startswith("consomme")
-    ]
+    indexes = [index for index, spec in enumerate(specs) if spec.startswith("consomme")]
     if not indexes:
         raise ScriptError(
             "--network-egress/--network-ingress policy on hvf requires "
@@ -740,6 +767,8 @@ def _require_hvf_run_args(args: argparse.Namespace) -> None:
                 f"--{name} is not verified with --hypervisor hvf; "
                 "restore with --restore-snapshot (and --restore-ready-path) only"
             )
+
+
 def _extend_network_arguments(command: list[str], args: argparse.Namespace) -> None:
     if args.net is not None:
         command.extend(["--net", args.net, "--network-profile", args.network_profile])
@@ -760,6 +789,32 @@ def _extend_network_arguments(command: list[str], args: argparse.Namespace) -> N
 
 
 def command_run(args: argparse.Namespace) -> None:
+    arm = _arm_direct(_hypervisor(args.hypervisor))
+    if args.pool is not None:
+        from nvx_tools.pool import command_run as command_pool_run
+
+        command_pool_run(args)
+        return
+    if args.image is not None:
+        from nvx_tools.image_run import command_image_run
+
+        command_image_run(args, _hypervisor(args.hypervisor))
+        return
+    if args.receipt is not None or args.receipt_signing_key is not None:
+        raise ScriptError("--receipt and --receipt-signing-key require --image")
+    if (
+        args.workspace
+        or args.out
+        or args.keep_alive
+        or args.secret
+        or args.env
+        or args.proxy_log
+        or args.proxy_ca
+        or args.secret_header
+    ):
+        raise ScriptError(
+            "workspace, outputs, retained instances and credentials require --image"
+        )
     if (args.net is None) != (args.network_profile is None):
         raise ScriptError("--net and --network-profile must be specified together")
     if args.restore_ready_path is not None and args.restore_snapshot is None:
@@ -776,7 +831,7 @@ def command_run(args: argparse.Namespace) -> None:
         raise ScriptError("--kernel is only valid for a fresh boot")
     if args.initrd is not None and args.restore_snapshot is not None:
         raise ScriptError("--initrd is only valid for a fresh boot")
-    if args.disk is not None and _hypervisor(args.hypervisor) != "hvf":
+    if args.disk is not None and not arm:
         raise ScriptError(
             "--disk is only valid with --hypervisor hvf; "
             "the microVM machine profile has no virtio-blk controller"
@@ -788,7 +843,7 @@ def command_run(args: argparse.Namespace) -> None:
     if args.save_exec is not None and args.save_snapshot is None:
         raise ScriptError("--save-exec/--save-ready require --save-snapshot")
     if args.save_snapshot is not None:
-        if args.restore_snapshot is None and _hypervisor(args.hypervisor) == "hvf":
+        if args.restore_snapshot is None and arm:
             if args.memory_backing_file is None:
                 raise ScriptError(
                     "--save-snapshot on a fresh hvf boot requires "
@@ -810,19 +865,19 @@ def command_run(args: argparse.Namespace) -> None:
                 "--restore-processors cannot exceed --processors capacity"
             )
     hypervisor = _hypervisor(args.hypervisor)
-    if args.memory_backing_file is not None and hypervisor != "hvf":
+    if args.memory_backing_file is not None and not arm:
         raise ScriptError(
             "--memory-backing-file is only valid with --hypervisor hvf; "
             "snapshot save on the microVM profile uses its own memory file scheme"
         )
     _require_apple_silicon(hypervisor)
-    if hypervisor == "hvf" and args.memory_mib is None:
+    if arm and args.memory_mib is None:
         # The aarch64 debug kernel and node-bearing initramfs do not fit
         # below this (verified: 256M fails once nodejs is installed, 512M
         # boots and serves).
-        memory_mib = max(memory_mib, 512)
+        memory_mib = max(memory_mib, 2048)
     executable = require_file(openvmm_binary_path(), "OpenVMM release binary")
-    if hypervisor == "hvf":
+    if arm:
         _require_hvf_run_args(args)
         command = [
             str(executable),
@@ -847,8 +902,14 @@ def command_run(args: argparse.Namespace) -> None:
             hypervisor,
         ]
     if args.restore_snapshot is not None:
-        command.extend(["--restore-snapshot", str(args.restore_snapshot)])
-        if hypervisor != "hvf":
+        from nvx_tools.doctor import canonical_arch
+
+        verify_snapshot(
+            args.restore_snapshot.resolve(),
+            expected_arch=canonical_arch(platform.machine()),
+        )
+        command.extend(["--restore-snapshot", str(args.restore_snapshot.resolve())])
+        if not arm:
             # x86-only: the aarch64/HVF CLI has no entropy-restore flag.
             command.append("--restore-entropy")
         if args.restore_processors is not None:
@@ -860,7 +921,7 @@ def command_run(args: argparse.Namespace) -> None:
     else:
         kernel_name = (
             KernelBuildConstants.BINARY_NAME_AARCH64
-            if hypervisor == "hvf"
+            if arm
             else KernelBuildConstants.BINARY_NAME
         )
         kernel = (
@@ -886,7 +947,7 @@ def command_run(args: argparse.Namespace) -> None:
                 str(initrd),
             ]
         )
-        if hypervisor == "hvf" and args.memory_backing_file is not None:
+        if arm and args.memory_backing_file is not None:
             # File-backed RAM: enables `snap <dir>` from the openvmm REPL.
             # The NIC also needs the `snapshot` option to be restorable.
             command.extend(["--memory-backing-file", str(args.memory_backing_file)])
@@ -900,7 +961,7 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--mount-deny", str(denied_path)])
     if args.net is not None:
         command.extend(["--net", args.net, "--network-profile", args.network_profile])
-    if hypervisor != "hvf":
+    if not arm:
         # MicroVM-namespaced policy flags; on hvf the policy knobs below are
         # translated onto the consomme endpoint instead.
         if args.network_egress is not None:
@@ -923,7 +984,7 @@ def command_run(args: argparse.Namespace) -> None:
     # the gateway mapping; start them before policy translation so a deny
     # policy can punch exactly those guest->gateway holes below.
     serves = _start_serve_servers(args.serve) if args.serve else []
-    if hypervisor == "hvf":
+    if arm:
         policy_fragments = _hvf_consomme_policy_fragments(args)
         if serves and args.network_egress == "deny":
             cidr = next(
@@ -944,9 +1005,7 @@ def command_run(args: argparse.Namespace) -> None:
                     "derived (e.g. --virtio-net consomme:192.168.127.0/24)"
                 )
             try:
-                gateway = str(
-                    next(ipaddress.ip_network(cidr, strict=False).hosts())
-                )
+                gateway = str(next(ipaddress.ip_network(cidr, strict=False).hosts()))
             except ValueError:
                 _stop_serve_servers(serves)
                 raise ScriptError(
@@ -971,7 +1030,7 @@ def command_run(args: argparse.Namespace) -> None:
             else _append_consomme_option(spec, "gwloopback")
             for spec in virtio_specs
         ]
-    if args.save_snapshot is not None and hypervisor == "hvf":
+    if args.save_snapshot is not None and arm:
         # Snapshot save requires a save-capable NIC: the upstream `snapshot`
         # option derives the same network+2/network+1 identity the policy
         # path configures, so the two compose.
@@ -991,11 +1050,7 @@ def command_run(args: argparse.Namespace) -> None:
         ]
     for spec in virtio_specs:
         command.extend(["--virtio-net", spec])
-    if (
-        hypervisor == "hvf"
-        and args.virtio_net
-        and args.restore_snapshot is None
-    ):
+    if arm and args.virtio_net and args.restore_snapshot is None:
         # On macOS/HVF the guest configures the virtio NIC via DHCP served
         # by the backend (e.g. consomme). Fresh boot only: the cmdline is
         # baked into the snapshot and must not be re-supplied on restore.
@@ -1020,9 +1075,7 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--cmdline", f"virt9p={port}:{mountpoint}:{mode}"])
     if args.disk is not None:
         disk_path = (
-            Path(args.disk)
-            if args.dry_run
-            else _ensure_disk_image(Path(args.disk))
+            Path(args.disk) if args.dry_run else _ensure_disk_image(Path(args.disk))
         )
         command.extend(["--virtio-blk", f"file:{disk_path}"])
         if args.restore_snapshot is None:
@@ -1034,26 +1087,56 @@ def command_run(args: argparse.Namespace) -> None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     if args.cmdline:
         command.extend(["--cmdline", args.cmdline])
+    if args.restore_snapshot is None:
+        command.extend(["--cmdline", f"nvx_host_epoch={int(time.time())}"])
     print(f">> {_format_command(command)}")
     try:
         if args.dry_run:
             return
         if args.save_snapshot is not None:
             raise SystemExit(_run_repl_driven(command, args))
-        raise SystemExit(subprocess.run(command).returncode)
+        log = EventLog(args.events, args.events.parent.name) if args.events else None
+        if log:
+            log.emit("run.started", backend=hypervisor, memory_mib=memory_mib)
+        status = subprocess.run(command).returncode
+        if log:
+            log.emit("run.exited", code=status)
+        raise SystemExit(status)
     finally:
         _stop_serve_servers(serves)
 
 
 def command_sandbox(args: argparse.Namespace) -> None:
+    if args.image is not None:
+        if args.sandbox_operation != "run" or args.layer or args.scratch:
+            raise ScriptError(
+                "--image requires sandbox run and replaces --layer/--scratch"
+            )
+        from nvx_tools.image_run import command_image_run
+
+        command_image_run(args, _hypervisor(args.hypervisor), sandbox=True)
+        return
     operation = args.sandbox_operation
+    if (
+        args.out
+        or args.keep_alive
+        or args.secret
+        or args.env
+        or args.proxy_log
+        or args.proxy_ca
+        or args.secret_header
+    ):
+        raise ScriptError("outputs, retained instances and credentials require --image")
+    if args.workspace:
+        if args.mount:
+            raise ScriptError("use one of --workspace and --mount")
+        from nvx_tools.workspace import parse_workspace
+
+        args.mount = parse_workspace(args.workspace).openvmm_arguments()[1]
+    if args.memory_mib is None:
+        args.memory_mib = 1024 if _hypervisor(args.hypervisor) == "hvf" else 256
     if _hypervisor(args.hypervisor) == "hvf":
         _require_apple_silicon("hvf")
-        raise ScriptError(
-            "sandbox workloads require the microVM machine profile, which is "
-            "x86-only and unsupported with --hypervisor hvf; "
-            "use `run` for standard Linux direct boot on macOS"
-        )
     if operation in ("run", "provision", "exec") and (
         args.entrypoint in SYSTEMD_ENTRYPOINTS
     ):
@@ -1068,7 +1151,15 @@ def command_sandbox(args: argparse.Namespace) -> None:
         raise ScriptError("--mount-deny requires --mount")
     if args.mount is not None and operation not in ("run", "provision"):
         raise ScriptError("--mount is only valid for sandbox run or provision")
+    wall_timeout_ms = 60000
     if operation in ("run", "provision"):
+        from nvx_tools.policy import for_launch
+
+        policy = for_launch(args)
+        wall_timeout_ms = policy.wall_timeout_ms
+        args.network_egress = policy.egress
+        args.network_ingress = args.network_ingress or "deny"
+        args.network_egress_allow = list(policy.allow)
         if (args.net is None) != (args.network_profile is None):
             raise ScriptError("--net and --network-profile must be specified together")
         if not args.layer or args.scratch is None:
@@ -1079,9 +1170,15 @@ def command_sandbox(args: argparse.Namespace) -> None:
             entrypoint=args.entrypoint,
             args=tuple(args.sandbox_arg),
             hostname=args.hostname,
-            workload_identity=args.workload_user,
-            memory_max=args.memory_max,
-            pids_max=args.pids_max,
+            workload_identity=(policy.uid, policy.gid),
+            memory_max=policy.memory_max,
+            pids_max=policy.pids_max,
+            profile=policy.profile,
+            seccomp=policy.seccomp,
+            caps=policy.caps,
+            device_filter=policy.device_filter,
+            masked_paths=policy.masked_paths,
+            no_new_privs=policy.no_new_privs,
             mount=(
                 None
                 if args.mount is None
@@ -1126,7 +1223,9 @@ def command_sandbox(args: argparse.Namespace) -> None:
         result = sandbox_lifecycle.exec_workload(
             args.state_dir,
             (args.entrypoint, *args.sandbox_arg),
-            timeout_ms=args.exec_timeout_ms,
+            timeout_ms=args.exec_timeout_ms
+            if args.exec_timeout_ms is not None
+            else 60000,
             response_timeout=args.timeout,
         )
         sys.stdout.buffer.write(result.stdout)
@@ -1153,8 +1252,16 @@ def command_sandbox(args: argparse.Namespace) -> None:
     assert operation == "run"
     assert launch is not None
     executable = require_file(openvmm_binary_path(), "OpenVMM release binary")
+    backend = _hypervisor(args.hypervisor)
+    arm = _arm_direct(backend)
+    architecture = "aarch64" if arm else "x86_64"
     kernel = require_file(
-        artifact_path(KernelBuildConstants.BINARY_NAME), "Linux direct kernel"
+        artifact_path(
+            KernelBuildConstants.BINARY_NAME_AARCH64
+            if arm
+            else KernelBuildConstants.BINARY_NAME
+        ),
+        "Linux direct kernel",
     )
     initrd = require_file(
         artifact_path(AlpineBuildConstants.INITRAMFS_NAME),
@@ -1162,9 +1269,8 @@ def command_sandbox(args: argparse.Namespace) -> None:
     )
     command = [
         str(executable),
-        *launch.openvmm_arguments(),
-        "--microvm-lifecycle",
-        "one-shot",
+        *launch.openvmm_arguments(backend, architecture=architecture),
+        *(["--com1", "console"] if arm else ["--microvm-lifecycle", "one-shot"]),
         "--single-process",
         "--hypervisor",
         _hypervisor(args.hypervisor),
@@ -1175,14 +1281,23 @@ def command_sandbox(args: argparse.Namespace) -> None:
         "--initrd",
         str(initrd),
         "--cmdline",
-        launch.kernel_command_line(args.cmdline),
+        launch.kernel_command_line(args.cmdline, backend, architecture=architecture)
+        + f" nvx_wall_timeout_ms={wall_timeout_ms}",
     ]
-    _extend_network_arguments(command, args)
+    if arm:
+        network_args, network_cmdline = hvf_network_arguments(vars(args))
+        command.extend(
+            [*network_args, "--cmdline", hvf_boot_tokens(False) + " " + network_cmdline]
+        )
+    else:
+        _extend_network_arguments(command, args)
+        command.extend(["--cmdline", f"nvx_host_epoch={int(time.time())}"])
     if args.outcome_report is not None:
         command.extend(["--microvm-report", str(args.outcome_report)])
     print(f">> {_format_command(command)}")
     if not args.dry_run:
-        raise SystemExit(subprocess.run(command).returncode)
+        status = subprocess.run(command).returncode
+        raise SystemExit(status)
 
 
 def command_collect_sources(_: argparse.Namespace) -> None:
@@ -1190,6 +1305,34 @@ def command_collect_sources(_: argparse.Namespace) -> None:
 
 
 def command_package(args: argparse.Namespace) -> None:
+    if args.platform is not None or _arm_direct(_hypervisor("auto")):
+        from nvx_tools.runtime_release import package
+
+        if args.force:
+            raise ScriptError(
+                "self-contained packages require a new destination; omit --force"
+            )
+
+        selected = args.platform or (
+            "darwin-arm64" if sys.platform == "darwin" else "linux-arm64"
+        )
+        version = (
+            args.version or (BuildConstants.REPO_ROOT / "VERSION").read_text().strip()
+        )
+        destination = (
+            args.destination
+            or BuildConstants.REPO_ROOT / "release" / version / selected
+        )
+        print(
+            package(
+                destination,
+                selected,
+                version,
+                development=args.development,
+                source=args.include_source,
+            )
+        )
+        return
     package_release(
         version=args.version,
         destination=args.destination,
@@ -1295,7 +1438,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "verify-guest-determinism",
         help="build Ubuntu guest artifacts twice and compare them",
     )
-    determinism.add_argument("--guest", choices=GUEST_NAMES, required=True)
+    determinism.add_argument("--guest", choices=GUEST_NAMES, default="ubuntu")
     determinism.add_argument(
         "--work-dir",
         type=Path,
@@ -1303,6 +1446,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             BuildConstants.BUILD_DIR
             / InitramfsBuildConstants.DETERMINISM_DIRECTORY_NAME
         ),
+    )
+    determinism.add_argument(
+        "--image",
+        action="append",
+        help="reconvert an OCI image twice and compare every artifact digest (repeatable)",
     )
     determinism.set_defaults(handler=command_verify_guest_determinism)
 
@@ -1394,6 +1542,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     run = subparsers.add_parser("run", help="run an OpenVMM microVM")
     run.add_argument("--guest", choices=GUEST_NAMES, default="alpine")
+    run.add_argument("--events", type=Path, help="write host-owned JSONL run events")
+    run.add_argument(
+        "--image", help="run a converted OCI image through the managed sandbox agent"
+    )
+    run.add_argument(
+        "workload", nargs=argparse.REMAINDER, help="image command after --"
+    )
     run.add_argument("--hypervisor", choices=HYPERVISORS, default="auto")
     run.add_argument(
         "--machine",
@@ -1408,12 +1563,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     run.add_argument("--memory-capacity-mib", type=int)
     run.add_argument("--processors", type=int, choices=(1, 2, 4, 8), default=1)
     run.add_argument("--mount", help="GUEST_TARGET,HOST_PATH,ro|rw")
+    run.add_argument("--workspace", help="HOST:GUEST[:ro|rw] (default read-only)")
+    run.add_argument(
+        "--out",
+        type=Path,
+        help="collect /out into a new host directory after clean completion",
+    )
+    run.add_argument(
+        "--keep-alive",
+        action="store_true",
+        help="retain an image instance for exec/cp/stop",
+    )
     run.add_argument("--mount-deny", action="append", type=Path, default=[])
     run.add_argument("--net", metavar="IPV4/PREFIX")
     run.add_argument("--network-profile", choices=NETWORK_PROFILES)
     run.add_argument("--network-egress", choices=("allow", "deny"))
     run.add_argument("--network-ingress", choices=("allow", "deny"))
-    run.add_argument("--network-egress-allow", action="append", default=[])
+    run.add_argument(
+        "--network-egress-allow", "--egress-allow", action="append", default=[]
+    )
     run.add_argument("--network-egress-deny", action="append", default=[])
     run.add_argument("--host-loopback", choices=("allow", "deny"))
     run.add_argument("--network-proxy", metavar="IPV4:TCP-PORT")
@@ -1517,6 +1685,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="write a bounded local JSON outcome report",
     )
+    run.add_argument(
+        "--receipt", type=Path, help="write a version-1 run receipt (image runs)"
+    )
+    run.add_argument(
+        "--receipt-signing-key", type=Path, help="Ed25519 private key for the receipt"
+    )
     run.add_argument("--cmdline", default="")
     run.add_argument(
         "--memory-backing-file",
@@ -1530,6 +1704,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     run.add_argument("--restore-memory-mib", type=int)
     run.add_argument("--restore-ready-path", type=Path)
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--profile", choices=("default", "ci", "risky"))
+    run.add_argument("--cap-add", action="append", choices=("MKNOD",))
+    run.add_argument("--seccomp", choices=("nvx-default", "unconfined"))
+    run.add_argument("--config", type=Path, default=Path("nvx.toml"))
+    run.add_argument("--pids-max", type=int)
+    run.add_argument("--memory-max", type=int)
+    run.add_argument("--exec-timeout-ms", type=int)
     run.set_defaults(handler=command_run)
 
     sandbox = subparsers.add_parser(
@@ -1563,6 +1744,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="ROLE,PATH,EROFS_UUID",
     )
     sandbox.add_argument("--scratch", type=Path)
+    sandbox.add_argument("--image", help="use cached OCI layers and private scratch")
+    sandbox.add_argument("--workspace", help="HOST:GUEST[:ro|rw]")
+    sandbox.add_argument("--out", type=Path)
+    sandbox.add_argument("--keep-alive", action="store_true")
     sandbox.add_argument("--state-dir", type=Path)
     sandbox.add_argument("--entrypoint", default="/bin/sh")
     sandbox.add_argument("--arg", action="append", default=[], dest="sandbox_arg")
@@ -1570,13 +1755,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sandbox.add_argument(
         "--workload-user",
         type=sandbox_identity,
-        default=parse_workload_identity("65534:65534"),
+        default=None,
         metavar="UID:GID",
         help="fixed non-root workload identity (default: 65534:65534)",
     )
     sandbox.add_argument("--memory-max", type=int)
     sandbox.add_argument("--pids-max", type=int)
-    sandbox.add_argument("--memory-mib", type=int, default=256)
+    sandbox.add_argument(
+        "--memory-mib",
+        type=int,
+        help="guest RAM (HVF: 1024 MiB; other backends: 256 MiB)",
+    )
     sandbox.add_argument(
         "--timeout",
         type=float,
@@ -1586,7 +1775,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sandbox.add_argument(
         "--exec-timeout-ms",
         type=int,
-        default=0,
+        default=None,
         help="guest workload timeout in milliseconds; zero disables it",
     )
     sandbox.add_argument("--hypervisor", choices=HYPERVISORS, default="auto")
@@ -1606,7 +1795,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sandbox.add_argument("--network-profile", choices=NETWORK_PROFILES)
     sandbox.add_argument("--network-egress", choices=("allow", "deny"))
     sandbox.add_argument("--network-ingress", choices=("allow", "deny"))
-    sandbox.add_argument("--network-egress-allow", action="append", default=[])
+    sandbox.add_argument(
+        "--network-egress-allow", "--egress-allow", action="append", default=[]
+    )
     sandbox.add_argument("--network-egress-deny", action="append", default=[])
     sandbox.add_argument("--host-loopback", choices=("allow", "deny"))
     sandbox.add_argument("--network-proxy", metavar="IPV4:TCP-PORT")
@@ -1618,6 +1809,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     sandbox.add_argument("--cmdline", default="")
     sandbox.add_argument("--dry-run", action="store_true")
+    sandbox.add_argument("--profile", choices=("default", "ci", "risky"))
+    sandbox.add_argument("--cap-add", action="append", choices=("MKNOD",))
+    sandbox.add_argument("--seccomp", choices=("nvx-default", "unconfined"))
+    sandbox.add_argument("--config", type=Path, default=Path("nvx.toml"))
     sandbox.set_defaults(handler=command_sandbox)
 
     benchmark = subparsers.add_parser(
@@ -1658,6 +1853,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     package = subparsers.add_parser("package", help="stage a binary distribution")
     package.add_argument("--version")
+    package.add_argument(
+        "--platform",
+        choices=(
+            "darwin-arm64",
+            "linux-arm64",
+            "linux-kvm",
+            "linux-mshv",
+            "windows-whp",
+        ),
+    )
+    package.add_argument(
+        "--development",
+        action="store_true",
+        help="label a local preview; publication remains gated",
+    )
     package.add_argument("--destination", type=Path)
     source_mode = package.add_mutually_exclusive_group(required=True)
     source_mode.add_argument("--include-source", action="store_true")
@@ -1683,12 +1893,111 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     snapshot = subparsers.add_parser(
         "snapshot", help="inspect and validate saved VM snapshots"
     )
-    snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_command", required=True)
+    snapshot_subparsers = snapshot.add_subparsers(
+        dest="snapshot_command", required=True
+    )
     snapshot_verify = snapshot_subparsers.add_parser(
         "verify", help="validate a snapshot directory before restoring it"
     )
     snapshot_verify.add_argument("snapshot_dir", type=Path)
     snapshot_verify.set_defaults(handler=command_snapshot_verify)
+    from nvx_tools.containment import configure_parser as configure_containment_parser
+
+    configure_containment_parser(
+        subparsers.add_parser(
+            "containment", help="run or render the scoped containment battery"
+        )
+    )
+
+    from nvx_tools.receipt import configure_parser as configure_receipt_parser
+
+    configure_receipt_parser(
+        subparsers.add_parser(
+            "receipt", help="verify run receipt integrity and signatures"
+        )
+    )
+
+    from nvx_tools.policy import configure_parser as configure_policy_parser
+
+    configure_policy_parser(
+        subparsers.add_parser(
+            "policy", help="show or lint the resolved security profile"
+        )
+    )
+
+    from nvx_tools.image import configure_parser as configure_image_parser
+
+    configure_image_parser(
+        subparsers.add_parser(
+            "image", help="pull, convert, list, verify, or remove OCI images"
+        )
+    )
+
+    from nvx_tools.bundle import configure_parser as configure_bundle_parser
+    from nvx_tools.mcp import configure_parser as configure_mcp_parser
+    from nvx_tools.pool import configure_parser as configure_pool_parser
+    from nvx_tools.registry import command_events
+    from nvx_tools.registry import configure_parsers as configure_registry_parsers
+    from nvx_tools.warm import configure_parser as configure_warm_parser
+
+    configure_registry_parsers(subparsers)
+    configure_warm_parser(subparsers)
+    configure_pool_parser(subparsers)
+    configure_mcp_parser(subparsers)
+    from nvx_tools.runtime_release import configure_parser as configure_install_parser
+
+    configure_install_parser(subparsers)
+    run.add_argument("--pool", help="lease one repaired clone from a running pool")
+    for image_parser in (run, sandbox):
+        image_parser.add_argument(
+            "--stream",
+            action="store_true",
+            help="write each managed output frame as it arrives",
+        )
+    for image_parser in (run, sandbox):
+        image_parser.add_argument(
+            "--secret",
+            action="append",
+            default=[],
+            help="host environment NAME[@HOST:PORT], read only by the host proxy",
+        )
+        image_parser.add_argument(
+            "--secret-header",
+            action="append",
+            default=[],
+            help="NAME:HEADER (default Authorization: Bearer)",
+        )
+        image_parser.add_argument("--proxy-log", type=Path)
+        image_parser.add_argument(
+            "--proxy-ca", type=Path, help="additional trusted upstream TLS CA file"
+        )
+        image_parser.add_argument(
+            "--env",
+            action="append",
+            default=[],
+            help="explicit guest NAME=VALUE; values enter guest memory",
+        )
+    configure_bundle_parser(
+        subparsers.add_parser(
+            "bundle", help="create or verify a deterministic evidence bundle"
+        )
+    )
+    events = subparsers.add_parser(
+        "events", help="read ordered host events by instance ID"
+    )
+    events.add_argument("id")
+    events.set_defaults(handler=command_events)
+
+    doctor = subparsers.add_parser(
+        "doctor", help="check host, artifacts, cache, and versions"
+    )
+    configure_doctor_parser(doctor)
+    setup = subparsers.add_parser(
+        "setup", help="sign and verify macOS Hypervisor entitlement"
+    )
+    setup.set_defaults(handler=command_setup)
+    explain = subparsers.add_parser("explain", help="explain recorded policy denials")
+    configure_explain_parser(explain)
     return parser.parse_args(argv)
 
 

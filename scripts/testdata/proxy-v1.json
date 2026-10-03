@@ -1,0 +1,241 @@
+[
+  {
+    "name": "strip-and-inject",
+    "method": "POST",
+    "target": "https://api.example.test/v1/run?x=1",
+    "headers": [
+      [
+        "Authorization",
+        "Bearer caller"
+      ],
+      [
+        "X-Api-Key",
+        "caller"
+      ],
+      [
+        "Connection",
+        "close, x-private"
+      ],
+      [
+        "X-Private",
+        "discard"
+      ],
+      [
+        "Content-Type",
+        "application/json"
+      ]
+    ],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [
+      {
+        "name": "TEST_KEY",
+        "host": "api.example.test",
+        "port": 443,
+        "value": "fake-host-key",
+        "header": "Authorization",
+        "prefix": "Bearer ",
+        "scheme": "https"
+      }
+    ],
+    "expect": {
+      "host": "api.example.test",
+      "port": 443,
+      "path": "/v1/run?x=1",
+      "headers": {
+        "authorization": "Bearer fake-host-key",
+        "accept-encoding": "identity",
+        "content-type": "application/json"
+      }
+    }
+  },
+  {
+    "name": "evil-host",
+    "method": "GET",
+    "target": "https://evil.example.test/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "hostname-suffix",
+    "method": "GET",
+    "target": "https://api.example.test.evil.test/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "userinfo",
+    "method": "GET",
+    "target": "https://user:password@api.example.test/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "gateway-route",
+    "method": "GET",
+    "target": "/https/api.example.test:443/v1/status",
+    "headers": [
+      [
+        "Proxy-Authorization",
+        "caller"
+      ],
+      [
+        "Cookie",
+        "private"
+      ],
+      [
+        "Host",
+        "gateway"
+      ]
+    ],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "expect": {
+      "host": "api.example.test",
+      "port": 443,
+      "path": "/v1/status",
+      "headers": {
+        "accept-encoding": "identity"
+      }
+    }
+  },
+  {
+    "name": "https-no-connect",
+    "method": "CONNECT",
+    "target": "api.example.test:443",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "duplicate-header",
+    "method": "GET",
+    "target": "https://api.example.test/",
+    "headers": [
+      [
+        "Content-Length",
+        "0"
+      ],
+      [
+        "content-length",
+        "1"
+      ]
+    ],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "transport-scope",
+    "method": "GET",
+    "target": "http://api.example.test:443/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [
+      {
+        "name": "TEST_KEY",
+        "host": "api.example.test",
+        "port": 443,
+        "value": "fake-host-key",
+        "scheme": "https"
+      }
+    ],
+    "error": true
+  },
+  {
+    "name": "zero-port",
+    "method": "GET",
+    "target": "https://api.example.test:0/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "leading-dot",
+    "method": "GET",
+    "target": "https://.api.example.test/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [],
+    "error": true
+  },
+  {
+    "name": "transport-header",
+    "method": "GET",
+    "target": "https://api.example.test/",
+    "headers": [],
+    "allowed": [
+      [
+        "api.example.test",
+        443
+      ]
+    ],
+    "bindings": [
+      {
+        "name": "TEST_KEY",
+        "host": "api.example.test",
+        "port": 443,
+        "value": "fake-host-key",
+        "header": "Host"
+      }
+    ],
+    "error": true
+  }
+]

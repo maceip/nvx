@@ -45,7 +45,17 @@ def bytes_to_mib(value: int | float) -> float:
 
 
 def artifact_path(name: str) -> Path:
-    return BuildConstants.BUILD_DIR / name
+    candidate = BuildConstants.BUILD_DIR / name
+    if candidate.is_file():
+        return candidate
+    # The original x86 release contract keeps runtime files in guest/ and
+    # provenance/. Its shipped launcher must work directly from that archive.
+    if (BuildConstants.REPO_ROOT / "bin" / "nvx").is_file():
+        for directory in ("guest", "provenance"):
+            packaged = BuildConstants.REPO_ROOT / directory / name
+            if packaged.is_file():
+                return packaged
+    return candidate
 
 
 def cache_root() -> Path:
@@ -63,6 +73,12 @@ def openvmm_binary_path() -> Path:
         if os.name == "nt"
         else OpenVMMBuildConstants.BINARY_NAME
     )
+    installed = BuildConstants.REPO_ROOT / "bin" / executable
+    if installed.is_file() and (
+        (BuildConstants.REPO_ROOT / "NVX-RELEASE.json").is_file()
+        or (BuildConstants.REPO_ROOT / "bin" / "nvx").is_file()
+    ):
+        return installed
     return (
         OpenVMMBuildConstants.DIRECTORY
         / OpenVMMBuildConstants.TARGET_DIRECTORY_NAME

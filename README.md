@@ -97,8 +97,6 @@ python3 scripts/nvx.py run --hypervisor hvf --memory-mib 2048 \
 ```
 
 ```sh
-# in the guest: the clock boots stale and TLS fails until it is set
-date -u <MMDDhhmmYYYY from the host `date -u`>
 apk update && apk add bash curl npm
 curl -fsSL https://claude.ai/install.sh -o /tmp/ci.sh && bash /tmp/ci.sh
 ~/.local/bin/claude --version
@@ -111,12 +109,16 @@ Caveats:
 - No ICMP to the outside world (unprivileged NAT); TCP, UDP, DNS, and DHCP all work.
 - The default 512M guest is too small for the installer payloads (tmpfs fills up); use
   `--memory-mib 2048`.
-- Everything installed lives in guest RAM and vanishes when the VM exits. There is no
-  guest-initiated clean exit on HVF yet, so stop the VM from the host.
-- To actually use the agents, export credentials at the guest shell
-  (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`).
+- Everything installed in this raw guest lives in RAM and vanishes when the VM exits.
+  Exit cleanly with `/sbin/nvx-exit 0`; the host repairs the clock at boot and restore.
+- For credentials kept on the host, use the managed image runner's
+  [scoped credential proxy](doc/cookbook.md#keep-an-api-credential-on-the-host).
+  Exporting API keys in this raw guest puts their values in guest RAM and any snapshot.
 
 ## Documentation
+
+The optional native macOS app lives in [maceip/nvx-showcase](https://github.com/maceip/nvx-showcase).
+Keep its checkout alongside this repository (for example, `~/nvx-showcase` beside `~/nvx`).
 
 ### Usage
 
@@ -136,3 +138,27 @@ Caveats:
 - [Package and source delivery](doc/distribution.md) - Instructions for packaging and distributing
 	NVX.
 - [Contributing](doc/contribute.md) - Guidelines for contributing to NVX.
+
+### Containment evidence
+
+The [generated containment matrix](doc/containment-matrix.md) records eight scoped probe
+families and their failing controls. Run `python3 scripts/nvx.py containment run --backend
+hvf --format md` to reproduce it on Apple Silicon, or select the matching KVM/MSHV/WHP
+backend. See the matrix for current backend evidence and scope.
+
+### OCI workloads and integrations
+
+```sh
+python3 scripts/nvx.py run --image python:3.12-slim -- python -c 'print(1)'
+python3 scripts/nvx.py warm --image python:3.12-slim --output build/python-warm
+python3 scripts/nvx.py pool start --template build/python-warm --size 2
+python3 scripts/nvx.py mcp serve
+```
+
+These commands select HVF on macOS, KVM on Linux, or WHP on Windows. Image preparation
+occurs before launch; workloads default to non-root, bounded resources and denied egress.
+The [cookbook](doc/cookbook.md) covers workspaces, outputs, credential injection, receipts,
+pool leases and the Python/TypeScript SDKs. See [implementation evidence](doc/implementation-status.md)
+for completed local checks and the external gates still required before publication.
+The [image-format comparison](doc/image-formats.md) explains OCI imports, NVX's EROFS/ext4
+runtime layout and Nanvix's separate ELF/FAT32 workload format.

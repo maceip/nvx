@@ -1,0 +1,2 @@
+# Optional receipt signatures; wheels include their own crypto backend on macOS.
+cryptography==50.0.2

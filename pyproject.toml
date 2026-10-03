@@ -1,5 +1,6 @@
 [tool.pyright]
-include = ["scripts"]
+include = ["scripts", "sdk/python"]
+extraPaths = ["sdk/python"]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
 

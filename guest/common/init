@@ -8,6 +8,8 @@ mount -t tmpfs none /tmp
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root TERM=linux
 ifconfig lo 127.0.0.1 up
 cmdline=" $(cat /proc/cmdline) "
+# Direct boot has no reliable RTC on every backend. The host samples its
+# wall clock immediately before launch; restore uses the fresh control sample.
 case "$cmdline" in
     *" nvx_sandbox=1 "*) sandbox_mode=true ;;
     *) sandbox_mode=false ;;
@@ -65,6 +67,8 @@ workload_uid=
 workload_gid=
 workload_lifecycle=one-shot
 control_tty=
+host_epoch=
+host_clock=sample
 # Kernel command-line tokens are deliberately split on spaces.
 # shellcheck disable=SC2086
 set -f
@@ -80,9 +84,22 @@ for token in $cmdline; do
         nvx_workload_gid=*) workload_gid=${token#*=} ;;
         nvx_lifecycle=*) workload_lifecycle=${token#*=} ;;
         nvx_control_tty=*) control_tty=${token#*=} ;;
+        nvx_host_epoch=*) host_epoch=${token#*=} ;;
+        nvx_host_clock=*) host_clock=${token#*=} ;;
     esac
 done
 set +f
+if [ "$host_clock" = sample ]; then
+    /sbin/nvx-clock || fatal "host clock sample unavailable"
+    if [ "$(uname -m)" = aarch64 ] &&
+        ! printf '%s' "$cmdline" | grep -q ' nvx_clock_watch=off '; then
+        /sbin/nvx-clock --watch &
+    fi
+elif [ "$host_clock" = epoch ] && [ -n "$host_epoch" ]; then
+    case "$host_epoch" in *[!0-9]*) fatal "invalid host clock sample" ;; esac
+    date -u -s "@$host_epoch" >/dev/null || fatal "failed to set host clock sample"
+    echo "NVX-CLOCK-SYNC-OK: $host_epoch"
+fi
 if [ -n "$nvx_exec" ]; then
     case "$nvx_exec" in
         /*) ;;
@@ -214,8 +231,10 @@ fi
 # (see `scripts/nvx.py run --share`, spec PORT:MNTPOINT[:ro|rw]).
 v9p=$(sed -n 's/.*virt9p=\([^ ]*\).*/\1/p' /proc/cmdline)
 if [ -n "$v9p" ]; then
-    v9port=${v9p%%:*}; v9rest=${v9p#*:}
-    v9mnt=${v9rest%%:*}; v9mode=${v9rest#*:}
+    v9port=${v9p%%:*}
+    v9rest=${v9p#*:}
+    v9mnt=${v9rest%%:*}
+    v9mode=${v9rest#*:}
     [ "$v9mnt" = "$v9rest" ] && v9mode=ro
     [ "$v9mode" = rw ] || v9mode=ro
     v9gw=$(route -n 2>/dev/null | awk '$1 == "0.0.0.0" { print $2; exit }')
@@ -238,7 +257,8 @@ fi
 # ext4 on first boot, so the same image persists across boots/restores.
 vdisk=$(sed -n 's/.*virtdisk=\([^ ]*\).*/\1/p' /proc/cmdline)
 if [ -n "$vdisk" ]; then
-    vddev=${vdisk%%:*}; vdmnt=${vdisk#*:}
+    vddev=${vdisk%%:*}
+    vdmnt=${vdisk#*:}
     [ "$vdmnt" = "$vdisk" ] && vdmnt=/data
     if [ ! -e "/dev/$vddev" ]; then
         echo "virtdisk: /dev/$vddev not present" >&2
@@ -247,8 +267,8 @@ if [ -n "$vdisk" ]; then
         if mount "/dev/$vddev" "$vdmnt" 2>/tmp/virtdisk-mount.log; then
             echo "VIRTDISK-OK: /dev/$vddev at $vdmnt"
         elif command -v mkfs.ext4 >/dev/null 2>&1 &&
-             mkfs.ext4 "/dev/$vddev" >/tmp/virtdisk-mkfs.log 2>&1 &&
-             mount "/dev/$vddev" "$vdmnt" 2>>/tmp/virtdisk-mount.log; then
+            mkfs.ext4 "/dev/$vddev" >/tmp/virtdisk-mkfs.log 2>&1 &&
+            mount "/dev/$vddev" "$vdmnt" 2>>/tmp/virtdisk-mount.log; then
             echo "VIRTDISK-OK: /dev/$vddev formatted ext4 at $vdmnt"
         else
             cat /tmp/virtdisk-mount.log >&2

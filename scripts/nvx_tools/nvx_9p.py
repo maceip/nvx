@@ -9,14 +9,18 @@ Used with the consomme `gwloopback` mapping: the guest mounts
 `-t 9p -o trans=tcp,version=9p2000.L,port=<port> <gateway> <mntpoint>`.
 """
 
+from __future__ import annotations
+
 import argparse
 import errno
 import os
+import shutil
 import socketserver
 import stat
 import struct
 import sys
 import threading
+from typing import Any, TypedDict, cast
 
 VERSION = "9P2000.L"
 NOFID = 0xFFFFFFFF
@@ -141,90 +145,90 @@ V9FS_MAGIC = 0x01021997
 
 
 class Error(Exception):
-    def __init__(self, linux_errno):
+    def __init__(self, linux_errno: int) -> None:
         super().__init__(_LINUX_STRERROR.get(linux_errno, "error"))
         self.linux_errno = linux_errno
 
 
-def host_error(exc):
+def host_error(exc: Exception) -> Error:
     if isinstance(exc, OSError) and exc.errno is not None:
         return Error(_HOST_TO_LINUX_ERRNO.get(exc.errno, L_EIO))
     return Error(L_EIO)
 
 
 class Reader:
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         self._view = memoryview(data)
         self._pos = 0
 
-    def remaining(self):
+    def remaining(self) -> int:
         return len(self._view) - self._pos
 
-    def take(self, size, fmt):
+    def take(self, size: int, fmt: str) -> Any:
         if self.remaining() < size:
             raise Error(L_EIO)
         values = struct.unpack_from(fmt, self._view, self._pos)
         self._pos += size
         return values[0] if len(values) == 1 else values
 
-    def u8(self):
+    def u8(self) -> int:
         return self.take(1, "<B")
 
-    def u16(self):
+    def u16(self) -> int:
         return self.take(2, "<H")
 
-    def u32(self):
+    def u32(self) -> int:
         return self.take(4, "<I")
 
-    def u64(self):
+    def u64(self) -> int:
         return self.take(8, "<Q")
 
-    def data(self, size):
+    def data(self, size: int) -> bytes:
         if self.remaining() < size:
             raise Error(L_EIO)
-        out = bytes(self._view[self._pos:self._pos + size])
+        out = bytes(self._view[self._pos : self._pos + size])
         self._pos += size
         return out
 
-    def string(self):
+    def string(self) -> bytes:
         return self.data(self.u16())
 
 
 class Writer:
-    def __init__(self):
-        self._parts = []
+    def __init__(self) -> None:
+        self._parts: list[bytes] = []
 
-    def u8(self, value):
+    def u8(self, value: int) -> None:
         self._parts.append(struct.pack("<B", value))
 
-    def u16(self, value):
+    def u16(self, value: int) -> None:
         self._parts.append(struct.pack("<H", value))
 
-    def u32(self, value):
+    def u32(self, value: int) -> None:
         self._parts.append(struct.pack("<I", value & 0xFFFFFFFF))
 
-    def u64(self, value):
+    def u64(self, value: int) -> None:
         self._parts.append(struct.pack("<Q", value & 0xFFFFFFFFFFFFFFFF))
 
-    def data(self, value):
+    def data(self, value: bytes) -> None:
         self._parts.append(bytes(value))
 
-    def string(self, value):
+    def string(self, value: str | bytes) -> None:
         if isinstance(value, str):
             value = value.encode("utf-8", "surrogateescape")
         self.u16(len(value))
         self.data(value)
 
-    def qid(self, qid):
+    def qid(self, qid: tuple[int, int, int]) -> None:
         self.u8(qid[0])
         self.u32(qid[1])
         self.u64(qid[2])
 
-    def bytes(self):
+    def bytes(self) -> bytes:
         return b"".join(self._parts)
 
 
-def qid_for(st):
+def qid_for(st: os.stat_result) -> tuple[int, int, int]:
     if stat.S_ISDIR(st.st_mode):
         kind = QT_DIR
     elif stat.S_ISLNK(st.st_mode):
@@ -234,7 +238,7 @@ def qid_for(st):
     return (kind, int(st.st_mtime) & 0xFFFFFFFF, st.st_ino & 0xFFFFFFFFFFFFFFFF)
 
 
-def dirent_type(st):
+def dirent_type(st: os.stat_result) -> int:
     mode = st.st_mode
     if stat.S_ISDIR(mode):
         return 4
@@ -253,24 +257,29 @@ def dirent_type(st):
     return 0
 
 
+class FidEntry(TypedDict):
+    path: str
+    file: OpenFile | None
+
+
 class Share:
     """One rooted, optionally read-only directory tree."""
 
-    def __init__(self, root, read_write=False):
+    def __init__(self, root: str, read_write: bool = False) -> None:
         self.root = os.path.realpath(root)
         if not os.path.isdir(self.root):
             raise Error(L_ENOTDIR)
         self.read_write = read_write
         self._lock = threading.Lock()
-        self._fids = {}
+        self._fids: dict[int, FidEntry] = {}
 
-    def _contain(self, path):
+    def contain(self, path: str) -> str:
         real = os.path.realpath(path)
         if real != self.root and not real.startswith(self.root + os.sep):
             raise Error(L_EACCES)
         return real
 
-    def resolve(self, *names):
+    def resolve(self, *names: str) -> str:
         """Join names under the root and containment-check the result."""
         path = self.root
         for name in names:
@@ -282,36 +291,36 @@ class Share:
                     path = self.root
                 continue
             path = os.path.join(path, name)
-        return self._contain(path)
+        return self.contain(path)
 
-    def check_write(self):
+    def check_write(self) -> None:
         if not self.read_write:
             raise Error(L_EROFS)
 
-    def fid_get(self, fid):
+    def fid_get(self, fid: int) -> FidEntry:
         with self._lock:
             try:
                 return self._fids[fid]
             except KeyError:
                 raise Error(L_EINVAL) from None
 
-    def fid_set(self, fid, entry):
+    def fid_set(self, fid: int, entry: FidEntry) -> None:
         with self._lock:
             if fid in self._fids:
                 raise Error(L_EINVAL)
             self._fids[fid] = entry
 
-    def fid_drop(self, fid):
+    def fid_drop(self, fid: int) -> FidEntry | None:
         with self._lock:
             return self._fids.pop(fid, None)
 
-    def stat_path(self, path):
+    def stat_path(self, path: str) -> os.stat_result:
         try:
             return os.stat(path)
         except OSError as exc:
             raise host_error(exc) from None
 
-    def lstat_path(self, path):
+    def lstat_path(self, path: str) -> os.stat_result:
         try:
             return os.lstat(path)
         except OSError as exc:
@@ -319,12 +328,12 @@ class Share:
 
 
 class OpenFile:
-    def __init__(self, path, fd, append):
+    def __init__(self, path: str, fd: int | None, append: bool) -> None:
         self.path = path
         self.fd = fd
         self.append = append
 
-    def close(self):
+    def close(self) -> None:
         if self.fd is not None:
             try:
                 os.close(self.fd)
@@ -332,19 +341,24 @@ class OpenFile:
                 pass
             self.fd = None
 
+    def fileno(self) -> int:
+        if self.fd is None:
+            raise Error(L_EINVAL)
+        return self.fd
+
 
 class Connection:
-    def __init__(self, share):
+    def __init__(self, share: Share) -> None:
         self.share = share
         self.msize = MAX_MESSAGE
 
     # -- frame helpers -------------------------------------------------
 
-    def reply(self, rtype, tag, payload):
+    def reply(self, rtype: int, tag: int, payload: bytes) -> bytes:
         body = struct.pack("<BH", rtype, tag) + payload
         return struct.pack("<I", len(body) + 4) + body
 
-    def rlerror(self, tag, exc):
+    def rlerror(self, tag: int, exc: Exception) -> bytes:
         code = exc.linux_errno if isinstance(exc, Error) else L_EIO
         w = Writer()
         w.u32(code)
@@ -352,7 +366,7 @@ class Connection:
 
     # -- dispatch ------------------------------------------------------
 
-    def handle(self, msgtype, tag, payload):
+    def handle(self, msgtype: int, tag: int, payload: bytes) -> bytes:
         handler = {
             T_VERSION: self.on_version,
             T_AUTH: self.on_auth,
@@ -395,7 +409,7 @@ class Connection:
 
     # -- base protocol -------------------------------------------------
 
-    def on_version(self, r):
+    def on_version(self, r: Reader) -> tuple[int, bytes]:
         msize = r.u32()
         version = r.string().decode("utf-8", "replace")
         if version != VERSION:
@@ -406,10 +420,10 @@ class Connection:
         w.string(VERSION)
         return R_VERSION, w.bytes()
 
-    def on_auth(self, r):
+    def on_auth(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_EOPNOTSUPP)
 
-    def on_attach(self, r):
+    def on_attach(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         _afid = r.u32()
         _uname = r.string()
@@ -420,11 +434,11 @@ class Connection:
         w.qid(qid_for(st))
         return R_ATTACH, w.bytes()
 
-    def on_flush(self, r):
+    def on_flush(self, r: Reader) -> tuple[int, bytes]:
         _oldtag = r.u16()
         return R_FLUSH, b""
 
-    def on_walk(self, r):
+    def on_walk(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         newfid = r.u32()
         names = [r.string().decode("utf-8", "surrogateescape") for _ in range(r.u16())]
@@ -437,7 +451,7 @@ class Connection:
                 self.share.fid_set(newfid, {"path": path, "file": None})
             return self._rwalk(path)
         current = path
-        qids = []
+        qids: list[tuple[int, int, int]] = []
         for index, name in enumerate(names):
             last = index == len(names) - 1
             if "/" in name or "\0" in name:
@@ -449,11 +463,17 @@ class Connection:
                 if name in ("", "."):
                     lexical = current
                 elif name == "..":
-                    lexical = current if current == self.share.root else os.path.dirname(current)
+                    lexical = (
+                        current
+                        if current == self.share.root
+                        else os.path.dirname(current)
+                    )
                 else:
                     lexical = os.path.join(current, name)
                 real = os.path.realpath(lexical)
-                if real != self.share.root and not real.startswith(self.share.root + os.sep):
+                if real != self.share.root and not real.startswith(
+                    self.share.root + os.sep
+                ):
                     # Either lexically outside, or a symlink pointing
                     # outside: only the link itself may be referenced.
                     if os.path.lexists(lexical) and os.path.islink(lexical):
@@ -487,7 +507,7 @@ class Connection:
             w.qid(qid)
         return R_WALK, w.bytes()
 
-    def _rwalk(self, path):
+    def _rwalk(self, path: str) -> tuple[int, bytes]:
         self.share.stat_path(path)
         w = Writer()
         w.u16(0)
@@ -495,7 +515,7 @@ class Connection:
 
     # -- I/O -----------------------------------------------------------
 
-    def _open_flags(self, flags, for_dir):
+    def _open_flags(self, flags: int, for_dir: bool) -> int:
         access = flags & O_ACCMODE
         if access != 0 or (flags & (O_CREAT | O_TRUNC | O_APPEND)):
             self.share.check_write()
@@ -503,13 +523,13 @@ class Connection:
             raise Error(L_EISDIR)
         return access
 
-    def on_lopen(self, r):
+    def on_lopen(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         flags = r.u32()
         entry = self.share.fid_get(fid)
         if entry["file"] is not None:
             raise Error(L_EINVAL)
-        path = self.share._contain(entry["path"])
+        path = self.share.contain(entry["path"])
         st = self.share.lstat_path(path)
         is_dir = stat.S_ISDIR(st.st_mode)
         if (flags & O_DIRECTORY) and not is_dir:
@@ -548,7 +568,7 @@ class Connection:
         w.u32(self.msize)
         return R_LOPEN, w.bytes()
 
-    def on_lcreate(self, r):
+    def on_lcreate(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         name = r.string().decode("utf-8", "surrogateescape")
         flags = r.u32()
@@ -560,9 +580,12 @@ class Connection:
             raise Error(L_EINVAL)
         path = self.share.resolve(
             os.path.relpath(entry["path"], self.share.root)
-            if entry["path"] != self.share.root else ".", name)
+            if entry["path"] != self.share.root
+            else ".",
+            name,
+        )
         access = flags & O_ACCMODE
-        raw_flags = (os.O_WRONLY if access == 1 else os.O_RDWR)
+        raw_flags = os.O_WRONLY if access == 1 else os.O_RDWR
         raw_flags |= os.O_CREAT | os.O_TRUNC
         if flags & O_EXCL:
             raw_flags |= os.O_EXCL
@@ -570,7 +593,10 @@ class Connection:
             raw_flags |= os.O_APPEND
         try:
             raw = os.open(path, raw_flags, 0o666 & (mode | 0o600))
-            os.fchmod(raw, mode & 0o777)
+            if os.name == "nt":
+                os.chmod(path, mode & 0o777)
+            else:
+                os.fchmod(raw, mode & 0o777)
         except OSError as exc:
             raise host_error(exc) from None
         entry["path"] = path
@@ -581,14 +607,14 @@ class Connection:
         w.u32(self.msize)
         return R_LCREATE, w.bytes()
 
-    def _readdir_data(self, path, offset, count):
+    def _readdir_data(self, path: str, offset: int, count: int) -> bytes:
         # Stable byte-offset slicing over a name-sorted listing. Entry
         # offsets point past each entry so the client can resume.
         try:
             names = sorted(os.listdir(path))
         except OSError as exc:
             raise host_error(exc) from None
-        entries = []
+        entries: list[bytes] = []
         for name in names:
             full = os.path.join(path, name)
             try:
@@ -606,13 +632,13 @@ class Connection:
             off = len(blob) + len(raw)
             blob += raw[:13] + struct.pack("<Q", off) + raw[21:]
         start = min(offset, len(blob))
-        return bytes(blob[start:start + count])
+        return bytes(blob[start : start + count])
 
-    def chunk(self, count):
+    def chunk(self, count: int) -> int:
         # Keep replies (headers included) within the negotiated msize.
         return max(0, min(count, self.msize - 64))
 
-    def on_read(self, r):
+    def on_read(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         offset = r.u64()
         count = r.u32()
@@ -621,7 +647,11 @@ class Connection:
             data = self._readdir_data(entry["path"], offset, self.chunk(count))
         else:
             try:
-                data = os.pread(entry["file"].fd, self.chunk(count), offset)
+                if os.name == "nt":
+                    os.lseek(entry["file"].fileno(), offset, os.SEEK_SET)
+                    data = os.read(entry["file"].fileno(), self.chunk(count))
+                else:
+                    data = os.pread(entry["file"].fileno(), self.chunk(count), offset)
             except OSError as exc:
                 raise host_error(exc) from None
         w = Writer()
@@ -629,7 +659,7 @@ class Connection:
         w.data(data)
         return R_READ, w.bytes()
 
-    def on_readdir(self, r):
+    def on_readdir(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         offset = r.u64()
         count = r.u32()
@@ -642,7 +672,7 @@ class Connection:
         w.data(data)
         return R_READDIR, w.bytes()
 
-    def on_write(self, r):
+    def on_write(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         offset = r.u64()
         count = r.u32()
@@ -654,23 +684,27 @@ class Connection:
             raise Error(L_EINVAL)
         try:
             if handle.append:
-                written = os.write(handle.fd, data)
+                written = os.write(handle.fileno(), data)
             else:
-                written = os.pwrite(handle.fd, data, offset)
+                if os.name == "nt":
+                    os.lseek(handle.fileno(), offset, os.SEEK_SET)
+                    written = os.write(handle.fileno(), data)
+                else:
+                    written = os.pwrite(handle.fileno(), data, offset)
         except OSError as exc:
             raise host_error(exc) from None
         w = Writer()
         w.u32(written)
         return R_WRITE, w.bytes()
 
-    def on_clunk(self, r):
+    def on_clunk(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         entry = self.share.fid_drop(fid)
         if entry is not None and entry["file"] is not None:
             entry["file"].close()
         return R_CLUNK, b""
 
-    def on_remove(self, r):
+    def on_remove(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         self.share.check_write()
         entry = self.share.fid_drop(fid)
@@ -689,7 +723,7 @@ class Connection:
 
     # -- metadata ------------------------------------------------------
 
-    def _getattr_body(self, st):
+    def _getattr_body(self, st: os.stat_result) -> bytes:
         mode = st.st_mode
         w = Writer()
         w.u64(G_ALL)
@@ -700,8 +734,8 @@ class Connection:
         w.u64(st.st_nlink)
         w.u64(getattr(st, "st_rdev", 0))
         w.u64(st.st_size)
-        w.u64(st.st_blksize if isinstance(getattr(st, "st_blksize", None), int) else 4096)
-        w.u64(st.st_blocks)
+        w.u64(int(getattr(st, "st_blksize", 4096)))
+        w.u64(int(getattr(st, "st_blocks", (st.st_size + 511) // 512)))
         for stamp in (st.st_atime, st.st_mtime, st.st_ctime):
             w.u64(int(stamp))
             w.u64(int((stamp % 1) * 1_000_000_000))
@@ -712,20 +746,20 @@ class Connection:
         w.u64(0)  # data_version
         return w.bytes()
 
-    def on_getattr(self, r):
+    def on_getattr(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         _mask = r.u64()
         entry = self.share.fid_get(fid)
-        path = self.share._contain(entry["path"])
+        path = self.share.contain(entry["path"])
         st = self.share.stat_path(path)
         return R_GETATTR, self._getattr_body(st)
 
-    def on_setattr(self, r):
+    def on_setattr(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         valid = r.u64()
         mode = r.u32()
-        uid = r.u32()
-        gid = r.u32()
+        _uid = r.u32()
+        _gid = r.u32()
         size = r.u64()
         atime_sec = r.u64()
         _atime_nsec = r.u64()
@@ -733,16 +767,20 @@ class Connection:
         _mtime_nsec = r.u64()
         self.share.check_write()
         entry = self.share.fid_get(fid)
-        path = self.share._contain(entry["path"])
+        path = self.share.contain(entry["path"])
         try:
             if valid & S_MODE:
                 os.chmod(path, mode & 0o7777, follow_symlinks=False)
             if valid & (S_UID | S_GID):
-                current = os.stat(path, follow_symlinks=False)
-                os.chown(path,
-                          uid if valid & S_UID else current.st_uid,
-                          gid if valid & S_GID else current.st_gid,
-                          follow_symlinks=False)
+                _current = os.stat(path, follow_symlinks=False)
+                if os.name == "nt":
+                    raise Error(L_EPERM)
+                os.chown(
+                    path,
+                    _uid if valid & S_UID else _current.st_uid,
+                    _gid if valid & S_GID else _current.st_gid,
+                    follow_symlinks=False,
+                )
             if valid & S_SIZE:
                 raw = os.open(path, os.O_WRONLY)
                 try:
@@ -751,39 +789,60 @@ class Connection:
                     os.close(raw)
             if valid & (S_ATIME | S_MTIME):
                 current_ns = os.stat(path, follow_symlinks=False)
-                atime = (atime_sec * 1_000_000_000 if valid & S_ATIME
-                         else current_ns.st_atime_ns)
-                mtime = (mtime_sec * 1_000_000_000 if valid & S_MTIME
-                         else current_ns.st_mtime_ns)
+                atime = (
+                    atime_sec * 1_000_000_000
+                    if valid & S_ATIME
+                    else current_ns.st_atime_ns
+                )
+                mtime = (
+                    mtime_sec * 1_000_000_000
+                    if valid & S_MTIME
+                    else current_ns.st_mtime_ns
+                )
                 os.utime(path, ns=(atime, mtime), follow_symlinks=False)
         except OSError as exc:
             raise host_error(exc) from None
         return R_SETATTR, b""
 
-    def on_statfs(self, r):
+    def on_statfs(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         entry = self.share.fid_get(fid)
         try:
-            fs = os.statvfs(entry["path"])
+            if os.name == "nt":
+                space = shutil.disk_usage(entry["path"])
+                values = [
+                    4096,
+                    space.total // 4096,
+                    space.free // 4096,
+                    space.free // 4096,
+                    0,
+                    0,
+                    0,
+                    255,
+                ]
+            else:
+                fs = os.statvfs(entry["path"])
+                values = [
+                    fs.f_bsize,
+                    fs.f_blocks,
+                    fs.f_bfree,
+                    fs.f_bavail,
+                    fs.f_files,
+                    fs.f_ffree,
+                    int(fs.f_fsid),
+                    fs.f_namemax,
+                ]
         except OSError as exc:
             raise host_error(exc) from None
         w = Writer()
         w.u32(V9FS_MAGIC)
-        w.u32(fs.f_bsize)
-        w.u64(fs.f_blocks)
-        w.u64(fs.f_bfree)
-        w.u64(fs.f_bavail)
-        w.u64(fs.f_files)
-        w.u64(fs.f_ffree)
-        try:
-            fsid = int(fs.f_fsid)
-        except (TypeError, ValueError):
-            fsid = 0
-        w.u64(fsid)
-        w.u32(getattr(fs, "f_namemax", 255))
+        w.u32(values[0])
+        for value in values[1:7]:
+            w.u64(value)
+        w.u32(values[7])
         return R_STATFS, w.bytes()
 
-    def on_readlink(self, r):
+    def on_readlink(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         entry = self.share.fid_get(fid)
         try:
@@ -796,7 +855,7 @@ class Connection:
 
     # -- namespace mutations (read-write mode only) --------------------
 
-    def _child(self, entry, name):
+    def _child(self, entry: FidEntry, name: str) -> str:
         if entry["file"] is not None:
             raise Error(L_EINVAL)
         if "/" in name or "\0" in name or name in ("", ".", ".."):
@@ -811,7 +870,7 @@ class Connection:
         parts = [] if rel == "." else [rel]
         return self.share.resolve(*(parts + [name]))
 
-    def on_symlink(self, r):
+    def on_symlink(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         name = r.string().decode("utf-8", "surrogateescape")
         target = r.string().decode("utf-8", "surrogateescape")
@@ -828,10 +887,10 @@ class Connection:
         w.qid(qid_for(st))
         return R_SYMLINK, w.bytes()
 
-    def on_mknod(self, r):
+    def on_mknod(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_EPERM)
 
-    def on_rename(self, r):
+    def on_rename(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         newdirfid = r.u32()
         newname = r.string().decode("utf-8", "surrogateescape")
@@ -849,7 +908,7 @@ class Connection:
         entry["path"] = dest
         return R_RENAME, b""
 
-    def on_link(self, r):
+    def on_link(self, r: Reader) -> tuple[int, bytes]:
         dirfid = r.u32()
         fid = r.u32()
         name = r.string().decode("utf-8", "surrogateescape")
@@ -858,12 +917,12 @@ class Connection:
         newdir = self.share.fid_get(dirfid)
         dest = self._child(newdir, name)
         try:
-            os.link(self.share._contain(target["path"]), dest)
+            os.link(self.share.contain(target["path"]), dest)
         except OSError as exc:
             raise host_error(exc) from None
         return R_LINK, b""
 
-    def on_mkdir(self, r):
+    def on_mkdir(self, r: Reader) -> tuple[int, bytes]:
         dfid = r.u32()
         name = r.string().decode("utf-8", "surrogateescape")
         mode = r.u32()
@@ -880,7 +939,7 @@ class Connection:
         w.qid(qid_for(st))
         return R_MKDIR, w.bytes()
 
-    def on_renameat(self, r):
+    def on_renameat(self, r: Reader) -> tuple[int, bytes]:
         olddirfid = r.u32()
         oldname = r.string().decode("utf-8", "surrogateescape")
         newdirfid = r.u32()
@@ -896,7 +955,7 @@ class Connection:
             raise host_error(exc) from None
         return R_RENAMEAT, b""
 
-    def on_unlinkat(self, r):
+    def on_unlinkat(self, r: Reader) -> tuple[int, bytes]:
         dirfid = r.u32()
         name = r.string().decode("utf-8", "surrogateescape")
         flags = r.u32()
@@ -914,32 +973,32 @@ class Connection:
 
     # -- misc ----------------------------------------------------------
 
-    def on_xattrwalk(self, r):
+    def on_xattrwalk(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_ENODATA)
 
-    def on_xattrcreate(self, r):
+    def on_xattrcreate(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_ENODATA)
 
-    def on_fsync(self, r):
+    def on_fsync(self, r: Reader) -> tuple[int, bytes]:
         fid = r.u32()
         entry = self.share.fid_get(fid)
         if entry["file"] is not None:
             try:
-                os.fsync(entry["file"].fd)
+                os.fsync(entry["file"].fileno())
             except OSError as exc:
                 raise host_error(exc) from None
         return R_FSYNC, b""
 
-    def on_lock(self, r):
+    def on_lock(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_ENOSYS)
 
-    def on_getlock(self, r):
+    def on_getlock(self, r: Reader) -> tuple[int, bytes]:
         raise Error(L_ENOSYS)
 
 
 class Handler(socketserver.StreamRequestHandler):
-    def handle(self):
-        conn = Connection(self.server.share)
+    def handle(self) -> None:
+        conn = Connection(cast(Server, self.server).share)
         while True:
             header = self.rfile.read(4)
             if len(header) == 0:
@@ -968,12 +1027,14 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, share, address):
+    def __init__(self, share: Share, address: tuple[str, int]) -> None:
         self.share = share
         super().__init__(address, Handler)
 
 
-def serve(root, bind="127.0.0.1", port=5564, read_write=False):
+def serve(
+    root: str, bind: str = "127.0.0.1", port: int = 5564, read_write: bool = False
+) -> int:
     share = Share(root, read_write=read_write)
     server = Server(share, (bind, port))
     actual = server.server_address[1]
@@ -986,17 +1047,24 @@ def serve(root, bind="127.0.0.1", port=5564, read_write=False):
     return 0
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Serve a host directory to NVX guests over 9P2000.L.")
-    parser.add_argument("--root", required=True,
-                        help="host directory tree to share")
-    parser.add_argument("--bind", default="127.0.0.1",
-                        help="local address to listen on (default: loopback only)")
-    parser.add_argument("--port", type=int, default=5564,
-                        help="TCP port to listen on (default: 5564)")
-    parser.add_argument("--read-write", action="store_true",
-                        help="allow the guest to modify the tree (default: read-only)")
+        description="Serve a host directory to NVX guests over 9P2000.L."
+    )
+    parser.add_argument("--root", required=True, help="host directory tree to share")
+    parser.add_argument(
+        "--bind",
+        default="127.0.0.1",
+        help="local address to listen on (default: loopback only)",
+    )
+    parser.add_argument(
+        "--port", type=int, default=5564, help="TCP port to listen on (default: 5564)"
+    )
+    parser.add_argument(
+        "--read-write",
+        action="store_true",
+        help="allow the guest to modify the tree (default: read-only)",
+    )
     args = parser.parse_args(argv)
     try:
         return serve(args.root, args.bind, args.port, args.read_write)
@@ -1010,4 +1078,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
-

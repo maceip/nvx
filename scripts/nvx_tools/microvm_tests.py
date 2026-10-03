@@ -46,9 +46,9 @@ from .build_constants import (
 )
 from .ci import validate_openvmm_test_backend
 
-# Backends that support the NVX microVM machine profile. HVF is excluded:
-# the microVM profile is x86-only (MP-table boot, fixed x86 APIC topology).
-MICROVM_TEST_BACKENDS = ("kvm", "mshv", "whp")
+# HVF uses the ARM direct-boot platform with the same sandbox agent contract;
+# the fixed microVM machine profile remains x86-only.
+MICROVM_TEST_BACKENDS = ("kvm", "mshv", "whp", "hvf")
 from .common import (  # noqa: E402
     ScriptError,
     artifact_path,
@@ -74,6 +74,19 @@ MICROVM_TEST_SCENARIOS = (
     "guest-boot",
     "guest-identity",
     "host-loopback-policy",
+    "hvf-parity",
+    "image-run",
+    "receipt-flow-log",
+    "containment-battery",
+    "seccomp-profile",
+    "egress-fast-fail",
+    "resource-caps",
+    "device-policy",
+    "showcase-simulants",
+    "workspace-lifecycle",
+    "secret-isolation",
+    "warm-clone",
+    "mcp-portable",
     "lifecycle",
     "l3-l4-egress-policy",
     "managed-lifecycle",
@@ -93,7 +106,18 @@ MICROVM_TEST_SCENARIOS = (
     "workload-identity",
 )
 UBUNTU_UNSUPPORTED_SCENARIOS = frozenset(
-    ("console-snapshot", "sandbox-blocks", "scratch-snapshot", "snapshot-tiers")
+    (
+        "console-snapshot",
+        "sandbox-blocks",
+        "scratch-snapshot",
+        "snapshot-tiers",
+        "image-run",
+        "showcase-simulants",
+        "workspace-lifecycle",
+        "secret-isolation",
+        "warm-clone",
+        "mcp-portable",
+    )
 )
 MICROVM_PROCESSOR_COUNTS = (1, 2, 4, 8)
 MICROVM_TEST_SCRIPTS_DIR = Path(__file__).with_name("microvm_test_scripts")
@@ -379,7 +403,7 @@ def _read_outcome_report(path: Path) -> dict[str, Any]:
         or any(character not in "0123456789abcdef" for character in instance_id)
     ):
         raise RuntimeError("structured outcome report has an invalid instance ID")
-    if raw["backend"] not in ("auto", "kvm", "mshv", "whp"):
+    if raw["backend"] not in ("auto", "kvm", "mshv", "whp", "hvf"):
         raise RuntimeError("structured outcome report has an invalid backend")
     outcome_value = raw["outcome"]
     policy_value = raw["network_policy"]
@@ -2339,6 +2363,34 @@ def run_restore_memory(
                 )
 
 
+def capture_integrity_snapshot(
+    backend: str, destination: Path, log: Path, timeout: float
+) -> None:
+    command = [
+        *workload_boot_command(
+            openvmm_binary_path(),
+            backend,
+            artifact_path("vmlinux"),
+            artifact_path("initramfs.cpio.gz"),
+            256,
+            "quiet loglevel=0",
+        ),
+        "--snapshot-destination",
+        str(destination),
+    ]
+    with OpenvmmProcess(command, log) as process:
+        process.wait_for(BOOT_MARKER, timeout)
+        _stage_script(
+            process,
+            "/tmp/nvx-integrity-capture",
+            "NVX_INTEGRITY",
+            "set -eu\necho NVX-INTEGRITY-CAPTURE-READY\nnvx-snapshot\nnvx-exit 0\n",
+        )
+        result = process.wait(timeout)
+        if result.returncode != 0 or not destination.is_dir():
+            raise ScriptError("snapshot integrity capture failed")
+
+
 def run_snapshot_core(
     executable: Path,
     kernel: Path,
@@ -3786,11 +3838,13 @@ def run_snapshot_tiers(
 
 def run(args: argparse.Namespace) -> int:
     validate_openvmm_test_backend(args.backend)
-    if args.backend == "hvf":
-        raise ScriptError(
-            "microVM tests require the microVM machine profile, which is "
-            "x86-only and unsupported with the hvf backend"
-        )
+    if args.backend == "hvf" or (
+        args.backend == "kvm"
+        and __import__("platform").machine().lower() in ("aarch64", "arm64")
+    ):
+        from .hvf_tests import run as run_hvf
+
+        return run_hvf(args)
     descriptor = guest_descriptor(args.guest)
     if args.memory_mib is None:
         args.memory_mib = descriptor.default_memory_mib
@@ -3808,6 +3862,7 @@ def run(args: argparse.Namespace) -> int:
         scenarios = tuple(
             scenario
             for scenario in MICROVM_TEST_SCENARIOS
+            if scenario != "hvf-parity"
             if descriptor.name != "ubuntu"
             or scenario not in UBUNTU_UNSUPPORTED_SCENARIOS
         )
@@ -3824,6 +3879,47 @@ def run(args: argparse.Namespace) -> int:
                 + ", ".join(sorted(unsupported))
             )
 
+    from .policy_tests import SCENARIOS as policy_scenarios
+    from .policy_tests import run as run_policy_tests
+
+    selected_policy = tuple(name for name in scenarios if name in policy_scenarios)
+    if selected_policy:
+        run_policy_tests(
+            args.backend, selected_policy, output_dir / "policy", args.timeout
+        )
+    if "containment-battery" in scenarios:
+        from .containment import run as run_containment
+
+        run_containment(args.backend, output_dir / "containment", args.timeout)
+        print("NVX-CONTAINMENT-BATTERY-OK")
+    if "showcase-simulants" in scenarios:
+        from .containment import run_showcase
+
+        run_showcase(args.backend, output_dir / "showcase", args.timeout)
+    if "receipt-flow-log" in scenarios:
+        from .receipt_tests import run as run_receipt_tests
+
+        run_receipt_tests(args.backend, output_dir / "receipts", args.timeout)
+    if "image-run" in scenarios:
+        from .image_tests import run as run_images
+
+        run_images(args.backend, output_dir / "images", args.timeout)
+    if "workspace-lifecycle" in scenarios:
+        from .workspace_tests import run as run_workspace
+
+        run_workspace(args.backend, output_dir / "workspace", args.timeout)
+    if "secret-isolation" in scenarios:
+        from .secret_tests import run as run_secrets
+
+        run_secrets(args.backend, output_dir / "secrets", args.timeout)
+    if "warm-clone" in scenarios:
+        from .warm_tests import run as run_warm
+
+        run_warm(args.backend, output_dir / "warm", args.timeout)
+    if "mcp-portable" in scenarios:
+        from .mcp_tests import run as run_mcp
+
+        run_mcp(args.backend, output_dir / "mcp", args.timeout)
     if "guest-boot" in scenarios:
         print(
             f"Running {descriptor.distribution} initramfs boot correctness "

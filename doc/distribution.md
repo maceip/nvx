@@ -34,6 +34,17 @@ source/nvx-alpine-source-0.1.0.tar.gz
 source/nvx-ubuntu-source-0.1.0.tar.gz
 ```
 
+Both release layouts include `bin/nvx`, the portable MCP command and the Python and
+TypeScript SDKs. The original x86 archive stores guest binaries in `guest/` and their
+build provenance in `provenance/`; the ARM self-contained archive stores those files in
+`build/`. The shipped CLI resolves both layouts. Extracted archives can use `bin/nvx`
+directly (`bin/nvx.cmd` on Windows). `nvx install` accepts the newer self-contained
+archives carrying `NVX-RELEASE.json`; `nvx download` also retains the legacy path.
+
+Published archive names must be `nvx-VERSION-PLATFORM.tar.gz` (or `.zip` on Windows)
+so `nvx download` can discover them. The ARM release-gate workflow uses that same
+versioned naming contract. See [current release evidence and outstanding gates](implementation-status.md#the-ten-changes).
+
 Linux is GPL-2.0-only, so a distributor of `vmlinux` must make its complete
 corresponding source available. Alpine packages retain their individual
 licenses. The collector uses the exact aports commit embedded in every

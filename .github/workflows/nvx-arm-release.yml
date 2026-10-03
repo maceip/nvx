@@ -1,0 +1,75 @@
+name: NVX ARM release gates
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options: [darwin-arm64, linux-arm64]
+        required: true
+permissions:
+  contents: read
+jobs:
+  verify-package:
+    runs-on: ${{ inputs.platform == 'darwin-arm64' && fromJSON('["self-hosted","macOS","ARM64","nvx-hvf"]') || fromJSON('["self-hosted","Linux","ARM64","nvx-kvm"]') }}
+    timeout-minutes: 120
+    env:
+      BACKEND: ${{ inputs.platform == 'darwin-arm64' && 'hvf' || 'kvm' }}
+      PLATFORM: ${{ inputs.platform }}
+      NVX_DEVELOPER_ID: ${{ vars.NVX_DEVELOPER_ID }}
+      NVX_NOTARY_PROFILE: ${{ vars.NVX_NOTARY_PROFILE }}
+      NVX_RELEASE_SIGNING_KEY: ${{ vars.NVX_RELEASE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+        with:
+          ssh-key: ${{ secrets.OPENVMM_DEPLOY_KEY }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - run: ./scripts/check.sh && python3 -m pyright
+      - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
+      - run: python3 scripts/nvx.py build-openvmm --backend "$BACKEND"
+      - run: python3 scripts/nvx.py build-guest
+      - run: python3 scripts/nvx.py doctor --backend "$BACKEND"
+      - run: python3 scripts/nvx.py test-microvm --backend "$BACKEND" --scenario sandbox-blocks --scenario managed-lifecycle --scenario workload-identity --scenario image-run --scenario resource-caps --scenario showcase-simulants --scenario workspace-lifecycle --scenario secret-isolation --scenario warm-clone --scenario mcp-portable --output-dir build/release-proof
+      - name: Sign and notarize macOS executable
+        if: inputs.platform == 'darwin-arm64'
+        run: |
+          test -n "$NVX_DEVELOPER_ID" && test -n "$NVX_NOTARY_PROFILE"
+          codesign --force --options runtime --timestamp --sign "$NVX_DEVELOPER_ID" --entitlements openvmm/build_support/macos/entitlements.xml openvmm/target/release/openvmm
+          ditto -c -k openvmm/target/release/openvmm build/notary.zip
+          xcrun notarytool submit build/notary.zip --keychain-profile "$NVX_NOTARY_PROFILE" --wait --output-format json > build/notary-result.json
+          spctl --assess --type execute openvmm/target/release/openvmm
+          python3 -c 'from nvx_tools.build import record_openvmm_provenance; from nvx_tools.build_config import OpenVmmBuildConfig; record_openvmm_provenance(OpenVmmBuildConfig(backend="hvf"))'
+        env:
+          PYTHONPATH: scripts
+      - name: Stage strict release
+        run: python3 scripts/nvx.py package --platform "$PLATFORM" --binary-only --destination build/nvx-package
+      - name: Sign Linux inventory
+        if: inputs.platform == 'linux-arm64'
+        run: |
+          test -r "$NVX_RELEASE_SIGNING_KEY"
+          openssl pkeyutl -sign -rawin -inkey "$NVX_RELEASE_SIGNING_KEY" -in build/nvx-package/SHA256SUMS -out build/nvx-package.SHA256SUMS.sig
+      - name: Archive and install into a fresh directory
+        run: |
+          NVX_RELEASE_VERSION=$(cat VERSION)
+          NVX_RELEASE_ARCHIVE="build/nvx-${NVX_RELEASE_VERSION}-${PLATFORM}.tar.gz"
+          python3 scripts/nvx.py archive-release --source build/nvx-package --destination "$NVX_RELEASE_ARCHIVE"
+          python3 scripts/nvx.py install --archive "$NVX_RELEASE_ARCHIVE" --destination build/clean-install
+          build/clean-install/bin/nvx doctor --backend "$BACKEND"
+          build/clean-install/bin/nvx run --image alpine:3.20 --hypervisor "$BACKEND" -- /bin/echo NVX-GUEST-BOOT-OK
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nvx-${{ inputs.platform }}-release-gate
+          path: |
+            build/release-proof
+            build/notary-result.json
+            build/nvx-*.tar.gz
+            build/nvx-package.SHA256SUMS.sig

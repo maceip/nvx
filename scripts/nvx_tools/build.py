@@ -259,8 +259,7 @@ def materialize_kernel_provenance_inputs() -> None:
     patch_paths = tuple(
         path
         for path in tree_paths
-        if path.startswith(f"{patch_directory.as_posix()}/")
-        and path.endswith(".patch")
+        if path.startswith(f"{patch_directory.as_posix()}/") and path.endswith(".patch")
     )
     if config_path not in tree_paths:
         raise ScriptError("kernel config is missing from the run head")
@@ -398,9 +397,7 @@ def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPla
     elif sys.platform == "darwin":
         if backend in (None, "hvf", "hypervisor-framework"):
             if not _is_apple_silicon():
-                raise ScriptError(
-                    "OpenVMM macOS builds require Apple Silicon (arm64)"
-                )
+                raise ScriptError("OpenVMM macOS builds require Apple Silicon (arm64)")
             return "macos-hvf"
     else:
         raise ScriptError(f"OpenVMM builds are unsupported on {sys.platform}")
@@ -1221,6 +1218,10 @@ def build_kernel(config: KernelBuildConfig) -> None:
         "kernel_sha256": sha256_file(config.output),
         "config_sha256": sha256_file(generated_config),
     }
+    if host_guest_arch() == "aarch64":
+        provenance["boot_image_sha256"] = sha256_file(
+            config.output.with_name(kernel_binary_name())
+        )
     provenance_path.write_text(
         json.dumps(provenance, indent=2) + "\n",
         encoding="utf-8",

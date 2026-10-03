@@ -46,6 +46,20 @@ cmdline_value() {
 }
 
 resolve_block_device() {
+    case "$1" in
+        /dev/vd[a-z])
+            attempts=0
+            while [ "$attempts" -lt 600 ]; do
+                [ ! -b "$1" ] || {
+                    printf '%s\n' "$1"
+                    return 0
+                }
+                attempts=$((attempts + 1))
+                sleep 0.05
+            done
+            return 1
+            ;;
+    esac
     address=$(printf '%d' "$1") || return 1
     attempts=0
     while [ "$attempts" -lt 600 ]; do
@@ -312,6 +326,28 @@ mount -t overlay overlay \
     -o "lowerdir=$lowerdirs,upperdir=$scratch/upper,workdir=$scratch/work,metacopy=on,xino=on" \
     "$rootfs" || fatal "failed to assemble the container overlay"
 
+NVX_SECURITY_PROFILE=$(cmdline_value nvx_profile || true)
+[ -n "$NVX_SECURITY_PROFILE" ] || NVX_SECURITY_PROFILE=default
+case "$NVX_SECURITY_PROFILE" in default | ci | risky) ;; *) fatal "invalid security profile" ;; esac
+NVX_SECCOMP=$(cmdline_value nvx_seccomp || true)
+[ -n "$NVX_SECCOMP" ] || NVX_SECCOMP=nvx-default
+case "$NVX_SECCOMP" in nvx-default | unconfined) ;; *) fatal "invalid seccomp profile" ;; esac
+NVX_CAPS=$(cmdline_value nvx_caps || true)
+NVX_CAPS=${NVX_CAPS:-none}
+NVX_DEVICE_FILTER=$(cmdline_value nvx_device_filter || true)
+NVX_DEVICE_FILTER=${NVX_DEVICE_FILTER:-1}
+NVX_MASKED_PATHS=$(cmdline_value nvx_masked_paths || true)
+NVX_MASKED_PATHS=${NVX_MASKED_PATHS:-1}
+NVX_NO_NEW_PRIVS=$(cmdline_value nvx_no_new_privs || true)
+NVX_NO_NEW_PRIVS=${NVX_NO_NEW_PRIVS:-1}
+case "$NVX_CAPS" in none | MKNOD | ALL) ;; *) fatal "invalid capabilities" ;; esac
+case "$NVX_DEVICE_FILTER:$NVX_MASKED_PATHS:$NVX_NO_NEW_PRIVS" in [01]:[01]:[01]) ;; *) fatal "invalid security options" ;; esac
+[ "$NVX_SECURITY_PROFILE" = risky ] || [ "$NVX_DEVICE_FILTER:$NVX_MASKED_PATHS:$NVX_NO_NEW_PRIVS" = 1:1:1 ] || fatal "disabled isolation requires risky"
+export NVX_SECURITY_PROFILE NVX_SECCOMP NVX_CAPS NVX_MASKED_PATHS NVX_NO_NEW_PRIVS
+if [ "$NVX_DEVICE_FILTER" = 1 ]; then
+    /sbin/nvx-device-policy /sys/fs/cgroup/container || fatal "device policy unavailable"
+fi
+
 entrypoint=$(cmdline_value nvx_entrypoint || true)
 [ -n "$entrypoint" ] || entrypoint=/bin/sh
 case "$entrypoint" in /*) ;; *) fatal "entrypoint must be an absolute path" ;; esac
@@ -319,8 +355,12 @@ hostname_value=$(cmdline_value nvx_hostname || true)
 [ -n "$hostname_value" ] || hostname_value=nvx-sandbox
 workload_uid=$(cmdline_value nvx_workload_uid || true)
 workload_gid=$(cmdline_value nvx_workload_gid || true)
-case "$workload_uid" in '' | 0 | *[!0-9]*) fatal "workload UID is unavailable" ;; esac
-case "$workload_gid" in '' | 0 | *[!0-9]*) fatal "workload GID is unavailable" ;; esac
+case "$workload_uid" in '' | *[!0-9]*) fatal "workload UID is unavailable" ;; esac
+case "$workload_gid" in '' | *[!0-9]*) fatal "workload GID is unavailable" ;; esac
+if [ "$NVX_SECURITY_PROFILE" != risky ] &&
+    { [ "$workload_uid" = 0 ] || [ "$workload_gid" = 0 ]; }; then
+    fatal "root workload identity requires risky profile"
+fi
 [ -f "$rootfs/etc/passwd" ] && [ ! -L "$rootfs/etc/passwd" ] ||
     fatal "workload user database is unavailable"
 [ -f "$rootfs/etc/group" ] && [ ! -L "$rootfs/etc/group" ] ||
@@ -352,13 +392,21 @@ case "$workload_lifecycle" in
     one-shot) ;;
     managed)
         control_tty=$(cmdline_value nvx_control_tty || true)
-        [ "$control_tty" = hvc2 ] ||
-            fatal "managed lifecycle requires the dedicated control tty"
+        case "$(uname -m):$control_tty" in
+            aarch64:hvc1 | x86_64:hvc2) ;;
+            *) fatal "managed lifecycle requires the dedicated control tty" ;;
+        esac
         ;;
     *) fatal "unsupported workload lifecycle: $workload_lifecycle" ;;
 esac
 
 mount_live_share
+# /out is private scratch, never a host share. Refuse image symlinks before
+# creating the output directory used by the unprivileged workload.
+[ ! -L "$rootfs/out" ] || fatal "output directory is a symlink"
+mkdir -p "$rootfs/out" || fatal "cannot create output directory"
+chown "$workload_uid:$workload_gid" "$rootfs/out"
+chmod 0700 "$rootfs/out"
 workload_machine_id=$(tr -d - </proc/sys/kernel/random/uuid)
 printf '%s\n' "$workload_machine_id" >"$runtime/workload-machine-id"
 
@@ -401,6 +449,30 @@ printf 'start\n' >"$barrier"
 rm -f "$barrier"
 
 echo "NVX-SANDBOX-READY: pid=$container_pid layers=$layer_count"
+wall_ms=$(cmdline_value nvx_wall_timeout_ms || true)
+wall_ms=${wall_ms:-60000}
+case "$wall_ms" in '' | *[!0-9]*) fatal "invalid workload wall timeout" ;; esac
+timer_pid=
+if [ "$wall_ms" -ne 0 ]; then
+    seconds=$((wall_ms / 1000))
+    milliseconds=$((wall_ms % 1000))
+    delay=$(printf '%s.%03d' "$seconds" "$milliseconds")
+    (
+        sleep "$delay"
+        if kill -0 "$container_pid" 2>/dev/null; then
+            : >"$runtime/wall-timeout"
+            while IFS= read -r pid; do
+                kill -KILL "$pid" 2>/dev/null || true
+            done </sys/fs/cgroup/container/cgroup.procs
+        fi
+    ) &
+    timer_pid=$!
+fi
 status=0
 wait "$container_pid" || status=$?
+if [ -n "$timer_pid" ]; then
+    kill "$timer_pid" 2>/dev/null || true
+    wait "$timer_pid" 2>/dev/null || true
+fi
+[ ! -f "$runtime/wall-timeout" ] || status=124
 teardown "$status"

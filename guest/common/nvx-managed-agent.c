@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,11 +32,15 @@
 #define APP_PING 1U
 #define APP_EXEC 2U
 #define APP_STOP 3U
+#define APP_METRICS 4U
+#define APP_WARM 5U
+#define APP_IDENTITY 6U
 #define APP_READY 0x81U
 #define APP_STDOUT 0x82U
 #define APP_STDERR 0x83U
 #define APP_EXIT 0x84U
 #define APP_STOPPED 0x85U
+#define APP_METRICS_RESULT 0x86U
 #define APP_ERROR 0xffU
 
 #define MAX_ARGUMENTS 64U
@@ -44,6 +50,7 @@
 #define MAX_TIMEOUT_MS (60U * 60U * 1000U)
 #define PORTB_CONSOLE 0xe9
 #define AGENT_STOPPED 1
+#define AGENT_REATTACH 2
 
 struct outer_record {
     uint8_t type;
@@ -644,6 +651,104 @@ static int stream_output(
     }
 }
 
+/* A retained runtime is inside the same namespaces, cgroup, UID, device and
+ * seccomp policy as a normal workload. Only the outer dispatcher owns these
+ * channels; the shim closes them in every workload child. */
+static pid_t warm_child;
+static int warm_command = -1, warm_stdout = -1, warm_stderr = -1, warm_status = -1;
+
+static void close_warm_runtime(void)
+{
+    if (warm_child > 0) {
+        kill(-warm_child, SIGKILL);
+        waitpid(warm_child, NULL, 0);
+    }
+    int *fds[] = {&warm_command, &warm_stdout, &warm_stderr, &warm_status};
+    for (unsigned int i = 0; i < 4; ++i) {
+        if (*fds[i] >= 0) close(*fds[i]);
+        *fds[i] = -1;
+    }
+    warm_child = 0;
+}
+
+static int start_warm_runtime(const struct agent_config *config, char **argv)
+{
+    int command[2], out[2], err[2], status[2];
+    const char *barrier = "/run/nvx/managed-container-start";
+    if (pipe2(command, O_CLOEXEC) || pipe2(out, O_CLOEXEC) ||
+        pipe2(err, O_CLOEXEC) || pipe2(status, O_CLOEXEC)) return -1;
+    unlink(barrier);
+    if (mkfifo(barrier, 0600)) return -1;
+    warm_child = fork();
+    if (warm_child < 0) return -1;
+    if (!warm_child) {
+        setpgid(0, 0);
+        dup2(command[0], 0); dup2(out[1], 1); dup2(err[1], 2);
+        dup2(status[1], 198);
+        close(command[0]); close(command[1]); close(out[0]); close(out[1]);
+        close(err[0]); close(err[1]); close(status[0]); close(status[1]);
+        exec_sandbox(config, barrier, argv);
+    }
+    setpgid(warm_child, warm_child);
+    close(command[0]); close(out[1]); close(err[1]); close(status[1]);
+    warm_command = command[1]; warm_stdout = out[0]; warm_stderr = err[0]; warm_status = status[0];
+    if (write_pid_to_cgroup(warm_child) || release_container_barrier(barrier)) goto failed;
+    unlink(barrier);
+    struct pollfd ready = {warm_status, POLLIN | POLLHUP, 0};
+    char marker;
+    if (poll(&ready, 1, 30000) <= 0 || read(warm_status, &marker, 1) != 1 || marker != 'R') goto failed;
+    if (make_nonblocking(warm_stdout) || make_nonblocking(warm_stderr) || make_nonblocking(warm_status)) goto failed;
+    return 0;
+failed:
+    unlink(barrier);
+    close_warm_runtime();
+    return -1;
+}
+
+static int run_warm_exec(struct control_session *session, uint64_t request_id,
+                         uint32_t timeout_ms, const uint8_t *payload, uint32_t length)
+{
+    uint8_t header[4], status[5];
+    size_t output_bytes = 0, received = 0;
+    write_u32(header, length);
+    if (write_all(warm_command, header, 4) || write_all(warm_command, payload, length))
+        return send_app_error(session, request_id, 125, "warm-runtime-failed");
+    uint64_t started = monotonic_milliseconds();
+    while (received < sizeof(status)) {
+        struct pollfd fds[3] = {{warm_stdout, POLLIN | POLLHUP, 0},
+                               {warm_stderr, POLLIN | POLLHUP, 0},
+                               {warm_status, POLLIN | POLLHUP, 0}};
+        if (poll(fds, 3, 25) < 0 && errno != EINTR) goto failed;
+        for (unsigned int i = 0; i < 2; ++i) {
+            if (fds[i].revents) {
+                int result = stream_output(session, request_id, fds[i].fd,
+                                           i ? APP_STDERR : APP_STDOUT, &output_bytes);
+                if (result == -2) {
+                    close_warm_runtime();
+                    return send_app_frame(session, APP_EXIT, request_id, 125, "output-limit", 12);
+                }
+                if (result < 0 || result == 1) goto failed;
+            }
+        }
+        if (fds[2].revents) {
+            ssize_t count = read(warm_status, status + received, sizeof(status) - received);
+            if (count > 0) received += count;
+            else if (count == 0 || (errno != EINTR && errno != EAGAIN)) goto failed;
+        }
+        if (timeout_ms && monotonic_milliseconds() - started >= timeout_ms) {
+            close_warm_runtime();
+            return send_app_frame(session, APP_EXIT, request_id, 124, "timeout", 7);
+        }
+    }
+    /* All child writes precede its wait status; drain both streams once more. */
+    if (stream_output(session, request_id, warm_stdout, APP_STDOUT, &output_bytes) < 0 ||
+        stream_output(session, request_id, warm_stderr, APP_STDERR, &output_bytes) < 0 || status[0] != 'E') goto failed;
+    return send_app_frame(session, APP_EXIT, request_id, read_u32(status + 1), "exit", 4);
+failed:
+    close_warm_runtime();
+    return send_app_error(session, request_id, 125, "warm-runtime-failed");
+}
+
 static int run_exec(
     struct control_session *session,
     const struct agent_config *config,
@@ -809,6 +914,41 @@ static int run_exec(
         session, APP_EXIT, request_id, 125, "failed", 6);
 }
 
+static uint64_t last_elapsed_ms;
+
+static unsigned long long read_metric(const char *path, const char *key)
+{
+    FILE *source = fopen(path, "r");
+    unsigned long long value = 0;
+    char name[64];
+    if (!source) return 0;
+    if (!key) {
+        if (fscanf(source, "%llu", &value) != 1) value = 0;
+    } else {
+        while (fscanf(source, "%63s %llu", name, &value) == 2) {
+            if (!strcmp(name, key)) break;
+            value = 0;
+        }
+    }
+    fclose(source);
+    return value;
+}
+
+static int send_metrics(struct control_session *session, uint64_t request_id)
+{
+    char result[512];
+    int length = snprintf(result, sizeof(result),
+        "{\"resource_version\":1,\"wall_ms\":%llu,\"cpu_usec\":%llu,"
+        "\"memory_peak_bytes\":%llu,\"pids_peak\":%llu,\"memory_oom_kills\":%llu,\"pids_denials\":%llu}",
+        (unsigned long long)last_elapsed_ms,
+        read_metric("/sys/fs/cgroup/container/cpu.stat", "usage_usec"),
+        read_metric("/sys/fs/cgroup/container/memory.peak", NULL),
+        read_metric("/sys/fs/cgroup/container/pids.peak", NULL),
+        read_metric("/sys/fs/cgroup/container/memory.events", "oom_kill"),
+        read_metric("/sys/fs/cgroup/container/pids.events", "max"));
+    return send_app_frame(session, APP_METRICS_RESULT, request_id, 0, result, length);
+}
+
 static int handle_data_record(
     struct control_session *session,
     const struct agent_config *config,
@@ -860,11 +1000,81 @@ static int handle_data_record(
             return send_app_error(
                 session, request.request_id, 22, "invalid-request");
         }
-        result = run_exec(
-            session, config, request.request_id, timeout_ms, workload_argv);
+        uint64_t started = monotonic_milliseconds();
+        result = warm_child > 0
+            ? run_warm_exec(session, request.request_id, timeout_ms, request.payload, request.payload_len)
+            : run_exec(session, config, request.request_id, timeout_ms, workload_argv);
+        last_elapsed_ms = monotonic_milliseconds() - started;
         free_arguments(workload_argv);
         return result;
+    case APP_METRICS:
+        if (request.payload_len != 0)
+            return send_app_error(session, request.request_id, 22, "invalid-request");
+        return send_metrics(session, request.request_id);
+    case APP_IDENTITY: {
+        if (request.payload_len) return send_app_error(session, request.request_id, 22, "invalid-request");
+        char generation[34] = {0};
+        FILE *sample = popen("/sbin/nvx-clock --generation", "r");
+        if (!sample || !fgets(generation, sizeof(generation), sample)) return -1;
+        if (pclose(sample) || strlen(generation) != 33) return -1;
+        return send_app_frame(session, APP_READY, request.request_id, 0, generation, 32);
+    }
+    case APP_WARM: {
+        if (config->direct || request.payload_len < 2 || request.payload[1] > 1 ||
+            (request.payload[0] != 1 && request.payload[0] != 2) || warm_child > 0)
+            return send_app_error(session, request.request_id, 22, "invalid-warm-request");
+        if (request.payload[0] == 2) {
+            if (decode_exec_payload(request.payload + 2, request.payload_len - 2, &timeout_ms, &workload_argv))
+                return send_app_error(session, request.request_id, 22, "invalid-warm-runtime");
+            int launched = start_warm_runtime(config, workload_argv);
+            free_arguments(workload_argv);
+            if (launched) return send_app_error(session, request.request_id, 125, "warm-runtime-failed");
+        } else if (request.payload_len != 2) {
+            return send_app_error(session, request.request_id, 22, "invalid-warm-request");
+        }
+        /* No workload is running: this dispatcher is single threaded. The disk
+         * is frozen before readiness, so RAM and private scratch are one point. */
+        FILE *sample = popen("/sbin/nvx-clock --generation", "r");
+        char previous[34] = {0};
+        if (sample == NULL || fgets(previous, sizeof(previous), sample) == NULL) return -1;
+        if (pclose(sample) != 0 || strlen(previous) != 33) return -1;
+        previous[32] = 0;
+        int scratch = open("/run/nvx/scratch", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (scratch < 0 || ioctl(scratch, FIFREEZE, 0) != 0) return -1;
+        close(scratch);
+        if (send_app_frame(session, APP_READY, request.request_id, 0, "warm-v1", 7) != 0) return -1;
+        tcdrain(session->fd);
+        pid_t repair = fork();
+        if (repair < 0) return -1;
+        if (repair == 0) {
+            execl("/sbin/nvx-clock", "nvx-clock", "--resume", previous,
+                  request.payload[1] ? "repair" : "disabled", (char *)NULL);
+            _exit(125);
+        }
+        int status;
+        if (waitpid(repair, &status, 0) != repair || !WIFEXITED(status) || WEXITSTATUS(status)) return -1;
+        if (warm_child > 0 && request.payload[1]) {
+            /* The retained runtime already has a UTS namespace. Repair it
+             * from the trusted outer agent before admitting a clone job. */
+            char pid[32], hostname[64], mid[34] = {0};
+            FILE *identity = fopen("/run/nvx/workload-machine-id", "r");
+            if (!identity || !fgets(mid, sizeof(mid), identity)) return -1;
+            fclose(identity); mid[32] = 0;
+            snprintf(hostname, sizeof(hostname), "nvx-%.32s", mid);
+            snprintf(pid, sizeof(pid), "%ld", (long)warm_child);
+            pid_t child = fork();
+            if (child < 0) return -1;
+            if (!child) { execlp("nsenter", "nsenter", "--target", pid, "--uts", "hostname", hostname, (char *)NULL); _exit(125); }
+            if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return -1;
+        }
+        /* Discard the old host decoder/session before announcing a new guest.
+         * The host broker also discards its queued records during restore. */
+        memset(session->instance_id, 0, sizeof(session->instance_id));
+        session->epoch = session->guest_sequence = session->host_sequence = 0;
+        return AGENT_REATTACH;
+    }
     case APP_STOP:
+        close_warm_runtime();
         if (request.payload_len != 0 ||
             send_app_frame(
                 session, APP_STOPPED, request.request_id, 0, NULL, 0) != 0) {
@@ -901,6 +1111,12 @@ static int run_agent(
         } else if (record.type == OUTER_DATA) {
             int result = handle_data_record(session, config, &record);
 
+            if (result == AGENT_REATTACH) {
+                free_outer_record(&record);
+                /* Restore queues a fresh RESET. Preserve physical frame alignment
+                 * and acknowledge that record; no old application state survives. */
+                continue;
+            }
             if (result == AGENT_STOPPED) {
                 free_outer_record(&record);
                 return AGENT_STOPPED;
