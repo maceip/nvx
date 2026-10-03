@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/nvx-hosted-validation.yml'
       - '.github/actions/checkout-openvmm/**'
+      - 'openvmm'
+      - 'docker/**'
       - 'scripts/**'
       - 'sdk/**'
   workflow_dispatch:
@@ -46,6 +48,12 @@ jobs:
       - run: python3 -m pyright
       - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
       - run: python3 scripts/nvx.py build-openvmm --backend kvm
+      - name: Check architecture-specific core packages
+        working-directory: openvmm
+        run: |
+          cargo clippy --all-targets -p virt_mshv -p net_backend_resources
+          cargo doc --no-deps -p virt_mshv -p net_backend_resources
+          cargo test -p virt_mshv -p net_backend_resources
       - run: python3 scripts/nvx.py build-guest
       - name: Require real nested virtualization
         run: |

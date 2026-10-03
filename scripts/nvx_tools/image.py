@@ -459,7 +459,7 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
                     "docker",
                     "build",
                     "--target",
-                    "base",
+                    "converter",
                     "-t",
                     "nvx-converter-base",
                     "-f",

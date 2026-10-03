@@ -33,6 +33,17 @@ COPY kernel/ /repo/kernel/
 COPY scripts/ /repo/scripts/
 COPY LICENSE README.md SOURCE-MANIFEST.json THIRD_PARTY_NOTICES.md /repo/
 
+# OCI conversion needs filesystem tools, not the kernel compiler toolchain.
+# The worker source is mounted read-only from the admitted CLI checkout.
+FROM ${DEBIAN_IMAGE} AS converter
+ARG EROFS_UTILS_VERSION
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        e2fsprogs \
+        erofs-utils=${EROFS_UTILS_VERSION} \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY guest/common/nvx-image-smoke /repo/guest/common/nvx-image-smoke
+
 FROM base AS kernel
 RUN python3 scripts/nvx.py build-kernel
 

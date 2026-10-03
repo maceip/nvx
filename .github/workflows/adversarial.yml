@@ -43,7 +43,7 @@ jobs:
     name: ${{ matrix.backend }} / ${{ matrix.campaign }}
     if: >-
       ${{
-        github.repository == 'microsoft/nvx' &&
+        (github.repository == 'microsoft/nvx' || github.repository == 'maceip/nvx') &&
         github.ref == 'refs/heads/dev'
       }}
     runs-on: [self-hosted, nvx-adversarial-controller]
