@@ -4,10 +4,23 @@ import unittest
 from pathlib import Path
 
 from nvx_tools.common import ScriptError
-from nvx_tools.sandbox_lifecycle import deprovision
+from nvx_tools.sandbox_lifecycle import deprovision, startup_failure
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_startup_failure_preserves_cause_with_bounded_redacted_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "openvmm.log"
+            log.write_text(
+                "old output\n" * 10000
+                + "fatal: missing PCI interrupt; Bearer fixture-sensitive-token\n"
+            )
+            failure = str(startup_failure(log, 1))
+            self.assertIn("status 1", failure)
+            self.assertIn("missing PCI interrupt", failure)
+            self.assertNotIn("fixture-sensitive-token", failure)
+            self.assertLess(len(failure), 4500)
+
     @unittest.skipIf(
         os.name == "nt", "creating Windows symlinks requires runner privileges"
     )

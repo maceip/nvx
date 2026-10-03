@@ -101,8 +101,11 @@ jobs:
         if: always()
         with:
           name: hosted-linux-${{ matrix.arch }}-proof
-          path: build/hosted-proof
+          path: |
+            build/hosted-proof
+            ~/.nvx/cache/instances/*/openvmm.log
           if-no-files-found: warn
+          include-hidden-files: true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -111,5 +114,10 @@ jobs:
             build/openvmm.provenance.json
             build/vmlinux.provenance.json
             build/initramfs.provenance.json
+            build/vmlinux
+            build/Image
+            build/vmlinux.config
+            build/initramfs.cpio.gz
+            build/initramfs.cpio.gz.packages.json
             openvmm/target/release/openvmm
           if-no-files-found: warn

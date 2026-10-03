@@ -31,7 +31,7 @@ from .control_session import (
     ControlSession,
     ManagedExecResult,
 )
-from .events import EventLog
+from .events import EventLog, redact
 from .hvf import boot_tokens, network_arguments
 from .sandbox import SandboxLaunch, SandboxLayer, SandboxMount
 
@@ -48,6 +48,18 @@ CONFIG_FORMAT = 5
 MOUNT_CONFIG_FORMAT = 6
 CONFIG_FORMATS = (1, 2, 3, 4, CONFIG_FORMAT, MOUNT_CONFIG_FORMAT)
 OUTCOME_SCHEMA_VERSION = 1
+
+
+def startup_failure(log_path: Path, status: int) -> ScriptError:
+    """Include a bounded, redacted diagnostic without reading the whole VM log."""
+    with log_path.open("rb") as log:
+        log.seek(0, os.SEEK_END)
+        log.seek(max(0, log.tell() - 4096))
+        tail = log.read(4096).decode("utf-8", errors="replace")
+    return ScriptError(
+        f"OpenVMM exited with status {status} before control readiness; "
+        f"see {log_path}\n{redact(tail)}"
+    )
 
 
 def _write_json(path: Path, value: dict[str, Any], mode: int = 0o600) -> None:
@@ -598,10 +610,9 @@ def start(
         )
         deadline = time.monotonic() + timeout
         while True:
-            if process.poll() is not None:
-                raise ScriptError(
-                    "OpenVMM exited before control readiness; inspect openvmm.log"
-                )
+            status = process.poll()
+            if status is not None:
+                raise startup_failure(log_path, status)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("managed guest did not become ready")

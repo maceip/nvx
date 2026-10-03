@@ -69,3 +69,10 @@ jobs:
           }
           '@
           [WhpAdmission]::Run()
+      - name: Inspect Linux converter support
+        shell: pwsh
+        run: |
+          Get-Command wsl,docker -ErrorAction SilentlyContinue | Select-Object Name,Source
+          wsl --status
+          wsl --list --verbose
+          docker info
