@@ -1,0 +1,71 @@
+name: NVX hosted backend admission
+
+on:
+  push:
+    branches: [dev, completion/ten-items]
+    paths: ['.github/workflows/nvx-backend-admission.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  intel-hvf:
+    name: Intel macOS HVF hardware admission
+    runs-on: macos-26-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Create an actual Hypervisor.framework VM
+        run: |
+          mkdir -p build
+          cat > build/hvf-admission.c <<'C'
+          #include <Hypervisor/Hypervisor.h>
+          #include <stdio.h>
+          int main(void) {
+              hv_return_t result = hv_vm_create(HV_VM_DEFAULT);
+              printf("Intel HVF VM creation: 0x%x\n", result);
+              if (result != HV_SUCCESS) return 1;
+              result = hv_vm_destroy();
+              return result == HV_SUCCESS ? 0 : 1;
+          }
+          C
+          clang -O2 -framework Hypervisor build/hvf-admission.c -o build/hvf-admission
+          codesign --force --sign - --entitlements scripts/nvx_tools/openvmm-macos.entitlements.plist build/hvf-admission
+          build/hvf-admission
+  whp:
+    name: Windows WHP hardware admission
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Set up an actual WHP partition and virtual processor
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class WhpAdmission {
+              [DllImport("WinHvPlatform.dll")] public static extern int WHvCreatePartition(out IntPtr partition);
+              [DllImport("WinHvPlatform.dll")] public static extern int WHvSetPartitionProperty(IntPtr partition, uint code, ref uint value, uint size);
+              [DllImport("WinHvPlatform.dll")] public static extern int WHvSetupPartition(IntPtr partition);
+              [DllImport("WinHvPlatform.dll")] public static extern int WHvCreateVirtualProcessor(IntPtr partition, uint index, uint flags);
+              [DllImport("WinHvPlatform.dll")] public static extern int WHvDeletePartition(IntPtr partition);
+              public static void Run() {
+                  IntPtr partition;
+                  Marshal.ThrowExceptionForHR(WHvCreatePartition(out partition));
+                  try {
+                      uint count = 1;
+                      Marshal.ThrowExceptionForHR(WHvSetPartitionProperty(partition, 0x1fff, ref count, 4));
+                      Marshal.ThrowExceptionForHR(WHvSetupPartition(partition));
+                      Marshal.ThrowExceptionForHR(WHvCreateVirtualProcessor(partition, 0, 0));
+                      Console.WriteLine("WHP: actual partition and virtual processor creation succeeded");
+                  } finally {
+                      Marshal.ThrowExceptionForHR(WHvDeletePartition(partition));
+                  }
+              }
+          }
+          '@
+          [WhpAdmission]::Run()

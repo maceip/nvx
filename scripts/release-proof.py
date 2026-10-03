@@ -13,6 +13,7 @@ from pathlib import Path
 from nvx_tools.build_constants import BuildConstants
 from nvx_tools.common import ScriptError, openvmm_git_state, sha256_file
 from nvx_tools.containment import render, validate_document
+from nvx_tools.release_gate import require_checked_performance
 from nvx_tools.runtime_release import PLATFORMS
 
 BACKENDS = {
@@ -166,6 +167,7 @@ def main() -> None:
         "--summary",
         str(proof / "performance-gate.md"),
     )
+    require_checked_performance(proof / "performance.log", args.platform)
     document = {
         "proof_version": 1,
         "platform": args.platform,

@@ -26,6 +26,14 @@ REQUIRED_STEPS = frozenset(
 )
 
 
+def require_checked_performance(log: Path, platform: str) -> None:
+    if "Checked 3 metric(s), found 0 regression(s)" not in log.read_text():
+        raise ScriptError(
+            f"{platform}: performance Warmup is not a checked regression gate; "
+            "record a measured matching-platform baseline before release acceptance"
+        )
+
+
 def verify_matrix(
     root: Path, revision: str, core: str, version: str, destination: Path
 ) -> None:
@@ -65,11 +73,7 @@ def verify_matrix(
                 raise ScriptError(
                     f"{platform}: missing, failing or changed gate output"
                 )
-        gate = (proof_root / "performance.log").read_text()
-        if "Checked 3 metric(s), found 0 regression(s)" not in gate:
-            raise ScriptError(
-                f"{platform}: performance Warmup is not a checked regression gate"
-            )
+        require_checked_performance(proof_root / "performance.log", platform)
         containment_path = proof_root / "scenarios/containment/containment.json"
         containment = json.loads(containment_path.read_bytes())
         validate_document(containment)
