@@ -31,29 +31,30 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-pool-cleanup-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF run to NVX `9f7b241a11414d0c712c8679886b087f56f49896` and core
-  `5048794dc542ad7deee1b3ac9e0093f893aeefe3`: all 18 scenarios, eight containment
+- `build/completion-binary-bound-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF run to NVX `d8235802d6c655ef3c02162add5a148d8974728c` and core
+  `5c1f378cb94de28eba919c786d0a50e76f2d76f9`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **3.31 ms p50**, completion **4.92 ms**, cold first stdout **1005.74 ms**.
+  **2.94 ms p50**, completion **4.40 ms**, cold first stdout **998.46 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-pool-cleanup-offline.log`: **116 offline tests**, ruff clean.
+- `build/completion-binary-acceptance-offline.log`: **117 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-current-offline.log` in the main checkout: **122 tests**
+- `build/completion-root-final-offline.log` in the main checkout: **125 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
-  and its actual guest printed `NVX-INTEGRATED-TEN-ITEMS-OK`.
+  and its actual guest printed `NVX-FINAL-INTEGRATION-OK`.
 - The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
-  Its full battery passed identity, seccomp, resources, devices, containment,
-  simulants, receipts, images, workspace and credentials before a warm-clone failure
-  during host disk exhaustion. A fresh clean-source full run is in progress.
+  Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
+  clones, disabled controls, MCP and teardown; image determinism also passed.
+  The 20-request cold/warm benchmark and matching-platform baseline gate are being
+  exercised next. An earlier failed run encountered host disk exhaustion.
 - Hosted Intel HVF and Windows WHP admission succeeded. These are admission results,
   not full guest acceptance. Hosted Ubuntu x86 KVM admission succeeded; the hosted
   ARM runners expose no usable `/dev/kvm`, so their runtime lane fails explicitly.
@@ -63,6 +64,9 @@ inspection/disassembly; that work is not part of the completion commits.
 - Windows Docker launches use the resolved executable/wrapper path.
 - First-use image conversion keeps workload stdout free of a trailing image digest.
 - Intel macOS's owned OCI converter installs its QEMU dependency explicitly.
+  The package CLI also admits Intel macOS alongside the other five release targets;
+  the all-platform CLI regression and 118 offline tests pass, with strict types on
+  macOS, Linux and Windows.
 - Portable fixtures extract the provenance-verified current initramfs instead of
   rebuilding a full compiler container for each scenario.
 - Control capabilities are complete and EOF-sealed before OpenVMM starts.

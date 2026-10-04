@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from nvx import command_package, parse_args
 from nvx_tools.build import kernel_provenance_inputs
 from nvx_tools.build_constants import BuildConstants
 from nvx_tools.common import (
@@ -21,10 +22,41 @@ from nvx_tools.release import (
     _validate_source_manifest_metadata,  # pyright: ignore[reportPrivateUsage]
     download_latest_release,
 )
-from nvx_tools.runtime_release import install, inventory
+from nvx_tools.runtime_release import PLATFORMS, install, inventory
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_package_cli_admits_every_supported_platform(self) -> None:
+        for platform in PLATFORMS:
+            with self.subTest(platform=platform):
+                args = parse_args(
+                    [
+                        "package",
+                        "--platform",
+                        platform,
+                        "--version",
+                        "1.0.0",
+                        "--development",
+                        "--binary-only",
+                        "--destination",
+                        "unused",
+                    ]
+                )
+                with (
+                    patch(
+                        "nvx_tools.runtime_release.package", return_value=Path("unused")
+                    ) as package,
+                    patch("sys.stdout", new=io.StringIO()),
+                ):
+                    command_package(args)
+                    package.assert_called_once_with(
+                        Path("unused"),
+                        platform,
+                        "1.0.0",
+                        development=True,
+                        source=False,
+                    )
+
     def test_source_pins_validate_each_native_architecture(self) -> None:
         manifest = json.loads(
             (BuildConstants.REPO_ROOT / "SOURCE-MANIFEST.json").read_bytes()

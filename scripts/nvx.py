@@ -1873,6 +1873,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--platform",
         choices=(
             "darwin-arm64",
+            "darwin-x86_64",
             "linux-arm64",
             "linux-kvm",
             "linux-mshv",
