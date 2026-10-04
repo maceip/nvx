@@ -6,7 +6,11 @@ acceptance, and ARM64 native build, clippy, documentation and unit checks. The
 Linux and Windows acceptance jobs call the same workflows available through
 manual dispatch; they retain their complete runtime proof artifacts. Documentation
 changes only run quality checks. New pushes cancel superseded CI runs so an old
-queued job cannot block the current commit.
+queued job cannot block the current commit. Manual dispatch always runs the full
+selected CI mode and uses its own concurrency group, so later pushes cannot cancel
+that validation. To validate a stable source branch, run
+`gh workflow run ci.yml --ref <branch>` and watch its required status check.
+Manual CI does not publish a development release or persist performance history.
 
 The Microsoft repository retains its self-hosted backend fleet. A fork with the
 same enrolled KVM/MSHV/WHP runner pools can set the repository Actions variable
