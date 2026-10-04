@@ -1,3 +1,4 @@
+import json
 import os
 import socket
 import subprocess
@@ -7,20 +8,63 @@ import threading
 import unittest
 from pathlib import Path
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from nvx_tools import control_session
 from nvx_tools.common import ScriptError
+from nvx_tools.sandbox import SandboxLaunch, SandboxLayer
 from nvx_tools.sandbox_lifecycle import (
     connect_when_ready,
     deprovision,
     microvm_network_endpoint,
+    provision,
     sealed_capability_pipe,
     startup_failure,
 )
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_direct_policy_provisioning_supplies_a_matching_x86_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            layer = root / "layer"
+            scratch = root / "scratch"
+            layer.write_bytes(b"layer")
+            scratch.write_bytes(b"scratch")
+            launch = SandboxLaunch(
+                (
+                    SandboxLayer(
+                        "custom", layer, "900ba5a7-a33d-577b-a21c-d4ee7930be62"
+                    ),
+                ),
+                scratch,
+            )
+            with patch(
+                "nvx_tools.sandbox_lifecycle.platform.machine", return_value="x86_64"
+            ):
+                for backend in ("hvf", "kvm", "mshv", "whp"):
+                    state = root / backend
+                    provision(
+                        state,
+                        launch,
+                        hypervisor=backend,
+                        memory_mib=512,
+                        net=None,
+                        network_profile=None,
+                        network_egress="deny",
+                        network_ingress="deny",
+                        network_egress_allow=(),
+                        network_egress_deny=(),
+                        host_loopback=None,
+                        network_proxy=None,
+                        host_loopback_forward=(),
+                        cmdline="",
+                    )
+                    config = json.loads((state / "config.json").read_text())
+                    self.assertEqual(config["net"], "192.168.127.2/24")
+                    self.assertEqual(config["network_profile"], "portable")
+                    self.assertEqual(config["network_egress"], "deny")
+
     @unittest.skipIf(os.name == "nt", "Unix control transport regression")
     def test_cold_start_retains_waiting_attachment_until_guest_is_ready(self) -> None:
         capability = bytes(range(32))

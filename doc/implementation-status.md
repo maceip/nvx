@@ -40,7 +40,7 @@ inspection/disassembly; that work is not part of the completion commits.
   **2.79 ms p50**, completion **4.26 ms**, cold first stdout **991.44 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-loopback-control-offline.log`: **123 offline tests**, ruff clean.
+- `build/completion-direct-network-offline.log`: **124 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
@@ -75,6 +75,11 @@ inspection/disassembly; that work is not part of the completion commits.
 - Raw x86 one-shot and managed sandboxes receive the controlled portable adapter
   by default, so their network-denial flags always have a matching device. Explicit
   adapter/profile pairs retain their selected configuration.
+- Direct lifecycle provisioning applies that adapter when an x86 network policy
+  is supplied, including the tenant-isolation probes. An actual persisted-config
+  regression covers all four x86 backends. The protected network probe and its
+  opposite control now pass on native KVM and WHP; their latest full repeats reached
+  tenant isolation and identified this separate provisioning entry point.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

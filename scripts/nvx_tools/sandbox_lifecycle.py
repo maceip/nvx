@@ -397,6 +397,23 @@ def provision(
     host_loopback_forward: tuple[str, ...],
     cmdline: str,
 ) -> None:
+    if (net is None) != (network_profile is None):
+        raise ScriptError("--net and --network-profile must be specified together")
+    if (
+        net is None
+        and platform.machine().lower() not in ("aarch64", "arm64")
+        and (
+            network_egress is not None
+            or network_ingress is not None
+            or network_egress_allow
+            or network_egress_deny
+            or host_loopback is not None
+            or network_proxy is not None
+            or host_loopback_forward
+        )
+    ):
+        net = "192.168.127.2/24"
+        network_profile = "portable"
     state_dir = _prepare_state_directory(state_path, create=True)
     config_path = state_dir / CONFIG_NAME
     runtime_path = state_dir / RUNTIME_NAME
