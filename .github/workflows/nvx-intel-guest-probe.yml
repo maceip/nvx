@@ -17,11 +17,10 @@ jobs:
     env:
       NVX_IMAGE_CACHE: ${{ github.workspace }}/build/intel-image-cache
       OPENVMM_LOG: debug
-      OPENVMM_STARTUP_PROFILE: '1'
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: 75c513f58d6f183fbea14fb8588360b7e6cf2a07
+          ref: 65329b2db8bb1a1fa10013816834306500468c51
           persist-credentials: false
       - uses: ./.github/actions/checkout-openvmm
       - uses: actions/setup-python@v6
@@ -31,13 +30,13 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: hosted-intel-hvf-build
-          run-id: 37181535232
+          run-id: 37197856945
           github-token: ${{ github.token }}
           path: .
       - uses: actions/download-artifact@v6
         with:
           name: intel-macos-guest
-          run-id: 37181535232
+          run-id: 37197856945
           github-token: ${{ github.token }}
           path: build
       - name: Verify the exact completed source and executable
@@ -46,12 +45,23 @@ jobs:
           codesign --verify --strict openvmm/target/release/openvmm
           python3 scripts/nvx.py verify
           python3 - <<'PY'
-          import hashlib,json,subprocess
+          import hashlib,json,platform,subprocess,sys
           from pathlib import Path
           metadata=json.loads(Path('build/openvmm.provenance.json').read_text())
           core=subprocess.check_output(['git','-C','openvmm','rev-parse','HEAD'],text=True).strip()
+          revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert revision=='65329b2db8bb1a1fa10013816834306500468c51'
+          assert core=='d591aaee1c5c10a10d8df85a48e865ec13031dc2'
+          assert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()
+          assert not subprocess.check_output(['git','-C','openvmm','status','--porcelain'],text=True).strip()
           assert metadata['source_revision']==core and metadata['source_clean'] is True
           assert metadata['executable_sha256']==hashlib.sha256(Path('openvmm/target/release/openvmm').read_bytes()).hexdigest()
+          assert metadata['executable_sha256']=='8c43d06e38b11e94fc256b1a8a00674a7ead58cd1c53b147d073c5e69ed324ee'
+          assert platform.system()=='Darwin' and platform.machine()=='x86_64'
+          baseline={'nvx_revision':revision,'core_revision':core,'executable_sha256':metadata['executable_sha256'],
+                    'python_version':sys.version,'host':platform.platform(),
+                    'changed_option':'OPENVMM_LOG=debug; startup profiling disabled; no timing is admitted to history'}
+          Path('build/intel-guest-source-before.json').write_text(json.dumps(baseline,indent=2)+'\n')
           print('Exact previously built Intel executable verified',core)
           PY
       - name: Start the owned Linux OCI converter
@@ -97,11 +107,33 @@ jobs:
           PY
       - name: Reproduce the first failed policy scenario
         run: python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
+      - name: Verify unchanged source and executable after the diagnostic
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          path=Path('build/intel-guest-source-before.json')
+          if not path.exists():
+              raise SystemExit('No verified baseline was established; no guest diagnostic result is inferred')
+          before=json.loads(path.read_text())
+          after={'nvx_revision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                 'core_revision':subprocess.check_output(['git','-C','openvmm','rev-parse','HEAD'],text=True).strip(),
+                 'executable_sha256':hashlib.sha256(Path('openvmm/target/release/openvmm').read_bytes()).hexdigest(),
+                 'nvx_status':subprocess.check_output(['git','status','--porcelain'],text=True).strip(),
+                 'core_status':subprocess.check_output(['git','-C','openvmm','status','--porcelain'],text=True).strip()}
+          assert all(after[key]==before[key] for key in ('nvx_revision','core_revision','executable_sha256'))
+          assert not after['nvx_status'] and not after['core_status']
+          Path('build/intel-guest-source-after.json').write_text(json.dumps(after,indent=2)+'\n')
+          print('Diagnostic source and exact native executable unchanged')
+          PY
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: intel-guest-diagnostic
           path: |
+            build/intel-guest-source-before.json
+            build/intel-guest-source-after.json
             build/intel-image-prepare.log
             build/intel-image-progress.log
             build/intel-image-cache/nvx-image-*/convert.log
