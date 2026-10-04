@@ -108,7 +108,9 @@ class ReleaseGateTests(unittest.TestCase):
             root = Path(temporary)
             self.fixture(root / "input")
             verify_matrix(root / "input", "a" * 40, "b" * 40, "1.0.0", root / "publish")
-            self.assertEqual(len(list((root / "publish").iterdir())), 14)
+            self.assertEqual(
+                len(list((root / "publish").iterdir())), 2 * (len(PLATFORMS) + 2)
+            )
 
     def test_stale_failed_missing_and_warmup_proofs_cannot_publish(self) -> None:
         for defect in ("revision", "missing", "log", "warmup", "control", "sources"):

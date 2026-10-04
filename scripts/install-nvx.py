@@ -102,6 +102,7 @@ def main() -> None:
     )
     selected = {
         ("Darwin", "aarch64"): "darwin-arm64",
+        ("Darwin", "x86_64"): "darwin-x86_64",
         ("Linux", "aarch64"): "linux-arm64",
         ("Linux", "x86_64"): "linux-kvm",
     }.get((platform.system(), machine))

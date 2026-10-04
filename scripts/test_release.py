@@ -211,8 +211,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(inventory("darwin-arm64"), inventory("linux-arm64"))
         self.assertNotIn("Image", inventory("linux-kvm"))
         self.assertIn("initramfs-ubuntu.cpio.gz", inventory("windows-whp"))
+        self.assertEqual(inventory("darwin-x86_64"), inventory("linux-kvm"))
         with self.assertRaises(ScriptError):
-            inventory("darwin-x86_64")
+            inventory("darwin-unknown")
 
     def test_install_verifies_inventory_tamper_and_refuses_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

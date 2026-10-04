@@ -1,0 +1,96 @@
+name: NVX hosted Intel macOS runtime validation
+
+on:
+  push:
+    branches: [dev, completion/ten-items]
+    paths:
+      - '.github/workflows/nvx-hosted-intel-macos.yml'
+      - '.github/actions/checkout-openvmm/**'
+      - 'openvmm'
+      - 'scripts/**'
+      - 'docker/**'
+      - 'guest/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 scripts/nvx.py build-guest
+      - uses: actions/upload-artifact@v7
+        with:
+          name: intel-macos-guest
+          path: |
+            build/vmlinux
+            build/vmlinux.config
+            build/vmlinux.provenance.json
+            build/initramfs.cpio.gz
+            build/initramfs.cpio.gz.packages.json
+            build/initramfs.provenance.json
+          if-no-files-found: error
+  intel-hvf:
+    needs: guest
+    runs-on: macos-26-intel
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - run: ./scripts/check.sh
+      - run: python3 -m pyright
+      - run: npm --prefix sdk/typescript ci && npm --prefix sdk/typescript run build && npm --prefix sdk/typescript test
+      - uses: actions/download-artifact@v6
+        with:
+          name: intel-macos-guest
+          path: build
+      - name: Start the owned Linux OCI converter
+        run: |
+          brew install colima docker protobuf
+          colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
+          docker info
+      - run: python3 scripts/nvx.py build-openvmm --backend hvf
+      - name: Native Intel core checks
+        working-directory: openvmm
+        run: |
+          cargo clippy --all-targets -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources
+          cargo doc --no-deps -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources
+          cargo test -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources
+      - run: python3 scripts/release-proof.py --platform darwin-x86_64 --output-dir build/intel-hvf-proof
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hosted-intel-hvf-proof
+          path: |
+            build/intel-hvf-proof
+            ~/.nvx/cache/instances/*/openvmm.log
+          include-hidden-files: true
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hosted-intel-hvf-build
+          path: |
+            build/openvmm.provenance.json
+            openvmm/target/release/openvmm
+          if-no-files-found: warn
+      - name: Stop the owned Linux converter
+        if: always()
+        run: colima stop nvx-converter

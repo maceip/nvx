@@ -17,7 +17,9 @@ from .common import artifact_path, cache_root, openvmm_binary_path
 from .guests import GUEST_NAMES, guest_descriptor
 
 OpenVmmBackend = Literal["kvm", "mshv", "whp", "hvf", "hypervisor-framework"]
-OpenVmmPlatform = Literal["linux-gnu", "linux-musl", "windows-msvc", "macos-hvf"]
+OpenVmmPlatform = Literal[
+    "linux-gnu", "linux-musl", "windows-msvc", "macos-hvf", "macos-intel-hvf"
+]
 OpenVmmBuildMode = Literal["native", "musl"]
 
 

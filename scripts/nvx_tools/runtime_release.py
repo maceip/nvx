@@ -28,6 +28,7 @@ from .doctor import binary_arch, entitlement_check
 
 PLATFORMS = {
     "darwin-arm64": "aarch64",
+    "darwin-x86_64": "x86_64",
     "linux-arm64": "aarch64",
     "linux-kvm": "x86_64",
     "linux-mshv": "x86_64",
@@ -152,7 +153,7 @@ def package(
             "published releases require clean NVX source and a clean, pinned core build; --development creates a labelled local preview"
         )
     signing: dict[str, Any] = {"signed": False, "notarized": False}
-    if platform == "darwin-arm64":
+    if platform.startswith("darwin-"):
         check = entitlement_check(core)
         if not check.ok:
             raise ScriptError(

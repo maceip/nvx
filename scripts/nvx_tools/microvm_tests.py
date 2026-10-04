@@ -3838,9 +3838,9 @@ def run_snapshot_tiers(
 
 def run(args: argparse.Namespace) -> int:
     validate_openvmm_test_backend(args.backend)
-    if args.backend == "hvf" or (
-        args.backend == "kvm"
-        and __import__("platform").machine().lower() in ("aarch64", "arm64")
+    if args.backend in ("hvf", "kvm") and __import__("platform").machine().lower() in (
+        "aarch64",
+        "arm64",
     ):
         from .hvf_tests import run as run_hvf
 

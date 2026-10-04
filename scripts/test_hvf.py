@@ -1,13 +1,47 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from nvx_tools.build import detect_openvmm_platform
+from nvx_tools.build_config import OpenVmmBuildConfig
 from nvx_tools.common import ScriptError
 from nvx_tools.hvf import boot_tokens, network_arguments
 from nvx_tools.sandbox import SandboxLaunch, SandboxLayer
 
 
 class HvfTests(unittest.TestCase):
+    def test_native_mac_target_and_device_transport_follow_guest_architecture(
+        self,
+    ) -> None:
+        launch = SandboxLaunch(
+            (SandboxLayer("custom", Path("/layer"), "c"),), Path("/scratch")
+        )
+        for host, target, architecture in (
+            ("arm64", "aarch64-apple-darwin", "aarch64"),
+            ("x86_64", "x86_64-apple-darwin", "x86_64"),
+        ):
+            with (
+                self.subTest(host=host),
+                patch("nvx_tools.build.sys.platform", "darwin"),
+                patch("nvx_tools.build.platform.machine", return_value=host),
+            ):
+                selected = detect_openvmm_platform("hvf")
+                self.assertEqual(OpenVmmBuildConfig.openvmm_target(selected), target)
+                arguments = launch.openvmm_arguments("hvf", architecture=architecture)
+                cmdline = launch.kernel_command_line(
+                    backend="hvf", architecture=architecture
+                )
+                if architecture == "x86_64":
+                    self.assertIn("--microvm-sandbox-block", arguments)
+                    self.assertNotIn("--virtio-blk", arguments)
+                    self.assertIn("nvx_layer=custom,0x", cmdline)
+                    self.assertNotIn("nvx_layer=custom,/dev/vda", cmdline)
+                else:
+                    self.assertIn("--virtio-blk", arguments)
+                    self.assertNotIn("--microvm-sandbox-block", arguments)
+                    self.assertIn("nvx_layer=custom,/dev/vda", cmdline)
+
     def test_arm_layer_order_and_writable_scratch(self) -> None:
         launch = SandboxLaunch(
             (

@@ -6,6 +6,7 @@ import argparse
 import ipaddress
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -111,7 +112,9 @@ def run_image(
         if not secret_specs:
             raise ScriptError("--proxy-log requires --secret")
         sandbox_lifecycle.validate_outcome_destination(proxy_log)
-    memory = args.memory_mib or (1024 if backend == "hvf" else 256)
+    memory = args.memory_mib or (
+        1024 if platform.machine().lower() in ("arm64", "aarch64") else 256
+    )
     supplied = tuple(args.sandbox_arg) if sandbox else tuple(args.workload)
     if supplied and supplied[0] == "--":
         supplied = supplied[1:]

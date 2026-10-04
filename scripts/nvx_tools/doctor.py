@@ -132,8 +132,8 @@ def checks(backend: str) -> list[Check]:
         results.append(
             Check(
                 "host",
-                sys.platform == "darwin" and arch == "aarch64",
-                "HVF requires Apple Silicon macOS",
+                sys.platform == "darwin" and arch in ("aarch64", "x86_64"),
+                "HVF requires arm64 or Intel macOS",
             )
         )
         results.append(entitlement_check(binary))

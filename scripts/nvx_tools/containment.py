@@ -7,6 +7,7 @@ import contextlib
 import http.server
 import io
 import json
+import platform
 import secrets
 import subprocess
 import sys
@@ -295,7 +296,7 @@ def snapshot_pair(backend: str, output: Path, timeout: float) -> dict[str, Any]:
             "--cmdline",
             "quiet loglevel=0",
         ]
-        if backend == "hvf":
+        if platform.machine().lower() in ("aarch64", "arm64"):
             with (output / "snapshot-capture.log").open("wb") as log:
                 subprocess.run(
                     command,
@@ -332,7 +333,10 @@ def snapshot_pair(backend: str, output: Path, timeout: float) -> dict[str, Any]:
                 file.write(byte)
         try:
             verify_snapshot(
-                snapshot, expected_arch="x86_64" if backend == "hvf" else "aarch64"
+                snapshot,
+                expected_arch="x86_64"
+                if report.architecture == "aarch64"
+                else "aarch64",
             )
             protected["foreign_arch"] = "admitted"
         except ScriptError:

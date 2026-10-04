@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import sys
@@ -298,8 +299,8 @@ def validate_openvmm_test_backend(backend: str) -> None:
         if sys.platform != "darwin":
             raise ScriptError("HVF OpenVMM tests require macOS")
         machine = os.uname().machine if hasattr(os, "uname") else ""
-        if machine not in ("arm64", "aarch64"):
-            raise ScriptError("HVF OpenVMM tests require Apple Silicon (arm64)")
+        if machine not in ("arm64", "aarch64", "x86_64"):
+            raise ScriptError("HVF OpenVMM tests require arm64 or Intel macOS")
     else:
         if os.name == "nt":
             raise ScriptError(f"{backend.upper()} OpenVMM tests require Linux")
@@ -427,10 +428,10 @@ def run_openvmm_tests(backend: str) -> None:
     )
     cargo = require_tool("cargo")
     rustup = require_tool("rustup")
-    # HVF boots the flat aarch64 Image; the microVM backends boot ELF vmlinux.
+    # Native Arm64 guests boot a flat Image; x86 guests boot ELF vmlinux.
     kernel_name = (
         KernelBuildConstants.BINARY_NAME_AARCH64
-        if backend == "hvf"
+        if platform.machine().lower() in ("aarch64", "arm64")
         else KernelBuildConstants.BINARY_NAME
     )
     kernel = require_file(

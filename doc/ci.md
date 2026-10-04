@@ -247,8 +247,8 @@ an integration built by another person remain required external results.
 ## Signed publication pipeline
 
 `nvx-release.yml` builds architecture-specific guests and validates their matching Linux,
-Alpine and (on x86) Ubuntu sources. It then requires all five currently supported package
-platforms: darwin-arm64, linux-arm64, linux-kvm, linux-mshv and windows-whp. Each runtime
+Alpine and (on x86) Ubuntu sources. It then requires all six package platforms:
+darwin-arm64, darwin-x86_64, linux-arm64, linux-kvm, linux-mshv and windows-whp. Each runtime
 lane runs the entire correctness suite, all eight containment families with opposite controls,
 OCI determinism, 20 warm/cold measurements, the SDK tests and strict clean-source packaging.
 `release-proof.py` records command exits and hashes; `verify-release-matrix.py` rejects missing
@@ -268,7 +268,8 @@ Workflow dispatch builds and records evidence without publishing.
 
 `nvx-hosted-validation.yml` probes actual `/dev/kvm` access on hosted x86 and ARM Linux runners.
 It then builds and runs the full acceptance battery. An unavailable hypervisor fails the lane;
-it never becomes a skipped runtime pass. Hosted results cannot establish MSHV, WHP or HVF
-coverage. The full publication pipeline still requires the documented self-hosted runner labels
-and the Mac's Developer ID/notary profiles. Intel macOS is still a missing OpenVMM backend,
-outside the current five-platform package inventory; the roadmap's requirement remains open.
+it never becomes a skipped runtime pass. The native Windows and Intel macOS workflows independently build and exercise WHP and
+Intel Hypervisor.framework with a Linux OCI converter. ARM KVM runtime evidence requires
+a host that exposes nested virtualization; the hosted ARM runner currently does not. The full
+publication pipeline still requires the documented runner labels and the Mac's Developer
+ID/notary profiles. Hardware admission alone never counts as a guest scenario pass.

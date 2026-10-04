@@ -18,6 +18,7 @@ from nvx_tools.runtime_release import PLATFORMS
 
 BACKENDS = {
     "darwin-arm64": "hvf",
+    "darwin-x86_64": "hvf",
     "linux-arm64": "kvm",
     "linux-kvm": "kvm",
     "linux-mshv": "mshv",
@@ -118,7 +119,7 @@ def main() -> None:
         )
         series = (
             f"{args.platform}-{backend}"
-            if args.platform in ("darwin-arm64", "linux-arm64")
+            if args.platform in ("darwin-arm64", "darwin-x86_64", "linux-arm64")
             else args.platform
         )
         run(

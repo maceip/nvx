@@ -381,7 +381,7 @@ def record_openvmm_provenance(config: OpenVmmBuildConfig) -> None:
 
 
 def _is_apple_silicon() -> bool:
-    return sys.platform == "darwin" and os.uname().machine in ("arm64", "aarch64")
+    return sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64")
 
 
 def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPlatform:
@@ -396,9 +396,11 @@ def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPla
             return "linux-musl"
     elif sys.platform == "darwin":
         if backend in (None, "hvf", "hypervisor-framework"):
-            if not _is_apple_silicon():
-                raise ScriptError("OpenVMM macOS builds require Apple Silicon (arm64)")
-            return "macos-hvf"
+            if _is_apple_silicon():
+                return "macos-hvf"
+            if platform.machine().lower() == "x86_64":
+                return "macos-intel-hvf"
+            raise ScriptError("OpenVMM macOS builds require arm64 or x86_64")
     else:
         raise ScriptError(f"OpenVMM builds are unsupported on {sys.platform}")
     raise ScriptError(f"OpenVMM backend {backend!r} is unsupported on {sys.platform}")
@@ -491,7 +493,7 @@ def build_openvmm(
     # build on a Mac must not be macOS-codesigned (codesign rejects
     # non-Mach-O files), while a native macos-hvf build needs the
     # Hypervisor.framework entitlement to launch.
-    if selected == "macos-hvf":
+    if selected in ("macos-hvf", "macos-intel-hvf"):
         _codesign_openvmm_macos(source)
         if not source.samefile(config.output):
             _codesign_openvmm_macos(config.output)

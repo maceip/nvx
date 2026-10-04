@@ -294,20 +294,27 @@ def _require_apple_silicon(hypervisor: str) -> None:
     if hypervisor != "hvf":
         return
     machine = platform.machine()
-    if machine not in ("arm64", "aarch64"):
-        raise ScriptError("the hvf hypervisor requires Apple Silicon (arm64)")
+    if sys.platform != "darwin" or machine.lower() not in (
+        "arm64",
+        "aarch64",
+        "x86_64",
+    ):
+        raise ScriptError("the hvf hypervisor requires arm64 or Intel macOS")
 
 
 def _release_platform(hypervisor: str) -> str:
     selected = _hypervisor(hypervisor)
     if sys.platform == "win32":
         host = "windows"
+        release_platform = "windows-whp"
         supported = ("whp",)
     elif sys.platform.startswith("linux"):
         host = "linux"
+        release_platform = f"linux-{selected}"
         supported = ("kvm", "mshv")
     elif sys.platform == "darwin":
         host = "macos"
+        release_platform = "darwin-x86_64"
         supported = ("hvf",)
     else:
         raise ScriptError(f"release downloads are unsupported on {sys.platform}")
@@ -315,7 +322,7 @@ def _release_platform(hypervisor: str) -> str:
         raise ScriptError(f"{selected} is not supported on {host}")
     if _arm_direct(selected):
         return "darwin-arm64" if platform.system() == "Darwin" else "linux-arm64"
-    return f"{host}-{selected}"
+    return release_platform
 
 
 def command_download(args: argparse.Namespace) -> None:
@@ -1138,7 +1145,7 @@ def command_sandbox(args: argparse.Namespace) -> None:
 
         args.mount = parse_workspace(args.workspace).openvmm_arguments()[1]
     if args.memory_mib is None:
-        args.memory_mib = 1024 if _hypervisor(args.hypervisor) == "hvf" else 256
+        args.memory_mib = 1024 if _arm_direct(_hypervisor(args.hypervisor)) else 256
     if _hypervisor(args.hypervisor) == "hvf":
         _require_apple_silicon("hvf")
     if operation in ("run", "provision", "exec") and (

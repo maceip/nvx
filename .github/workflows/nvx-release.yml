@@ -67,6 +67,10 @@ jobs:
             arch: aarch64
             backend: hvf
             runner: '["self-hosted","macOS","ARM64","nvx-hvf"]'
+          - platform: darwin-x86_64
+            arch: x86_64
+            backend: hvf
+            runner: '["self-hosted","macOS","X64","nvx-hvf"]'
           - platform: linux-arm64
             arch: aarch64
             backend: kvm
@@ -123,7 +127,7 @@ jobs:
       - run: python3 scripts/nvx.py build-openvmm --backend "$BACKEND"
       - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/release-proof
       - name: Sign and notarize macOS executable
-        if: matrix.platform == 'darwin-arm64'
+        if: startsWith(matrix.platform, 'darwin-')
         run: |
           test -n "$NVX_DEVELOPER_ID" && test -n "$NVX_NOTARY_PROFILE"
           codesign --force --options runtime --timestamp --sign "$NVX_DEVELOPER_ID" --entitlements openvmm/build_support/macos/entitlements.xml openvmm/target/release/openvmm
@@ -201,6 +205,9 @@ jobs:
           - platform: darwin-arm64
             backend: hvf
             runner: '["self-hosted","macOS","ARM64","nvx-hvf"]'
+          - platform: darwin-x86_64
+            backend: hvf
+            runner: '["self-hosted","macOS","X64","nvx-hvf"]'
           - platform: linux-arm64
             backend: kvm
             runner: '["self-hosted","Linux","ARM64","nvx-kvm"]'

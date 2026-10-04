@@ -65,7 +65,11 @@ def run(args: argparse.Namespace) -> int:
     if metadata.get("runtime") != "python":
         raise ScriptError("warm-pool benchmark requires a retained Python runtime")
     platform = args.platform or (
-        "darwin-arm64-hvf"
+        (
+            "darwin-arm64-hvf"
+            if host_platform.machine().lower() in ("aarch64", "arm64")
+            else "darwin-x86_64-hvf"
+        )
         if sys.platform == "darwin"
         else "linux-arm64-kvm"
         if host_platform.machine().lower() in ("aarch64", "arm64")

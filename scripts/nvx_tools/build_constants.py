@@ -114,6 +114,7 @@ class OpenVMMBuildConstants:
         "linux-musl": MUSL_RUST_TARGET,
         "windows-msvc": WINDOWS_RUST_TARGET,
         "macos-hvf": MACOS_RUST_TARGET,
+        "macos-intel-hvf": "x86_64-apple-darwin",
     }
     TEST_RUST_TARGETS: Final[dict[str, tuple[str, ...]]] = {
         "kvm": (GUEST_RUST_TARGET, UEFI_RUST_TARGET, MUSL_RUST_TARGET),

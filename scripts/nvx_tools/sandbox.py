@@ -269,7 +269,7 @@ class SandboxLaunch:
     def openvmm_arguments(
         self, backend: str = "kvm", *, architecture: str | None = None
     ) -> list[str]:
-        if backend == "hvf" or architecture == "aarch64":
+        if architecture == "aarch64" or (architecture is None and backend == "hvf"):
             arguments: list[str] = []
             for layer in self.ordered_layers():
                 arguments.extend(("--virtio-blk", f"file:{layer.path},ro"))
@@ -306,7 +306,7 @@ class SandboxLaunch:
         *,
         architecture: str | None = None,
     ) -> str:
-        arm = backend == "hvf" or architecture == "aarch64"
+        arm = architecture == "aarch64" or (architecture is None and backend == "hvf")
         if "\0" in user_command_line:
             raise ScriptError("kernel command line contains an embedded NUL")
         for token in user_command_line.split():
