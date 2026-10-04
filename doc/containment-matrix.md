@@ -22,9 +22,9 @@ Containment SHA-256: `762a6a4585457e68c1d6c71e7d3e97655a254e1bf489a22aaf7b05c576
 
 ## ARM Linux / KVM on the owned nested VM
 
-NVX `2131a1ea94b2e29ad56e5c193181feef06e708dd`; core `75b6560159c4ba903025ffd99dc3c95909002f49`.
+NVX `65329b2db8bb1a1fa10013816834306500468c51`; core `d591aaee1c5c10a10d8df85a48e865ec13031dc2`.
 
-Containment SHA-256: `d0d70ec204e07edc31f3d89dfbc3eeda4df9a30e73836a852a9079ce40f8d2e1`.
+Containment SHA-256: `904a601ed9ddc5061a9988ce3dfedd540f15898f153faae551b34ec81b75cf93`.
 
 | Probe family | Backend | Protected | Negative control | Scope |
 | --- | --- | --- | --- | --- |

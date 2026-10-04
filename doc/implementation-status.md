@@ -479,6 +479,20 @@ inspection/disassembly; that work is not part of the completion commits.
   `build/completion-event-reader-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`
   in the diagnostic checkout. Separate hosted ARM jobs again reject absent KVM,
   so the overall workflow conclusion is failure despite the accepted x86 job.
+- The fresh control-register correction repeat on the owned nested ARM/KVM VM
+  at NVX `65329b2` / core `d591aaee1` passes all nine acceptance gates after
+  storage recovery. First output is **202.97 ms p50**, completion **250.16 ms**,
+  cold first output **7365.71 ms**. The unchanged strict ten-point comparison
+  checks all three metrics with zero regressions. All eighteen supported
+  scenarios, eight containment families with opposite controls, four simulants,
+  MCP, image determinism and twenty repaired clones with both disabled controls
+  pass. Every exported file, gate log, containment schema/render and twenty raw
+  samples per metric are independently verified, with unchanged clean source
+  and actual executable. The accepted proof is
+  `build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/NVX-ACCEPTANCE.json`
+  in the isolated completion checkout. The first attempt's storage failure and
+  partial evidence remain retained separately. The nested host still exceeds
+  the roadmap's under-50-ms warm target.
 - The control-register correction's native Windows WHP repeat
   [37197876018](https://github.com/maceip/nvx/actions/runs/37197876018/job/111423514217)
   at NVX `65329b2` / core `d591aaee1` passes all nine acceptance gates.
@@ -637,13 +651,11 @@ inspection/disassembly; that work is not part of the completion commits.
    signed/notarized six-platform release and clean-host public download smoke.
 3. An SDK/MCP integration built and exercised by another person.
 
-Apple Silicon macOS, native Windows WHP and native x86 KVM repeats pass all nine
-acceptance gates with core `d591aaee1`. The earlier owned ARM/KVM strict repeat
-also passes all nine gates at its separately recorded revision. A new-core owned ARM run
-passed its scenario gate, then failed with I/O errors when host storage was
-exhausted. Its logs and source-bound partial evidence are retained. A fresh
-full repeat is running after storage recovery. Intel HVF is also still running;
-its runtime result is not yet established.
+Apple Silicon macOS, native Windows WHP, native x86 KVM and the owned nested
+ARM/KVM repeats pass all nine acceptance gates with core `d591aaee1`. The ARM
+repeat still exceeds the roadmap's under-50-ms warm target. Its preceding
+storage-failed attempt and partial evidence remain retained separately.
+Intel HVF is still running; its runtime result is not yet established.
 No missing runtime result, notarization, public publication or external integration
 is inferred from checked-in source or CI wiring. Snapshots remain architecture and
 backend bound. Credential snapshots exclude host proxy state and require a fresh
