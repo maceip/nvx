@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
 import statistics
 import subprocess
 import sys
@@ -58,6 +57,12 @@ def state(executable: Path) -> dict[str, str]:
 
 
 def main() -> None:
+    # Load only the already verified owned-payload cleanup before switching
+    # sources. Every runtime measurement runs the selected checkout in a fresh
+    # subprocess; this utility runs only after that measurement has completed.
+    sys.path.insert(0, str(Path("scripts").resolve()))
+    from nvx_tools.mcp import _remove_snapshot
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux-kvm", "windows-whp"), required=True)
     parser.add_argument("--full-proof", action="store_true")
@@ -135,7 +140,7 @@ def main() -> None:
                    "completed_template_payloads": payloads,
                    "payload_retirement": "completed templates removed after hashing; any failed template is retained"}
         (trial / "source-provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        shutil.rmtree(template)
+        _remove_snapshot(template)
         print("Completed source-bound history", revision, flush=True)
     subprocess.run(["git", "checkout", "--detach", head], check=True)
     state(executable)
