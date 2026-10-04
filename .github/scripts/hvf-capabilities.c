@@ -49,6 +49,30 @@ int main(void) {
     printf("write_guest_pat_vmcs=%#x\n", status);
     status = hv_vmx_vcpu_write_vmcs(cpu, 0x2806, 0);
     printf("write_guest_efer_vmcs=%#x\n", status);
+    const hv_vmx_capability_t fixed[] = {
+        HV_VMX_CAP_CR0_FIXED0, HV_VMX_CAP_CR0_FIXED1,
+        HV_VMX_CAP_CR4_FIXED0, HV_VMX_CAP_CR4_FIXED1,
+    };
+    for (size_t i = 0; i < sizeof(fixed) / sizeof(fixed[0]); i++) {
+        uint64_t value = 0;
+        status = hv_vmx_read_capability(fixed[i], &value);
+        printf("fixed_cap=%u status=%#x value=%#" PRIx64 "\n", fixed[i], status, value);
+    }
+    const uint32_t control_state[] = {0x6800, 0x6804, 0x6000, 0x6002, 0x6004, 0x6006};
+    for (unsigned phase = 0; phase < 2; phase++) {
+        if (phase) {
+            printf("clear_cr0_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6000, 0));
+            printf("clear_cr4_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6002, 0));
+            printf("write_unmasked_protected_cr0=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR0, 1));
+            printf("write_unmasked_protected_cr4=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR4, 0));
+        }
+        for (size_t i = 0; i < sizeof(control_state) / sizeof(control_state[0]); i++) {
+            uint64_t value = 0;
+            status = hv_vmx_vcpu_read_vmcs(cpu, control_state[i], &value);
+            printf("control_state phase=%u vmcs=%#x status=%#x value=%#" PRIx64 "\n",
+                   phase, control_state[i], status, value);
+        }
+    }
     status = hv_vcpu_destroy(cpu);
     printf("destroy_vcpu=%#x\n", status);
     hv_return_t vm_status = hv_vm_destroy();
