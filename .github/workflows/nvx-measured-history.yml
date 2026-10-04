@@ -1,0 +1,139 @@
+name: NVX source-bound native performance history
+
+on:
+  push:
+    branches: [completion/guest-stream-boundary]
+    paths: ['.github/workflows/nvx-measured-history.yml', '.github/scripts/measure-history.py']
+  workflow_dispatch:
+    inputs:
+      full_proof:
+        description: Run the full acceptance proof against the committed measured history
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/history-image-cache
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - uses: actions/download-artifact@v6
+        with:
+          name: hosted-linux-x86_64-build
+          run-id: 37180859127
+          github-token: ${{ github.token }}
+          path: .
+      - name: Admit the actual KVM host and verify the cached native guest
+        run: |
+          sudo modprobe kvm
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          chmod +x openvmm/target/release/openvmm
+          python3 scripts/nvx.py verify
+      - name: Measure the existing revisions or repeat full acceptance
+        env:
+          FULL_PROOF: ${{ github.event_name == 'workflow_dispatch' && inputs.full_proof }}
+        run: |
+          cp .github/scripts/measure-history.py build/measure-history.py
+          if [ "$FULL_PROOF" = true ]; then
+            python3 -u build/measure-history.py --platform linux-kvm --full-proof
+          else
+            python3 -u build/measure-history.py --platform linux-kvm
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: source-bound-linux-history
+          path: |
+            build/measured-history
+            build/measured-history-full-proof
+            build/history-image-cache/instances/*/openvmm.log
+          include-hidden-files: true
+          if-no-files-found: warn
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/history-image-cache
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements-dev.txt
+      - uses: actions/download-artifact@v6
+        with:
+          name: hosted-whp-build
+          run-id: 37180859116
+          github-token: ${{ github.token }}
+          path: .
+      - uses: actions/download-artifact@v6
+        with:
+          name: whp-x86-guest
+          run-id: 37180859116
+          github-token: ${{ github.token }}
+          path: build
+      - run: python scripts/nvx.py verify
+      - name: Set up the owned Linux OCI converter
+        id: converter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = python -c "import sys;sys.path.insert(0,'scripts');from nvx_tools.build_constants import AlpineBuildConstants as A;print(A.MINIROOTFS_URL)"
+          $expected = python -c "import sys;sys.path.insert(0,'scripts');from nvx_tools.build_constants import AlpineBuildConstants as A;print(A.MINIROOTFS_SHA256)"
+          $archive = Join-Path $env:RUNNER_TEMP alpine.tar.gz
+          Invoke-WebRequest $url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'WSL rootfs checksum mismatch' }
+          wsl --import NVX-Converter (Join-Path $env:RUNNER_TEMP nvx-converter) $archive --version 2
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 import failed' }
+          wsl -d NVX-Converter -u root --exec sh -c 'apk add --no-cache docker; (dockerd > /tmp/nvx-docker.log 2>&1 < /dev/null &) ; for attempt in $(seq 1 120); do docker info >/dev/null 2>&1 && exit 0; sleep 1; done; cat /tmp/nvx-docker.log; exit 1'
+          if ($LASTEXITCODE -ne 0) { throw 'OCI converter daemon failed' }
+          $wrapper = Join-Path $env:RUNNER_TEMP nvx-docker
+          New-Item -ItemType Directory $wrapper | Out-Null
+          $script = Join-Path $env:GITHUB_WORKSPACE .github/scripts/docker-wsl.py
+          Set-Content (Join-Path $wrapper docker.cmd) "@python `"$script`" %*"
+          $wrapper | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Measure the existing revisions or repeat full acceptance
+        shell: pwsh
+        env:
+          FULL_PROOF: ${{ github.event_name == 'workflow_dispatch' && inputs.full_proof }}
+        run: |
+          Copy-Item .github/scripts/measure-history.py build/measure-history.py
+          if ($env:FULL_PROOF -eq 'true') {
+            python -u build/measure-history.py --platform windows-whp --full-proof
+          } else {
+            python -u build/measure-history.py --platform windows-whp
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: source-bound-windows-history
+          path: |
+            build/measured-history
+            build/measured-history-full-proof
+            build/history-image-cache/instances/*/openvmm.log
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Stop the owned converter
+        if: always() && steps.converter.outcome != 'skipped'
+        shell: pwsh
+        run: wsl --terminate NVX-Converter
