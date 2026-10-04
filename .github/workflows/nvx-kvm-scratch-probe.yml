@@ -23,18 +23,7 @@ jobs:
         with:
           python-version: '3.10'
       - run: python3 -m pip install -r requirements-dev.txt
-      - name: Identify the pinned core
-        id: core
-        run: echo "revision=$(git -C openvmm rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
-        id: core-cache
-        with:
-          path: |
-            openvmm/target/release/openvmm
-            build/openvmm.provenance.json
-          key: kvm-x86_64-core-${{ steps.core.outputs.revision }}-${{ hashFiles('scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_constants.py', '.github/workflows/nvx-hosted-validation.yml') }}
-      - name: Reuse the exact completed native build across branch cache scopes
-        if: steps.core-cache.outputs.cache-hit != 'true'
+      - name: Reuse the completed pinned native core and guest artifacts
         uses: actions/download-artifact@v6
         with:
           name: hosted-linux-x86_64-build
@@ -43,7 +32,6 @@ jobs:
           path: .
       - name: Permit the downloaded native executable
         run: chmod +x openvmm/target/release/openvmm
-      - uses: ./.github/actions/build-guest
       - name: Admit an actual KVM VM
         run: |
           sudo modprobe kvm
