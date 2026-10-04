@@ -65,7 +65,7 @@ def run_image(
     if instance_id_file is not None:
         sandbox_lifecycle.validate_outcome_destination(instance_id_file)
     cache = ImageCache()
-    value, manifest = ensure(args.image)
+    value, manifest = ensure(args.image, quiet=instance_id_file is not None)
     from . import secrets as host_secrets
 
     secret_specs = getattr(args, "secret", ())

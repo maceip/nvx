@@ -434,7 +434,7 @@ def _atomic(path: Path, value: object) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def ensure(ref: str) -> tuple[str, dict[str, Any]]:
+def ensure(ref: str, *, quiet: bool = False) -> tuple[str, dict[str, Any]]:
     """Prepare a missing reference before any VM lease or launch is created."""
     cache = ImageCache()
     try:
@@ -442,12 +442,33 @@ def ensure(ref: str) -> tuple[str, dict[str, Any]]:
     except ScriptError as error:
         if ref.startswith("sha256:") or "image is not converted:" not in str(error):
             raise
-    print("Preparing OCI image " + ref, file=sys.stderr)
-    convert(ref, pull=True)
+    if quiet:
+        convert(ref, pull=True, quiet=True)
+    else:
+        print("Preparing OCI image " + ref, file=sys.stderr)
+        convert(ref, pull=True)
     return cache.resolve(ref)
 
 
-def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
+def _prepare_command(command: list[str], *, quiet: bool) -> None:
+    if not quiet:
+        subprocess.run(command, check=True, stdout=sys.stderr, stderr=sys.stderr)
+        return
+    # MCP's streams contain guest bytes. Keep successful host preparation quiet,
+    # while retaining a bounded, actionable diagnostic when preparation fails.
+    with tempfile.TemporaryFile() as log:
+        result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+        if result.returncode:
+            log.seek(max(0, log.tell() - 4000))
+            detail = log.read().decode(errors="replace")
+            raise ScriptError(
+                f"OCI {command[1]} failed ({result.returncode}):\n{detail}"
+            )
+
+
+def convert(
+    ref: str, *, pull: bool, curated_base: bool = False, quiet: bool = False
+) -> str:
     cache = ImageCache()
     docker = require_tool(
         "docker", "Docker with a Linux engine is required for OCI conversion"
@@ -455,15 +476,14 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
     arch = canonical_arch(platform.machine())
     docker_arch = "arm64" if arch == "aarch64" else "amd64"
     if pull:
-        subprocess.run(
+        _prepare_command(
             [docker, "pull", "--platform", f"linux/{docker_arch}", ref],
-            check=True,
-            stdout=sys.stderr,
+            quiet=quiet,
         )
     with tempfile.TemporaryDirectory(prefix="nvx-image-", dir=cache.root) as temporary:
         work = Path(temporary)
-        subprocess.run(
-            [docker, "save", "--output", str(work / "image.tar"), ref], check=True
+        _prepare_command(
+            [docker, "save", "--output", str(work / "image.tar"), ref], quiet=quiet
         )
         with (work / "convert.log").open("wb") as log:
             build = subprocess.run(

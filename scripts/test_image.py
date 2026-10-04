@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tarfile import TarInfo
 from tarfile import open as tar_open
@@ -50,6 +50,12 @@ class ImageTests(unittest.TestCase):
             def run(
                 arguments: list[str], **options: object
             ) -> subprocess.CompletedProcess[bytes]:
+                if arguments[1] in ("pull", "save"):
+                    output = options["stdout"]
+                    if isinstance(output, io.StringIO):
+                        output.write("host preparation progress\n")
+                    else:
+                        cast(BinaryIO, output).write(b"host preparation progress\n")
                 if arguments[1] == "run":
                     work = Path(
                         arguments[arguments.index("-v") + 1].removesuffix(":/out")
@@ -74,17 +80,56 @@ class ImageTests(unittest.TestCase):
                     )
                 return subprocess.CompletedProcess(arguments, 0)
 
-            output = io.StringIO()
+            for quiet in (False, True):
+                output, error = io.StringIO(), io.StringIO()
+                with (
+                    self.subTest(quiet=quiet),
+                    patch("nvx_tools.image.ImageCache", return_value=cache),
+                    patch("nvx_tools.image.require_tool", return_value="docker"),
+                    patch("nvx_tools.image.platform.machine", return_value="aarch64"),
+                    patch("nvx_tools.image.subprocess.run", side_effect=run),
+                    redirect_stdout(output),
+                    redirect_stderr(error),
+                ):
+                    value, _ = ensure("fixture:first-use:" + str(quiet), quiet=quiet)
+                self.assertTrue(value.startswith("sha256:"))
+                self.assertEqual(output.getvalue(), "")
+                if quiet:
+                    self.assertEqual(error.getvalue(), "")
+                else:
+                    self.assertIn("Preparing OCI image", error.getvalue())
+                    self.assertIn("host preparation progress", error.getvalue())
+
+    def test_quiet_preparation_failure_keeps_bounded_actionable_diagnostics(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = ImageCache(Path(directory))
+
+            def run(
+                command: list[str], **options: object
+            ) -> subprocess.CompletedProcess[bytes]:
+                self.assertEqual(command[1], "pull")
+                cast(BinaryIO, options["stdout"]).write(
+                    b"x" * 5000 + b"\nregistry denied\n"
+                )
+                return subprocess.CompletedProcess(command, 33)
+
+            output, error = io.StringIO(), io.StringIO()
             with (
                 patch("nvx_tools.image.ImageCache", return_value=cache),
                 patch("nvx_tools.image.require_tool", return_value="docker"),
                 patch("nvx_tools.image.platform.machine", return_value="aarch64"),
                 patch("nvx_tools.image.subprocess.run", side_effect=run),
                 redirect_stdout(output),
+                redirect_stderr(error),
             ):
-                value, _ = ensure("fixture:first-use")
-            self.assertTrue(value.startswith("sha256:"))
-            self.assertEqual(output.getvalue(), "")
+                with self.assertRaises(ScriptError) as caught:
+                    ensure("fixture:denied", quiet=True)
+            self.assertIn("OCI pull failed (33)", str(caught.exception))
+            self.assertIn("registry denied", str(caught.exception))
+            self.assertLess(len(str(caught.exception)), 4100)
+            self.assertEqual((output.getvalue(), error.getvalue()), ("", ""))
 
     def test_converter_setup_failure_preserves_the_actionable_reason(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
