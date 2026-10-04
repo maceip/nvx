@@ -479,6 +479,27 @@ inspection/disassembly; that work is not part of the completion commits.
   `build/completion-event-reader-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`
   in the diagnostic checkout. Separate hosted ARM jobs again reject absent KVM,
   so the overall workflow conclusion is failure despite the accepted x86 job.
+- The control-register correction's native Windows WHP repeat
+  [37197876018](https://github.com/maceip/nvx/actions/runs/37197876018/job/111423514217)
+  at NVX `65329b2` / core `d591aaee1` passes all nine acceptance gates.
+  First output is **23.88 ms p50**, completion **29.40 ms**, cold first output
+  **2366.26 ms**. The unchanged strict ten-point comparison checks all three
+  metrics with zero regressions. The native build, all four listener restore
+  regressions and all 138 clean-checkout Python tests also pass. The actual PE
+  executable, every gate-log hash, containment schema/render and twenty finite
+  raw samples per metric are independently verified in
+  `build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/NVX-ACCEPTANCE.json`.
+- The control-register correction's native x86 KVM repeat
+  [37197876063](https://github.com/maceip/nvx/actions/runs/37197876063/job/111423381901)
+  at NVX `65329b2` / core `d591aaee1` passes all nine acceptance gates.
+  First output is **16.28 ms p50**, completion **20.70 ms**, cold first output
+  **2003.75 ms**. The unchanged strict ten-point comparison checks all three
+  metrics with zero regressions. All gate-log hashes, containment schema/render,
+  twenty raw samples per metric and the actual clean-built native ELF are
+  independently verified in
+  `build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`.
+  The overall workflow fails because its hosted ARM runners lack usable KVM;
+  that hardware failure does not change the successful x86 job's result.
 - The newly compiled native ARM executable from `37186695364` passes doctor and
   a real seccomp protected/opposite control on the owned nested ARM/KVM VM at
   NVX `1afbb56` / core `4b20f45f1`. Clean source, executable digest and both logs
@@ -616,10 +637,13 @@ inspection/disassembly; that work is not part of the completion commits.
    signed/notarized six-platform release and clean-host public download smoke.
 3. An SDK/MCP integration built and exercised by another person.
 
-Native Windows, Apple Silicon macOS and native x86 KVM repeats pass all nine
-acceptance gates with core `f1f6019b7`. The earlier owned ARM/KVM strict repeat
-also passes all nine gates at its separately recorded revision. The Intel HVF
-repeat is still running; its runtime result is not yet established.
+Apple Silicon macOS, native Windows WHP and native x86 KVM repeats pass all nine
+acceptance gates with core `d591aaee1`. The earlier owned ARM/KVM strict repeat
+also passes all nine gates at its separately recorded revision. A new-core owned ARM run
+passed its scenario gate, then failed with I/O errors when host storage was
+exhausted. Its logs and source-bound partial evidence are retained. A fresh
+full repeat is running after storage recovery. Intel HVF is also still running;
+its runtime result is not yet established.
 No missing runtime result, notarization, public publication or external integration
 is inferred from checked-in source or CI wiring. Snapshots remain architecture and
 backend bound. Credential snapshots exclude host proxy state and require a fresh

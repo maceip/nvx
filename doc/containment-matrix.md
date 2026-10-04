@@ -39,11 +39,11 @@ Containment SHA-256: `d0d70ec204e07edc31f3d89dfbc3eeda4df9a30e73836a852a9079ce40
 
 ## Native x86 Linux / KVM
 
-NVX `de301089694241d606c46f5003f87edca6284686`; core `f1f6019b73a891b0cc9be381eba220750cfb9146`.
+NVX `65329b2db8bb1a1fa10013816834306500468c51`; core `d591aaee1c5c10a10d8df85a48e865ec13031dc2`.
 
-[Native run](https://github.com/maceip/nvx/actions/runs/37193112786/job/111409284539).
+[Native run](https://github.com/maceip/nvx/actions/runs/37197876063/job/111423381901).
 
-Containment SHA-256: `43fce254ecdd8b32867c4fe78ce108097ff80935474d610cb26a4e2de7a21775`.
+Containment SHA-256: `480199fce8b099da21cd4acf8a615633d677cf919a0fbb858eba6e208ea92154`.
 
 | Probe family | Backend | Protected | Negative control | Scope |
 | --- | --- | --- | --- | --- |
@@ -58,11 +58,11 @@ Containment SHA-256: `43fce254ecdd8b32867c4fe78ce108097ff80935474d610cb26a4e2de7
 
 ## Native Windows / WHP
 
-NVX `de301089694241d606c46f5003f87edca6284686`; core `f1f6019b73a891b0cc9be381eba220750cfb9146`.
+NVX `65329b2db8bb1a1fa10013816834306500468c51`; core `d591aaee1c5c10a10d8df85a48e865ec13031dc2`.
 
-[Native run](https://github.com/maceip/nvx/actions/runs/37193112844/job/111409310803).
+[Native run](https://github.com/maceip/nvx/actions/runs/37197876018/job/111423514217).
 
-Containment SHA-256: `de463d9ac0152fede5158295cc70b51b04653c792a9cf1d20ef53ea9836b11ff`.
+Containment SHA-256: `173cbc992775002a2c7cfc5515307af4a0614ab09e03fcb456ac1794de53b283`.
 
 | Probe family | Backend | Protected | Negative control | Scope |
 | --- | --- | --- | --- | --- |
