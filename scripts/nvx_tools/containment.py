@@ -212,7 +212,11 @@ print(json.dumps(dict(verdict=verdict,latency_ms=(time.monotonic()-start)*1000))
             "network-control",
             timeout,
             profile="risky",
-            extra=("--host-loopback", "allow"),
+            extra=(
+                ("--host-loopback", "allow")
+                if platform.machine().lower() in ("aarch64", "arm64")
+                else ()
+            ),
         )
         assert_pair(
             "network",

@@ -12,7 +12,7 @@ are recorded separately from that result.
 | # | Implemented behavior | Acceptance evidence and remaining gates |
 | --- | --- | --- |
 | 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF. KVM, Intel HVF, WHP and MSHV full runs are tracked below. |
-| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF protected probes and opposite controls pass. Linux ARM also passed these controls before its interrupted warm-clone run. All backend controls must pass. |
+| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF and Linux ARM full acceptance passes. Native x86 KVM/WHP policy probes also pass; their full batteries remain under test. All backend controls must pass. |
 | 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Three matching-platform bootstrap performance metrics are checked. Ten independent historical points have not accumulated; the trend gate remains Warmup. Other runtime shims require separate proof. |
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF and Linux ARM real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Other backend results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF and Linux ARM real credential isolation tests pass, including the leaking legacy-env control. Other backend results remain required. |
@@ -31,32 +31,34 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-rebuilt-guest-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `fe531e7fae0e8101948a0299ed191cdf4b505b1c` and core
+- `build/completion-prepared-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `6974b017a604f13cb6407cc04e86c5a60383a33a` and core
   `5c1f378cb94de28eba919c786d0a50e76f2d76f9`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **3.94 ms p50**, completion **5.89 ms**, cold first stdout **972.06 ms**.
+  **2.79 ms p50**, completion **4.26 ms**, cold first stdout **991.44 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-cold-preparation-offline.log`: **122 offline tests**, ruff clean.
+- `build/completion-loopback-control-offline.log`: **123 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-independent-offline.log` in the main checkout: **129 tests**
+- `build/completion-root-raw-network-offline.log` in the main checkout: **131 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
   and its rebuilt guest printed `NVX-REBUILT-ROOT-GUEST-OK`.
 - The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
-  The 20-request cold/warm benchmark measured first stdout **199.85 ms p50**,
-  completion **257.32 ms** and cold first stdout **7882.57 ms** on the nested
-  four-CPU, 6 GiB host. The gate refused zero-metric Warmup; those measurements
-  establish the first ARM baseline, and independent comparison remains required.
+  `build/completion-prepared-arm-evidence/NVX-ACCEPTANCE.json` records an independent
+  full acceptance run at the same NVX/core revisions as the Mac run above. Its
+  20-request cold/warm benchmark measured first stdout **184.98 ms p50**,
+  completion **233.92 ms** and cold first stdout **7620.74 ms** on the nested
+  four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
+  regressions against the earlier separately measured ARM baseline.
   An earlier failed run encountered host disk exhaustion.
 - Hosted Intel's native build, clippy, docs and core tests passed; its first timed
   guest probe timed out without guest logs. Windows native builds and doctor passed,
