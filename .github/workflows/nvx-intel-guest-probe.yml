@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: b7e30586722ff0228b071d49c129de53acb9df52
+          ref: 75c513f58d6f183fbea14fb8588360b7e6cf2a07
           persist-credentials: false
       - uses: ./.github/actions/checkout-openvmm
       - uses: actions/setup-python@v6
@@ -31,13 +31,13 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: hosted-intel-hvf-build
-          run-id: 37176187450
+          run-id: 37181535232
           github-token: ${{ github.token }}
           path: .
       - uses: actions/download-artifact@v6
         with:
           name: intel-macos-guest
-          run-id: 37176187450
+          run-id: 37181535232
           github-token: ${{ github.token }}
           path: build
       - name: Verify the exact completed source and executable
