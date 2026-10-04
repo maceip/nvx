@@ -15,7 +15,7 @@ permissions:
 jobs:
   scratch-snapshot:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/checkout-openvmm
@@ -30,8 +30,17 @@ jobs:
           run-id: 37176187417
           github-token: ${{ github.token }}
           path: .
-      - name: Permit the downloaded native executable
-        run: chmod +x openvmm/target/release/openvmm
+      - name: Build the pinned capture diagnostic when the reused core differs
+        run: |
+          chmod +x openvmm/target/release/openvmm
+          python3 - <<'PYTHON'
+          import json, subprocess
+          from pathlib import Path
+          pinned = subprocess.check_output(['git', '-C', 'openvmm', 'rev-parse', 'HEAD'], text=True).strip()
+          reused = json.loads(Path('build/openvmm.provenance.json').read_text())['source_revision']
+          if reused != pinned:
+              subprocess.run(['python3', 'scripts/nvx.py', 'build-openvmm', '--backend', 'kvm'], check=True)
+          PYTHON
       - name: Admit an actual KVM VM
         run: |
           sudo modprobe kvm
@@ -39,6 +48,8 @@ jobs:
           test -r /dev/kvm && test -w /dev/kvm
       - run: python3 scripts/nvx.py verify
       - name: Repeat scratch snapshots ten times with capture integrity and retained failures
+        env:
+          OPENVMM_STARTUP_PROFILE: '1'
         run: |
           for trial in $(seq 1 10); do
             python3 scripts/nvx.py test-microvm --backend kvm --scenario scratch-snapshot --output-dir "build/scratch-probe/repeat-$trial"
