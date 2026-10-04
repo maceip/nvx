@@ -30,7 +30,7 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: hosted-whp-build
-          run-id: 37177040092
+          run-id: 37179030537
           github-token: ${{ github.token }}
           path: .
       - uses: actions/download-artifact@v6
@@ -68,9 +68,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Native corrected core build failed' }
           }
       - run: python scripts/nvx.py verify
-      - name: Native restore broker regressions
-        working-directory: openvmm
-        run: cargo test --release -p virtio_console broker_restore
       - uses: actions/upload-artifact@v7
         with:
           name: hosted-whp-build
@@ -90,6 +87,18 @@ jobs:
             build/hosted-image-cache/instances/*/openvmm.log
           if-no-files-found: warn
           include-hidden-files: true
+      - name: Restore native regression build prerequisites
+        if: always()
+        working-directory: openvmm
+        run: cargo xflowey restore-packages --no-compat-igvm
+      - name: Native restore broker regressions
+        if: always()
+        working-directory: openvmm
+        run: cargo test --release -p virtio_console broker_restore
+      - name: Native slow-copy clock regression
+        if: always()
+        working-directory: openvmm
+        run: cargo test --release -p openvmm_entry snapshot_restore_clock_includes_private_ram_materialization
       - name: Stop the owned converter
         if: always() && steps.converter.outcome != 'skipped'
         shell: pwsh

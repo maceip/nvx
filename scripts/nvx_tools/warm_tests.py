@@ -40,7 +40,20 @@ def validate_clone(
             or result["uid"] != 65534
             or result["channel"] != "denied"
         ):
-            raise ScriptError("warm clone repair or private runtime channel failed")
+            details = {
+                "mid": result["mid"],
+                "generation": generation,
+                "hostname": result["hostname"],
+                "clock": result["clock"],
+                "host_before": before,
+                "host_after": after,
+                "uid": result["uid"],
+                "channel": result["channel"],
+            }
+            raise ScriptError(
+                "warm clone repair or private runtime channel failed: "
+                + json.dumps(details, sort_keys=True)
+            )
     elif result["mid"] == generation:
         raise ScriptError("disabled repair control unexpectedly passed")
 
@@ -89,6 +102,7 @@ print(json.dumps(dict(origin=builtins.__nvx_warm_start__,initialized='http.clien
 """
     records: list[dict[str, Any]] = []
     controls: list[dict[str, Any]] = []
+    progress: list[dict[str, Any]] = []
     try:
         for repair, count, label in ((True, 20, "repaired"), (False, 2, "disabled")):
             template = output / label
@@ -132,6 +146,18 @@ print(json.dumps(dict(origin=builtins.__nvx_warm_start__,initialized='http.clien
                         raise ScriptError("warm clone workload failed")
                     result: dict[str, Any] = json.loads(executed.stdout)
                     result.update(id=state.name, generation=generation, clone=index)
+                    progress.append(
+                        {
+                            "repair": repair,
+                            "source_generation": metadata["source_generation"],
+                            "host_before": before,
+                            "host_after": after,
+                            "result": result,
+                        }
+                    )
+                    (output / "progress.json").write_text(
+                        json.dumps(progress, indent=2) + "\n"
+                    )
                     validate_clone(
                         result,
                         generation,
