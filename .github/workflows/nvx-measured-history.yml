@@ -1,13 +1,14 @@
 name: NVX source-bound native performance history
 
 on:
-  push:
-    branches: [completion/guest-stream-boundary]
-    paths: ['.github/workflows/nvx-measured-history.yml', '.github/scripts/measure-history.py']
   workflow_dispatch:
     inputs:
       full_proof:
         description: Run the full acceptance proof against the committed measured history
+        type: boolean
+        default: false
+      linux_diagnostic:
+        description: Diagnose pool refill on the exact failing source; timings are not history
         type: boolean
         default: false
 
@@ -47,9 +48,12 @@ jobs:
       - name: Measure the existing revisions or repeat full acceptance
         env:
           FULL_PROOF: ${{ github.event_name == 'workflow_dispatch' && inputs.full_proof }}
+          DIAGNOSTIC: ${{ inputs.linux_diagnostic }}
         run: |
           cp .github/scripts/measure-history.py build/measure-history.py
-          if [ "$FULL_PROOF" = true ]; then
+          if [ "$DIAGNOSTIC" = true ]; then
+            python3 -u build/measure-history.py --platform linux-kvm --diagnostic
+          elif [ "$FULL_PROOF" = true ]; then
             python3 -u build/measure-history.py --platform linux-kvm --full-proof
           else
             python3 -u build/measure-history.py --platform linux-kvm
@@ -61,10 +65,15 @@ jobs:
           path: |
             build/measured-history
             build/measured-history-full-proof
+            build/pool-refill-diagnostic
+            build/history-image-cache/pools/**/*.txt
+            build/history-image-cache/pools/**/*.log
+            build/history-image-cache/pools/**/*.json
             build/history-image-cache/instances/*/openvmm.log
           include-hidden-files: true
           if-no-files-found: warn
   windows:
+    if: ${{ !inputs.linux_diagnostic }}
     runs-on: windows-2025
     timeout-minutes: 120
     env:
@@ -130,6 +139,9 @@ jobs:
           path: |
             build/measured-history
             build/measured-history-full-proof
+            build/history-image-cache/pools/**/*.txt
+            build/history-image-cache/pools/**/*.log
+            build/history-image-cache/pools/**/*.json
             build/history-image-cache/instances/*/openvmm.log
           include-hidden-files: true
           if-no-files-found: warn

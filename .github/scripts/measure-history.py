@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -66,7 +67,30 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux-kvm", "windows-whp"), required=True)
     parser.add_argument("--full-proof", action="store_true")
+    parser.add_argument("--diagnostic", action="store_true")
     args = parser.parse_args()
+    if args.diagnostic:
+        # Diagnostics retain causal worker stacks without editing the selected
+        # source. Their instrumented timings are never collected as history.
+        hook = Path("build/pool-refill-hook").resolve()
+        hook.mkdir()
+        (hook / "sitecustomize.py").write_text(
+            "import traceback\n"
+            "from nvx_tools import pool,warm\n"
+            "def trace(function):\n"
+            " def call(*args,**kwargs):\n"
+            "  try:return function(*args,**kwargs)\n"
+            "  except Exception:\n"
+            "   traceback.print_exc()\n"
+            "   raise\n"
+            " return call\n"
+            "warm.clone=trace(warm.clone)\n"
+            "pool._close=trace(pool._close)\n"
+        )
+        os.environ["PYTHONPATH"] = os.pathsep.join(
+            [str(hook), str(Path("scripts").resolve()), os.environ.get("PYTHONPATH", "")]
+        )
+        os.environ["OPENVMM_STARTUP_PROFILE"] = "1"
     backend = "kvm" if args.platform == "linux-kvm" else "whp"
     executable = Path("openvmm/target/release") / (
         "openvmm.exe" if backend == "whp" else "openvmm"
@@ -80,10 +104,11 @@ def main() -> None:
             check=True,
         )
         return
-    revisions = [*REVISIONS, head]
-    if len(set(revisions)) != 10:
+    revisions = REVISIONS[:1] if args.diagnostic else [*REVISIONS, head]
+    runs = 100 if args.diagnostic else 20
+    if not args.diagnostic and len(set(revisions)) != 10:
         raise RuntimeError("history needs ten distinct existing source revisions")
-    out = Path("build/measured-history").resolve()
+    out = Path("build/pool-refill-diagnostic" if args.diagnostic else "build/measured-history").resolve()
     out.mkdir()
     # The first exact-core Windows diagnostic is on its own existing branch.
     # Preserve its real revision rather than relabeling it as a main-branch run.
@@ -94,18 +119,21 @@ def main() -> None:
         before = state(executable)
         trial = out / revision[:12]
         trial.mkdir()
+        (trial / "source-before.json").write_text(json.dumps(before, indent=2) + "\n")
         template = trial / "template"
         commands = [
             ("doctor", ["doctor", "--backend", backend, "--json"]),
             ("warm", ["warm", "--image", "python:3.12-slim", "--backend", backend,
                       "--output", str(template)]),
             ("benchmark", ["benchmark", "--suite", "warm-pool", "--backend", backend,
-                           "--template", str(template), "--runs", "20", "--timeout", "120",
+                           "--template", str(template), "--runs", str(runs), "--timeout", "120",
                            "--platform", args.platform, "--output", str(trial / "benchmark.json")]),
             ("collect", ["performance", "collect-warm", "--platform", args.platform,
                          "--commit", revision, "--input", str(trial / "benchmark.json"),
                          "--output-dir", str(trial / "performance")]),
         ]
+        if args.diagnostic:
+            commands = commands[:-1]
         steps = []
         for name, arguments in commands:
             print("Measured history", revision, name, flush=True)
@@ -119,15 +147,25 @@ def main() -> None:
                           "log_sha256": digest(log)})
             (trial / "progress.json").write_text(json.dumps(steps, indent=2) + "\n")
             if result.returncode:
+                pools = Path(os.environ["NVX_IMAGE_CACHE"]) / "pools"
+                errors = []
+                for error in sorted(pools.rglob("refill-error-*.txt")):
+                    if error.is_file() and not error.is_symlink():
+                        detail = error.read_text(errors="replace")[-4096:]
+                        errors.append({"path": str(error.relative_to(pools)), "detail": detail})
+                        print("Retained refill failure:", detail, flush=True)
+                failure = {"before": before, "after": state(executable), "failed_step": name,
+                           "pool_refill_errors": errors}
+                (trial / "failure-evidence.json").write_text(json.dumps(failure, indent=2) + "\n")
                 raise RuntimeError(f"{revision} {name} failed; original payload retained at {trial}")
         after = state(executable)
         if before != after:
             raise RuntimeError("source or executable changed during measurement")
         benchmark = json.loads((trial / "benchmark.json").read_bytes())
-        if benchmark["runs"] != 20 or benchmark["pool_size"] != 2:
+        if benchmark["runs"] != runs or benchmark["pool_size"] != 2:
             raise RuntimeError("unexpected canonical benchmark configuration")
         for metric in benchmark["metrics"].values():
-            if len(metric["samples_ms"]) != 20 or abs(
+            if len(metric["samples_ms"]) != runs or abs(
                 statistics.median(metric["samples_ms"]) - metric["p50_ms"]
             ) > 1e-7:
                 raise RuntimeError("benchmark sample or median mismatch")
@@ -136,7 +174,7 @@ def main() -> None:
                     for p in template.rglob("*") if p.is_file() and not p.is_symlink()]
         receipt = {"before": before, "after": after, "steps": steps,
                    "benchmark_sha256": digest(trial / "benchmark.json"),
-                   "acceptance_scope": "twenty cold and twenty warm canonical requests; not full runtime acceptance",
+                   "acceptance_scope": "diagnostic only; never performance history" if args.diagnostic else "twenty cold and twenty warm canonical requests; not full runtime acceptance",
                    "completed_template_payloads": payloads,
                    "payload_retirement": "completed templates removed after hashing; any failed template is retained"}
         (trial / "source-provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")
