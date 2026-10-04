@@ -1,0 +1,74 @@
+name: NVX source-bound Intel HVF performance history
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  intel-history:
+    runs-on: macos-26-intel
+    timeout-minutes: 180
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/history-image-cache
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - uses: actions/download-artifact@v6
+        with:
+          name: intel-macos-guest
+          run-id: 37190449136
+          github-token: ${{ github.token }}
+          path: build
+      - name: Identify the pinned native core
+        id: core
+        run: echo "revision=$(git -C openvmm rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: core-cache
+        with:
+          path: |
+            openvmm/target/release/openvmm
+            build/openvmm.provenance.json
+          key: intel-hvf-core-${{ steps.core.outputs.revision }}-${{ hashFiles('scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_constants.py', '.github/workflows/nvx-hosted-intel-macos.yml') }}
+          fail-on-cache-miss: true
+      - name: Verify the cached native executable and matching guest
+        run: |
+          test "$(uname -m)" = x86_64
+          codesign --verify --strict openvmm/target/release/openvmm
+          python3 scripts/nvx.py verify
+      - name: Start the owned Linux OCI converter
+        id: converter
+        timeout-minutes: 15
+        run: |
+          brew install colima docker qemu
+          colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
+          docker info
+      - name: Measure ten existing source revisions
+        run: |
+          cp .github/scripts/measure-history.py build/measure-history.py
+          python3 -u build/measure-history.py --platform darwin-x86_64
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: source-bound-intel-history
+          path: |
+            build/measured-history
+            build/history-image-cache/pools/**/*.txt
+            build/history-image-cache/pools/**/*.log
+            build/history-image-cache/pools/**/*.json
+            build/history-image-cache/instances/*/openvmm.log
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Stop the owned converter
+        if: always() && steps.converter.outcome != 'skipped'
+        run: colima stop nvx-converter

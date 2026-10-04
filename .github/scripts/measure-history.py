@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import statistics
 import subprocess
 import sys
@@ -13,6 +14,12 @@ import time
 from pathlib import Path
 
 CORE = "75b6560159c4ba903025ffd99dc3c95909002f49"
+INTEL_CORE = "f1f6019b73a891b0cc9be381eba220750cfb9146"
+PLATFORMS = {
+    "linux-kvm": ("kvm", CORE),
+    "windows-whp": ("whp", CORE),
+    "darwin-x86_64": ("hvf", INTEL_CORE),
+}
 DIAGNOSTIC_REVISION = "0244ae555630f309929a46af666d5d11e3a08d54"
 REVISIONS = [
     "2131a1ea94b2e29ad56e5c193181feef06e708dd",
@@ -25,18 +32,33 @@ REVISIONS = [
     "5854598dd1cd238005b2e4cb61e1d74c1bc5d8a1",
     "8a0f6474a72414a10d9c0ce8976de76750016053",
 ]
+INTEL_REVISIONS = [
+    "6521f01bfc0e86641da3b221e823cbae24828cd2",
+    "34e31a73ffbfd1405583f3d6f04dde6b978fe2cc",
+    "7c7f7239c7abc046fd4ec352e4e794670b07dae9",
+    "981b974b605b87221b6ad17574848f8f2d012718",
+    "3d72943db7a1395bd1f2e2d0bd051cd628af9d62",
+    "328145980d2293064793cf5cb7063101f5d692e0",
+    "1878a06c1db1005cd10e8dbbc1670a01c4ca1bda",
+    "e78e18170dc20994226e4c172670761bc7670a6f",
+    "de301089694241d606c46f5003f87edca6284686",
+    "9e3d52c1219d10e0482031594e260fd1f618fc54",
+]
 
 
 def digest(path: Path) -> str:
+    value = hashlib.sha256()
     with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+        for chunk in iter(lambda: source.read(1 << 20), b""):
+            value.update(chunk)
+    return value.hexdigest()
 
 
 def git(*arguments: str) -> str:
     return subprocess.check_output(["git", *arguments], text=True).strip()
 
 
-def state(executable: Path) -> dict[str, str]:
+def state(executable: Path, core: str) -> dict[str, str]:
     value = {
         "nvx_revision": git("rev-parse", "HEAD"),
         "core_revision": git("-C", "openvmm", "rev-parse", "HEAD"),
@@ -48,9 +70,9 @@ def state(executable: Path) -> dict[str, str]:
     if (
         value["nvx_status"]
         or value["core_status"]
-        or value["core_revision"] != CORE
-        or git("ls-tree", "HEAD", "openvmm").split()[2] != CORE
-        or metadata["source_revision"] != CORE
+        or value["core_revision"] != core
+        or git("ls-tree", "HEAD", "openvmm").split()[2] != core
+        or metadata["source_revision"] != core
         or metadata["source_clean"] is not True
         or metadata["executable_sha256"] != value["core_executable_sha256"]
     ):
@@ -66,13 +88,19 @@ def main() -> None:
     from nvx_tools.mcp import _remove_snapshot
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--platform", choices=("linux-kvm", "windows-whp"), required=True)
+    parser.add_argument("--platform", choices=tuple(PLATFORMS), required=True)
     parser.add_argument("--full-proof", action="store_true")
     parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--revision", help="Measure one existing ancestor revision")
     args = parser.parse_args()
     if args.revision and (args.full_proof or args.diagnostic):
         parser.error("a single revision cannot be combined with a different proof mode")
+    if args.diagnostic and args.platform != "linux-kvm":
+        parser.error("the pool-refill diagnostic requires Linux KVM")
+    if args.platform == "darwin-x86_64" and (
+        sys.platform != "darwin" or platform.machine() != "x86_64"
+    ):
+        raise RuntimeError("Intel history requires a native x86_64 macOS host")
     if args.diagnostic:
         # Diagnostics retain causal worker stacks without editing the selected
         # source. Their instrumented timings are never collected as history.
@@ -95,12 +123,13 @@ def main() -> None:
             [str(hook), str(Path("scripts").resolve()), os.environ.get("PYTHONPATH", "")]
         )
         os.environ["OPENVMM_STARTUP_PROFILE"] = "1"
-    backend = "kvm" if args.platform == "linux-kvm" else "whp"
+    backend, core = PLATFORMS[args.platform]
+    series = "darwin-x86_64-hvf" if backend == "hvf" else args.platform
     executable = Path("openvmm/target/release") / (
         "openvmm.exe" if backend == "whp" else "openvmm"
     )
     head = git("rev-parse", "HEAD")
-    state(executable)
+    state(executable, core)
     if args.full_proof:
         subprocess.run(
             [sys.executable, "scripts/release-proof.py", "--platform", args.platform,
@@ -113,7 +142,12 @@ def main() -> None:
         subprocess.run(["git", "merge-base", "--is-ancestor", revision, head], check=True)
         revisions = [revision]
     else:
-        revisions = [DIAGNOSTIC_REVISION] if args.diagnostic else [*REVISIONS, head]
+        if args.diagnostic:
+            revisions = [DIAGNOSTIC_REVISION]
+        elif backend == "hvf":
+            revisions = INTEL_REVISIONS
+        else:
+            revisions = [*REVISIONS, head]
     runs = 100 if args.diagnostic else 20
     if not args.diagnostic and not args.revision and len(set(revisions)) != 10:
         raise RuntimeError("history needs ten distinct existing source revisions")
@@ -122,12 +156,16 @@ def main() -> None:
     if args.diagnostic:
         # This source is on a separate diagnostic branch and is never a baseline.
         subprocess.run(["git", "fetch", "https://github.com/maceip/nvx.git", DIAGNOSTIC_REVISION], check=True)
+    # Reject incompatible sources before moving HEAD or collecting any samples.
     for revision in revisions:
         subprocess.run(["git", "cat-file", "-e", revision + "^{commit}"], check=True)
         if not args.diagnostic:
             subprocess.run(["git", "merge-base", "--is-ancestor", revision, head], check=True)
+        if git("ls-tree", revision, "openvmm").split()[2] != core:
+            raise RuntimeError(f"{revision}: history source pins another core")
+    for revision in revisions:
         subprocess.run(["git", "checkout", "--detach", revision], check=True)
-        before = state(executable)
+        before = state(executable, core)
         trial = out / revision[:12]
         trial.mkdir()
         (trial / "source-before.json").write_text(json.dumps(before, indent=2) + "\n")
@@ -138,8 +176,8 @@ def main() -> None:
                       "--output", str(template)]),
             ("benchmark", ["benchmark", "--suite", "warm-pool", "--backend", backend,
                            "--template", str(template), "--runs", str(runs), "--timeout", "120",
-                           "--platform", args.platform, "--output", str(trial / "benchmark.json")]),
-            ("collect", ["performance", "collect-warm", "--platform", args.platform,
+                           "--platform", series, "--output", str(trial / "benchmark.json")]),
+            ("collect", ["performance", "collect-warm", "--platform", series,
                          "--commit", revision, "--input", str(trial / "benchmark.json"),
                          "--output-dir", str(trial / "performance")]),
         ]
@@ -165,11 +203,11 @@ def main() -> None:
                         detail = error.read_text(errors="replace")[-4096:]
                         errors.append({"path": str(error.relative_to(pools)), "detail": detail})
                         print("Retained refill failure:", detail, flush=True)
-                failure = {"before": before, "after": state(executable), "failed_step": name,
+                failure = {"before": before, "after": state(executable, core), "failed_step": name,
                            "pool_refill_errors": errors}
                 (trial / "failure-evidence.json").write_text(json.dumps(failure, indent=2) + "\n")
                 raise RuntimeError(f"{revision} {name} failed; original payload retained at {trial}")
-        after = state(executable)
+        after = state(executable, core)
         if before != after:
             raise RuntimeError("source or executable changed during measurement")
         benchmark = json.loads((trial / "benchmark.json").read_bytes())
@@ -192,7 +230,7 @@ def main() -> None:
         _remove_snapshot(template)
         print("Completed source-bound history", revision, flush=True)
     subprocess.run(["git", "checkout", "--detach", head], check=True)
-    state(executable)
+    state(executable, core)
 
 
 if __name__ == "__main__":
