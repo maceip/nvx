@@ -97,9 +97,9 @@ jobs:
         if: steps.core-cache.outputs.cache-hit != 'true'
         working-directory: openvmm
         run: |
-          cargo clippy --all-targets -p virt_mshv -p net_backend_resources
-          cargo doc --no-deps -p virt_mshv -p net_backend_resources
-          cargo test -p virt_mshv -p net_backend_resources
+          cargo clippy --all-targets -p virt_mshv -p net_backend_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
+          cargo doc --no-deps -p virt_mshv -p net_backend_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
+          cargo test -p virt_mshv -p net_backend_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
       - uses: actions/cache/save@v4
         if: steps.build-core.conclusion == 'success' && steps.check-core.conclusion == 'success' && steps.core-cache.outputs.cache-hit != 'true'
         with:

@@ -13,6 +13,21 @@ from nvx_tools.sandbox import SandboxLaunch, SandboxLayer
 
 
 class HvfTests(unittest.TestCase):
+    def test_x86_paired_restore_uses_snapshot_scratch_and_workload_identity(
+        self,
+    ) -> None:
+        launch = SandboxLaunch(
+            (SandboxLayer("custom", Path("/layer"), "c"),), Path("/scratch")
+        )
+        for backend in ("hvf", "kvm", "mshv", "whp"):
+            args = launch.openvmm_arguments(
+                backend, architecture="x86_64", restore=True
+            )
+            self.assertEqual(args[:2], ["--machine", "microvm"])
+            self.assertNotIn("--microvm-workload-identity", args)
+            self.assertNotIn("scratch:file:/scratch", args)
+            self.assertIn("custom:file:/layer,ro", args)
+
     def test_fixture_rejects_stale_source_or_archive_before_running_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

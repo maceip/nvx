@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shlex
 import shutil
 import subprocess
@@ -176,8 +177,14 @@ def capture(
         (state / "versions.json").write_bytes(
             canonical(receipt.versions(manifest["architecture"]))
         )
+        microvm_snapshot = platform.machine().lower() not in ("aarch64", "arm64")
+        snapshot = output / "snapshot"
         process = lifecycle.start(
-            state, timeout, memory_backing=output / "source-ram.bin", keep_stdin=True
+            state,
+            timeout,
+            memory_backing=output / "source-ram.bin",
+            keep_stdin=True,
+            snapshot_destination=snapshot if microvm_snapshot else None,
         )
         command = workload_argv(manifest, prelude or ("/bin/true",), proxy_environment)
         result = lifecycle.exec_workload(
@@ -193,24 +200,35 @@ def capture(
             Path(running["control_endpoint"]), capability, timeout
         ) as session:
             source_generation = session.generation(timeout)
-            session.warm(timeout, repair=repair, runtime=runtime_argv)
-        snapshot = output / "snapshot"
-        _repl(
-            process,
-            state,
-            "snap " + shlex.quote(str(snapshot)),
-            b"snapshot saved",
-            timeout,
-        )
+            session.warm(
+                timeout,
+                repair=repair,
+                runtime=runtime_argv,
+                microvm_snapshot=microvm_snapshot,
+            )
+        if microvm_snapshot:
+            if process.wait(timeout=timeout):
+                raise lifecycle.startup_failure(
+                    state / "openvmm.log", process.returncode
+                )
+        else:
+            _repl(
+                process,
+                state,
+                "snap " + shlex.quote(str(snapshot)),
+                b"snapshot saved",
+                timeout,
+            )
         report = verify_snapshot(snapshot)
         if report.version != 6:
             raise ScriptError("warm templates require integrity-bearing snapshot v6")
         shutil.copyfile(scratch, output / "scratch.ext4")
         os.chmod(output / "scratch.ext4", 0o400)
-        assert process.stdin is not None
-        process.stdin.write(b"quit\n")
-        process.stdin.flush()
-        process.wait(timeout=timeout)
+        if not microvm_snapshot:
+            assert process.stdin is not None
+            process.stdin.write(b"quit\n")
+            process.stdin.flush()
+            process.wait(timeout=timeout)
         lifecycle.cleanup_endpoint(running)
         for name in ("runtime.json", "control.capability", "control.sock"):
             (state / name).unlink(missing_ok=True)
@@ -230,6 +248,8 @@ def capture(
                 "snapshot/memory.bin",
             )
         }
+        if microvm_snapshot:
+            files["snapshot/scratch.img"] = sha256_file(snapshot / "scratch.img")
         document: dict[str, Any] = {
             "warm_version": 1,
             "owner": owner,
@@ -302,6 +322,8 @@ def admit(template: Path, backend: str | None = None) -> dict[str, Any]:
         "snapshot/state.bin",
         "snapshot/memory.bin",
     }
+    if document["architecture"] == "x86_64":
+        required.add("snapshot/scratch.img")
     if set(document["files"]) != required:
         raise ScriptError("warm template has an invalid inventory")
     for name, expected in document["files"].items():

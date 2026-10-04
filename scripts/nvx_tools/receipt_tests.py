@@ -77,7 +77,7 @@ print(json.dumps(result))
             if result != {"allowed": "ok", "denied": 111}:
                 raise ScriptError(f"collector verdict failed: {result}")
             stderr = (output / f"{label}.stderr").read_bytes()
-            match = re.search(rb"^NVX-ID: ([0-9a-f]{32})$", stderr, re.M)
+            match = re.search(rb"^NVX-ID: ([0-9a-f]{32})\r?$", stderr, re.M)
             if match is None:
                 raise ScriptError("missing instance ID")
             state = ImageCache().root / "instances" / match[1].decode()

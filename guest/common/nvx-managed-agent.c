@@ -1021,9 +1021,14 @@ static int handle_data_record(
     }
     case APP_WARM: {
         if (config->direct || request.payload_len < 2 || request.payload[1] > 1 ||
-            (request.payload[0] != 1 && request.payload[0] != 2) || warm_child > 0)
+            (request.payload[0] != 1 && request.payload[0] != 2 &&
+             request.payload[0] != 5 && request.payload[0] != 6) || warm_child > 0)
             return send_app_error(session, request.request_id, 22, "invalid-warm-request");
-        if (request.payload[0] == 2) {
+#ifndef __x86_64__
+        if (request.payload[0] & 4)
+            return send_app_error(session, request.request_id, 22, "invalid-warm-request");
+#endif
+        if ((request.payload[0] & 3) == 2) {
             if (decode_exec_payload(request.payload + 2, request.payload_len - 2, &timeout_ms, &workload_argv))
                 return send_app_error(session, request.request_id, 22, "invalid-warm-runtime");
             int launched = start_warm_runtime(config, workload_argv);
@@ -1044,6 +1049,24 @@ static int handle_data_record(
         close(scratch);
         if (send_app_frame(session, APP_READY, request.request_id, 0, "warm-v1", 7) != 0) return -1;
         tcdrain(session->fd);
+        if (request.payload[0] & 4) {
+#ifdef __x86_64__
+            /* The microVM host captures at its guest PMIO boundary. Scratch
+             * is already frozen and the retained runtime is idle. The write
+             * only returns in a restored clone or after a rejected capture. */
+            pid_t snapshot = fork();
+            if (snapshot < 0) return -1;
+            if (!snapshot) {
+                execl("/sbin/nvx-port-io", "nvx-port-io", "write-u8", "1541", "1", (char *)NULL);
+                _exit(125);
+            }
+            int snapshot_status;
+            if (waitpid(snapshot, &snapshot_status, 0) != snapshot ||
+                !WIFEXITED(snapshot_status) || WEXITSTATUS(snapshot_status)) return -1;
+#else
+            return -1;
+#endif
+        }
         pid_t repair = fork();
         if (repair < 0) return -1;
         if (repair == 0) {

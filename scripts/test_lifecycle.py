@@ -19,6 +19,7 @@ from nvx_tools.sandbox_lifecycle import (
     microvm_network_endpoint,
     provision,
     sealed_capability_pipe,
+    start,
     startup_failure,
 )
 
@@ -39,6 +40,10 @@ class LifecycleTests(unittest.TestCase):
                 ),
                 scratch,
             )
+
+            def artifact_file(path: Path, _label: str) -> Path:
+                return path
+
             with patch(
                 "nvx_tools.sandbox_lifecycle.platform.machine", return_value="x86_64"
             ):
@@ -64,6 +69,33 @@ class LifecycleTests(unittest.TestCase):
                     self.assertEqual(config["net"], "192.168.127.2/24")
                     self.assertEqual(config["network_profile"], "portable")
                     self.assertEqual(config["network_egress"], "deny")
+                    process = MagicMock(spec=subprocess.Popen)
+                    process.pid = 201
+                    process.poll.return_value = None
+                    with (
+                        patch(
+                            "nvx_tools.sandbox_lifecycle.require_file",
+                            side_effect=artifact_file,
+                        ),
+                        patch(
+                            "nvx_tools.sandbox_lifecycle.subprocess.Popen",
+                            return_value=process,
+                        ) as spawn,
+                        patch("nvx_tools.sandbox_lifecycle.connect_when_ready"),
+                    ):
+                        start(state, 5, restore=Path("/snapshot"))
+                    args = spawn.call_args.args[0]
+                    for flag in (
+                        "--microvm-lifecycle",
+                        "--microvm-workload-identity",
+                        "--memory",
+                        "--net",
+                        "--network-profile",
+                    ):
+                        self.assertNotIn(flag, args)
+                    self.assertIn("--network-egress", args)
+                    self.assertIn("--restore-snapshot", args)
+                    self.assertIn("--restore-entropy", args)
 
     @unittest.skipIf(os.name == "nt", "Unix control transport regression")
     def test_cold_start_retains_waiting_attachment_until_guest_is_ready(self) -> None:

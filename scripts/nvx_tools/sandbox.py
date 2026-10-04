@@ -267,7 +267,11 @@ class SandboxLaunch:
         return tuple(by_role[role] for role in LAYER_ROLES if role in by_role)
 
     def openvmm_arguments(
-        self, backend: str = "kvm", *, architecture: str | None = None
+        self,
+        backend: str = "kvm",
+        *,
+        architecture: str | None = None,
+        restore: bool = False,
     ) -> list[str]:
         if architecture == "aarch64" or (architecture is None and backend == "hvf"):
             arguments: list[str] = []
@@ -285,16 +289,17 @@ class SandboxLaunch:
                     f"{layer.role}:file:{os.fspath(layer.path)},ro",
                 )
             )
-        arguments.extend(
-            (
-                "--microvm-sandbox-block",
-                f"scratch:file:{os.fspath(self.scratch)}",
-                "--microvm-workload-identity",
-                "unsafe-root"
-                if self.workload_identity == (0, 0) and self.profile == "risky"
-                else f"{self.workload_identity[0]}:{self.workload_identity[1]}",
+        if not restore:
+            arguments.extend(
+                (
+                    "--microvm-sandbox-block",
+                    f"scratch:file:{os.fspath(self.scratch)}",
+                    "--microvm-workload-identity",
+                    "unsafe-root"
+                    if self.workload_identity == (0, 0) and self.profile == "risky"
+                    else f"{self.workload_identity[0]}:{self.workload_identity[1]}",
+                )
             )
-        )
         if self.mount is not None:
             arguments.extend(self.mount.openvmm_arguments())
         return arguments

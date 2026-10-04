@@ -40,7 +40,7 @@ inspection/disassembly; that work is not part of the completion commits.
   **2.79 ms p50**, completion **4.08 ms**, cold first stdout **936.52 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-direct-network-offline.log`: **124 offline tests**, ruff clean.
+- `build/completion-x86-warm-offline.log`: **126 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
@@ -85,6 +85,17 @@ inspection/disassembly; that work is not part of the completion commits.
   with their egress policy, while ARM retains its explicit host-loopback adapter.
   The native x86 KVM repeat passed tenant isolation and reached the receipt probe;
   its old fixture requested the unsupported generic loopback option.
+- Native x86 warm capture uses the guest PMIO snapshot boundary with a paired
+  workload-start snapshot. Restore takes memory, workload identity and network
+  addressing from that snapshot, verifies its paired scratch image, and completes
+  the guest repair acknowledgement before thawing disk I/O. ARM retains its disk
+  snapshot path. Wire compatibility and restore-argument regressions pass; both
+  guest helpers compile for ARM and x86 with warnings treated as errors.
+- Intel HVF is admitted by the x86 microVM frontend, fixed network IRQ and snapshot
+  contract. The three affected core crates pass check, all-target clippy, docs and
+  **267 Rust tests**, plus Intel cross-compilation and final repository formatting.
+  Their native runtime acceptance is being repeated.
+- Windows receipt probes accept the CLI's CRLF instance-ID line.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

@@ -362,11 +362,17 @@ class ControlSession:
         return payload.decode("ascii")
 
     def warm(
-        self, timeout: float, *, repair: bool = True, runtime: tuple[str, ...] = ()
+        self,
+        timeout: float,
+        *,
+        repair: bool = True,
+        runtime: tuple[str, ...] = (),
+        microvm_snapshot: bool = False,
     ) -> None:
         """Hold the single-threaded dispatcher with its private disk frozen."""
         request_id = self._request_id()
-        payload = bytes((2 if runtime else 1, int(repair)))
+        mode = (2 if runtime else 1) | (4 if microvm_snapshot else 0)
+        payload = bytes((mode, int(repair)))
         if runtime:
             payload += self._encode_exec(runtime, 0)
         self._send_app(APP_WARM, request_id, payload)

@@ -508,6 +508,7 @@ def start(
     memory_backing: Path | None = None,
     restore: Path | None = None,
     keep_stdin: bool = False,
+    snapshot_destination: Path | None = None,
 ) -> subprocess.Popen[bytes]:
     state_dir = _prepare_state_directory(state_path, create=False)
     config = _read_json(
@@ -551,7 +552,9 @@ def start(
         if restore is not None:
             pinned = control_directory / "snapshot"
             pinned.mkdir()
-            for name in ("manifest.bin", "state.bin", "memory.bin"):
+            for name in ("manifest.bin", "state.bin", "memory.bin", "scratch.img"):
+                if name == "scratch.img" and not (restore / name).exists():
+                    continue
                 os.link(restore / name, pinned / name)
             restore = pinned
         control_path = control_directory / CONTROL_SOCKET_NAME
@@ -562,13 +565,24 @@ def start(
     )
     command = [
         os.fspath(executable),
-        *launch.openvmm_arguments(backend, architecture=architecture),
-        *(["--com1", "stderr"] if arm else ["--microvm-lifecycle", "managed"]),
+        *launch.openvmm_arguments(
+            backend, architecture=architecture, restore=restore is not None and not arm
+        ),
+        *(
+            ["--com1", "stderr"]
+            if arm
+            else []
+            if restore is not None
+            else ["--microvm-lifecycle", "managed"]
+        ),
         "--single-process",
         "--hypervisor",
         str(config["hypervisor"]),
-        "--memory",
-        f"{int(config['memory_mib'])}M",
+        *(
+            ["--memory", f"{int(config['memory_mib'])}M"]
+            if arm or restore is None
+            else []
+        ),
         *(
             ["--restore-snapshot", os.fspath(restore)]
             if restore is not None
@@ -621,7 +635,7 @@ def start(
         )
     net = config.get("net")
     network_profile = config.get("network_profile")
-    if net is not None and not arm:
+    if net is not None and not arm and restore is None:
         command.extend(
             [
                 "--net",
@@ -651,6 +665,17 @@ def start(
         command.append("--microvm-control-repl")
     if memory_backing is not None:
         command.extend(["--memory-backing-file", os.fspath(memory_backing)])
+    if snapshot_destination is not None:
+        if arm or restore is not None:
+            raise ScriptError("microVM snapshot capture requires a fresh x86 source")
+        command.extend(
+            [
+                "--snapshot-destination",
+                os.fspath(snapshot_destination),
+                "--snapshot-tier",
+                "workload-start",
+            ]
+        )
     if restore is not None and not arm:
         command.append("--restore-entropy")
 

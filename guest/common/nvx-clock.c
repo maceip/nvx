@@ -125,11 +125,16 @@ int main(int argc, char **argv)
             if (strcmp(generation, argv[2])) break;
             struct timespec delay = {0, 1000000}; nanosleep(&delay, NULL);
         }
-        int scratch = open("/run/nvx/scratch", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-        if (scratch < 0 || ioctl(scratch, FITHAW, 0)) return 1;
-        close(scratch);
-        if (strcmp(argv[3], "repair")) return 0;
+        int repair = strcmp(argv[3], "repair") == 0;
         if (system("/sbin/nvx-port-io read-restore-packet 233 234 /run/nvx/warm-restore-packet >/dev/null")) return 1;
+        if (!repair) {
+            unlink("/run/nvx/warm-restore-packet");
+            if (system("/sbin/nvx-port-io write-u8 1541 2")) return 1;
+            int scratch = open("/run/nvx/scratch", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+            if (scratch < 0 || ioctl(scratch, FITHAW, 0)) return 1;
+            close(scratch);
+            return 0;
+        }
         unsigned char entropy[64];
         FILE *packet = fopen("/run/nvx/warm-restore-packet", "rb");
         if (!packet || fseek(packet, -64, SEEK_END) || fread(entropy, 1, 64, packet) != 64) return 1;
@@ -145,7 +150,13 @@ int main(int argc, char **argv)
         unlink("/run/nvx/warm-restore-entropy"); unlink("/run/nvx/warm-restore-packet");
         int mid = open("/run/nvx/workload-machine-id", O_WRONLY | O_TRUNC | O_NOFOLLOW | O_CLOEXEC);
         if (mid < 0 || dprintf(mid, "%s\n", generation) != 33) return 1;
-        close(mid); sync();
+        close(mid);
+        /* Complete the host restore gate before disk I/O. The source froze
+         * scratch; thaw the clone only after host interrupts are admitted. */
+        if (system("/sbin/nvx-port-io write-u8 1541 2")) return 1;
+        int scratch = open("/run/nvx/scratch", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (scratch < 0 || ioctl(scratch, FITHAW, 0)) return 1;
+        close(scratch); sync();
         int drop = open("/proc/sys/vm/drop_caches", O_WRONLY | O_CLOEXEC);
         if (drop < 0 || write(drop, "3\n", 2) != 2) return 1;
         close(drop); return 0;

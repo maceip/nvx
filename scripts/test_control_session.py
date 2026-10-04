@@ -67,6 +67,68 @@ def _write_app(
 
 
 class ControlSessionTests(unittest.TestCase):
+    def test_warm_snapshot_flag_preserves_legacy_and_runtime_wire_modes(self):
+        for snapshot, runtime, mode in (
+            (False, (), 1),
+            (False, ("/usr/bin/python3",), 2),
+            (True, (), 5),
+            (True, ("/usr/bin/python3",), 6),
+        ):
+            client, server = socket.socketpair()
+            instance = bytes.fromhex("11" * 16)
+            session = control_session.ControlSession(
+                control_session._SocketStream(client)
+            )
+            session._instance_id = instance
+            session._epoch = 1
+            failures: list[BaseException] = []
+
+            def serve(
+                server: socket.socket = server,
+                instance: bytes = instance,
+                mode: int = mode,
+                runtime: tuple[str, ...] = runtime,
+                failures: list[BaseException] = failures,
+            ) -> None:
+                try:
+                    frame = _read_outer(server)[-1]
+                    header = control_session.APP_HEADER.unpack(
+                        frame[: control_session.APP_HEADER.size]
+                    )
+                    self.assertEqual(header[2], control_session.APP_WARM)
+                    payload = frame[control_session.APP_HEADER.size :]
+                    self.assertEqual(payload[:2], bytes((mode, 1)))
+                    if runtime:
+                        self.assertEqual(
+                            struct.unpack("<IHH", payload[2:10]), (0, 1, 0)
+                        )
+                        length = struct.unpack("<I", payload[10:14])[0]
+                        self.assertEqual(payload[14 : 14 + length], b"/usr/bin/python3")
+                    else:
+                        self.assertEqual(len(payload), 2)
+                    _write_app(
+                        server,
+                        instance_id=instance,
+                        sequence=0,
+                        kind=control_session.APP_READY,
+                        request_id=header[4],
+                        status=0,
+                        payload=b"warm-v1",
+                    )
+                except BaseException as error:
+                    failures.append(error)
+
+            worker = threading.Thread(target=serve, daemon=True)
+            worker.start()
+            try:
+                session.warm(5, runtime=runtime, microvm_snapshot=snapshot)
+                worker.join(5)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(failures, [])
+            finally:
+                session.close()
+                server.close()
+
     def test_exec_streams_output_and_returns_bounded_status(self):
         client, server = socket.socketpair()
         instance = bytes.fromhex("11" * 16)
