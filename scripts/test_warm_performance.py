@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from nvx_tools.performance import PerformanceError, gate_results
+from nvx_tools.performance import PerformanceError, gate_results, persist_results
 from nvx_tools.warm_benchmark import collect
 
 
@@ -40,6 +40,34 @@ class WarmPerformanceTests(unittest.TestCase):
                 )
 
             self.assertEqual(gate(), 0)
+            def strict_gate(require_history: bool = False) -> int:
+                return gate_results(
+                    baseline_dir=root / "baseline",
+                    target_dir=root / "target",
+                    window=10,
+                    threshold=20.0,
+                    minimum_history=10,
+                    require_history=require_history,
+                )
+
+            self.assertEqual(strict_gate(), 0)
+            self.assertEqual(strict_gate(require_history=True), 1)
+            history = root / "history"
+            for index in range(10):
+                measured = root / f"measured-{index}"
+                collect("fixture-hvf", f"commit-{index}", source, measured)
+                persist_results(measured, history)
+            self.assertEqual(
+                gate_results(
+                    baseline_dir=history,
+                    target_dir=root / "target",
+                    window=10,
+                    threshold=20.0,
+                    minimum_history=10,
+                    require_history=True,
+                ),
+                0,
+            )
             metrics["warm_pool_first_stdout"] = {
                 "samples_ms": [6.0, 6.5],
                 "p50_ms": 6.25,

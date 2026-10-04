@@ -1776,6 +1776,7 @@ def gate_results(
     absolute_tolerance_ms: float = 5.0,
     minimum_history: int = 10,
     history_reset_dir: Path | None = None,
+    require_history: bool = False,
 ) -> int:
     if minimum_history > window:
         raise PerformanceError(
@@ -1791,6 +1792,7 @@ def gate_results(
 
     checked = 0
     regressions = 0
+    incomplete_history = 0
     summary = [
         "## Performance regression gate",
         "",
@@ -1841,6 +1843,7 @@ def gate_results(
             dimension = _dimension_label(target, platform)
             samples = history.get(_dimension_key(target, platform))
             if not samples:
+                incomplete_history += 1
                 reset = _dimension_key(target, platform) in reset_dimensions
                 reason = (
                     "history explicitly reset in this change"
@@ -1855,6 +1858,7 @@ def gate_results(
                 )
                 continue
             if len(samples) < minimum_history:
+                incomplete_history += 1
                 message = (
                     f"WARMUP: {dimension}/{target.metric} has {len(samples)} "
                     f"of {minimum_history} required base-branch points"
@@ -1933,7 +1937,9 @@ def gate_results(
         f"minimum history: {minimum_history}; "
         f"absolute latency tolerance: {absolute_tolerance_ms:g} ms)."
     )
-    return 1 if regressions else 0
+    if require_history and incomplete_history:
+        print(f"Insufficient measured history for {incomplete_history} metric(s).")
+    return 1 if regressions or (require_history and incomplete_history) else 0
 
 
 def _non_negative_float(value: str) -> float:
@@ -2000,6 +2006,11 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         ),
     )
     gate.add_argument("--window", type=positive_int, default=10)
+    gate.add_argument(
+        "--require-history",
+        action="store_true",
+        help="fail until every metric has the required measured history",
+    )
     gate.add_argument(
         "--minimum-history",
         type=positive_int,
@@ -2082,6 +2093,7 @@ def command_performance(args: argparse.Namespace) -> int:
                 absolute_tolerance_ms=args.absolute_tolerance_ms,
                 minimum_history=args.minimum_history,
                 history_reset_dir=args.history_reset_dir,
+                require_history=args.require_history,
             )
         persist_results(args.source_dir, args.history_dir, args.exclude_metric)
         return 0
