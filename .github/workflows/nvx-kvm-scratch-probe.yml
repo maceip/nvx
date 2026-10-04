@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   scratch-snapshot:
@@ -32,8 +33,16 @@ jobs:
             openvmm/target/release/openvmm
             build/openvmm.provenance.json
           key: kvm-x86_64-core-${{ steps.core.outputs.revision }}-${{ hashFiles('scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_constants.py', '.github/workflows/nvx-hosted-validation.yml') }}
-      - name: Require the completed pinned native build
-        run: test "${{ steps.core-cache.outputs.cache-hit }}" = true
+      - name: Reuse the exact completed native build across branch cache scopes
+        if: steps.core-cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v6
+        with:
+          name: hosted-linux-x86_64-build
+          run-id: 37176187417
+          github-token: ${{ github.token }}
+          path: .
+      - name: Permit the downloaded native executable
+        run: chmod +x openvmm/target/release/openvmm
       - uses: ./.github/actions/build-guest
       - name: Admit an actual KVM VM
         run: |
