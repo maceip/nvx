@@ -63,7 +63,7 @@ jobs:
           path: build
       - name: Start the owned Linux OCI converter
         run: |
-          brew install colima docker protobuf
+          brew install colima docker protobuf qemu
           colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
           docker info
       - run: python3 scripts/nvx.py build-openvmm --backend hvf
