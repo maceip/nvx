@@ -365,6 +365,15 @@ inspection/disassembly; that work is not part of the completion commits.
   from history. A native synthetic transport diagnostic measures the existing
   polling reader against an immediate pipe-read reference; it supplies no guest
   acceptance or replacement timeout implementation.
+  Native diagnostic [37192677178](https://github.com/maceip/nvx/actions/runs/37192677178)
+  at `1878a06` measures **15.77 ms** for an immediate response using that reader,
+  including **15.60 ms** of polling sleep, against **0.07 ms** for a blocking-read
+  reference. All four hundred raw samples and the actual transport source digest
+  are verified. The Windows reader now uses overlapped I/O completion events;
+  expired reads are cancelled and drained before buffers or events are released.
+  Partial-read, disconnect and cancelled-read reuse regressions accompany the fix.
+  Native transport and full guest acceptance validation remain required for this
+  new reader; the earlier failed acceptance remains bound to its original source.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks

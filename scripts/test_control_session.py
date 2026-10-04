@@ -1,15 +1,50 @@
 #!/usr/bin/env python3
 # pyright: reportPrivateUsage=false
 
+import os
+import secrets
 import socket
 import struct
 import sys
 import threading
+import time
 import unittest
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from multiprocessing.connection import Listener
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 from nvx_tools import control_session  # noqa: E402
+
+
+@contextmanager
+def _named_pipe_peer(
+    handler: Callable[[Any], None],
+) -> Generator[control_session._NamedPipeStream, None, None]:
+    endpoint = Path(r"\\.\pipe\nvx-control-test-" + secrets.token_hex(16))
+    failures: list[BaseException] = []
+    listener = Listener(str(endpoint), family="AF_PIPE")
+
+    def serve() -> None:
+        try:
+            with listener.accept() as connection:
+                handler(connection)
+        except BaseException as error:
+            failures.append(error)
+
+    peer = threading.Thread(target=serve, daemon=True)
+    peer.start()
+    client = control_session._NamedPipeStream.connect(endpoint, 5)
+    try:
+        yield client
+    finally:
+        client.close()
+        peer.join(5)
+        listener.close()
+    if peer.is_alive() or failures:
+        raise AssertionError(f"named-pipe test peer failed: {failures}")
 
 
 def _read_exact(connection: socket.socket, length: int) -> bytes:
@@ -289,6 +324,52 @@ class ControlSessionTests(unittest.TestCase):
             session.exec(("/bin/true",), timeout_ms=0, response_timeout=5)
         worker.join(timeout=5)
         session.close()
+
+
+@unittest.skipUnless(os.name == "nt", "native Windows named-pipe I/O")
+class NamedPipeStreamTests(unittest.TestCase):
+    def test_bidirectional_transfer_and_partial_read_boundaries(self):
+        payload = b"x" * 4096
+
+        def serve(connection: Any) -> None:
+            self.assertEqual(connection.recv_bytes(), payload)
+            connection.send_bytes(b"ab")
+            connection.send_bytes(b"cd")
+
+        with _named_pipe_peer(serve) as client:
+            client.write_all(payload)
+            self.assertEqual(client.read_exact(3, time.monotonic() + 5), b"abc")
+            self.assertEqual(client.read_exact(1, time.monotonic() + 5), b"d")
+
+    def test_timed_out_pending_read_is_cancelled_before_reuse(self):
+        release = threading.Event()
+
+        def serve(connection: Any) -> None:
+            if not release.wait(5):
+                raise AssertionError("timeout test never released its peer")
+            connection.send_bytes(b"R")
+
+        with _named_pipe_peer(serve) as client:
+            started = time.monotonic()
+            try:
+                with self.assertRaisesRegex(TimeoutError, "response timed out"):
+                    client.read_exact(1, started + 0.025)
+                self.assertLess(time.monotonic() - started, 1)
+            finally:
+                release.set()
+            self.assertEqual(client.read_exact(1, time.monotonic() + 5), b"R")
+
+    def test_peer_disconnect_wakes_pending_read(self):
+        release = threading.Event()
+
+        def serve(connection: Any) -> None:
+            if not release.wait(5):
+                raise AssertionError("disconnect test never released its peer")
+
+        with _named_pipe_peer(serve) as client:
+            release.set()
+            with self.assertRaisesRegex(ConnectionError, "endpoint closed"):
+                client.read_exact(1, time.monotonic() + 5)
 
 
 if __name__ == "__main__":

@@ -11,37 +11,46 @@ import json
 import os
 import platform
 import queue
+import secrets
 import statistics
 import subprocess
 import sys
 import threading
 import time
+from multiprocessing.connection import Listener
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+SOURCE_ROOT = Path(
+    os.environ.get("NVX_PROBE_SOURCE_ROOT", str(Path(__file__).resolve().parents[2]))
+).resolve()
+sys.path.insert(0, str(SOURCE_ROOT / "scripts"))
 from nvx_tools import control_session  # noqa: E402
 
 
 def trial(method: str, count: int) -> dict[str, Any]:
-    read_fd, write_fd = os.pipe()
+    endpoint = r"\\.\pipe\nvx-transport-probe-" + secrets.token_hex(16)
+    listener = Listener(endpoint, family="AF_PIPE")
     requests: queue.Queue[bool] = queue.Queue()
     failures: list[str] = []
 
     def respond() -> None:
         try:
-            while requests.get():
-                if os.write(write_fd, b"R") != 1:
-                    raise RuntimeError("short diagnostic response")
+            with listener.accept() as connection:
+                while requests.get():
+                    connection.send_bytes(b"R")
         except BaseException as error:
             failures.append(repr(error))
-        finally:
-            os.close(write_fd)
 
     peer = threading.Thread(target=respond, daemon=True)
     peer.start()
-    reader = cast(Any, control_session)._NamedPipeStream(read_fd)
+    reader = (
+        cast(Any, control_session)._NamedPipeStream.connect(Path(endpoint), 5)
+        if method == "production_reader"
+        else None
+    )
+    read_fd = os.open(endpoint, os.O_RDWR | os.O_BINARY) if reader is None else None
     real_time = control_session.time
     sleeps = 0
     slept_ms = 0.0
@@ -65,8 +74,8 @@ def trial(method: str, count: int) -> dict[str, Any]:
             requests.put(True)
             response = (
                 reader.read_exact(1, time.monotonic() + 2)
-                if method == "existing_polling"
-                else os.read(read_fd, 1)
+                if reader is not None
+                else os.read(cast(int, read_fd), 1)
             )
             elapsed_ms = (time.perf_counter_ns() - started) / 1e6
             if response != b"R":
@@ -82,7 +91,11 @@ def trial(method: str, count: int) -> dict[str, Any]:
         cast(Any, control_session).time = real_time
         requests.put(False)
         peer.join(5)
-        reader.close()
+        if reader is not None:
+            reader.close()
+        else:
+            os.close(cast(int, read_fd))
+        listener.close()
     if peer.is_alive() or failures:
         raise RuntimeError(f"diagnostic peer failed: {failures}")
     return {
@@ -100,10 +113,10 @@ def main() -> None:
     source = Path(cast(str, control_session.__file__))
     source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
     order = (
-        "existing_polling",
+        "production_reader",
         "blocking_reference",
         "blocking_reference",
-        "existing_polling",
+        "production_reader",
     )
     trials = [trial(method, 100) for method in order]
     if hashlib.sha256(source.read_bytes()).hexdigest() != source_sha:
@@ -113,7 +126,7 @@ def main() -> None:
         "python": sys.version,
         "host": platform.platform(),
         "nvx_revision": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True
+            ["git", "rev-parse", "HEAD"], cwd=SOURCE_ROOT, text=True
         ).strip(),
         "transport_source_sha256": source_sha,
         "order": order,
@@ -124,6 +137,17 @@ def main() -> None:
     output.write_text(json.dumps(result, indent=2) + "\n")
     for item in trials:
         print({k: v for k, v in item.items() if k != "samples"}, flush=True)
+    if "--require-prompt-read" in sys.argv:
+        reference = statistics.median(
+            t["p50_roundtrip_ms"] for t in trials if t["method"] == "blocking_reference"
+        )
+        reader = statistics.median(
+            t["p50_roundtrip_ms"] for t in trials if t["method"] == "production_reader"
+        )
+        if reader - reference > 5:
+            raise RuntimeError(
+                "control reader adds more than 5 ms to an immediate response"
+            )
 
 
 if __name__ == "__main__":

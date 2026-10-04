@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import errno
 import json
+import math
 import os
 import secrets
 import socket
@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from .common import ScriptError, remaining_timeout
 
@@ -103,95 +103,183 @@ class _SocketStream:
 
 if os.name == "nt":
     import ctypes
-    import msvcrt
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _peek_named_pipe = _kernel32.PeekNamedPipe
-    _peek_named_pipe.argtypes = [
+
+    class _Overlapped(ctypes.Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_size_t),
+            ("InternalHigh", ctypes.c_size_t),
+            ("Offset", ctypes.c_uint32),
+            ("OffsetHigh", ctypes.c_uint32),
+            ("hEvent", ctypes.c_void_p),
+        ]
+
+    def _bind(name: str, argtypes: list[Any], restype: Any) -> Any:
+        function = getattr(_kernel32, name)
+        function.argtypes = argtypes
+        function.restype = restype
+        return function
+
+    _create_file = _bind(
+        "CreateFileW",
+        [
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+        ],
+        ctypes.c_void_p,
+    )
+    _create_event = _bind(
+        "CreateEventW",
+        [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_wchar_p],
+        ctypes.c_void_p,
+    )
+    _io_arguments = [
         ctypes.c_void_p,
         ctypes.c_void_p,
         ctypes.c_uint32,
         ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_uint32),
-        ctypes.c_void_p,
+        ctypes.POINTER(_Overlapped),
     ]
-    _peek_named_pipe.restype = ctypes.c_int
+    _read_file = _bind("ReadFile", _io_arguments, ctypes.c_int)
+    _write_file = _bind("WriteFile", _io_arguments, ctypes.c_int)
+    _wait_event = _bind(
+        "WaitForSingleObject", [ctypes.c_void_p, ctypes.c_uint32], ctypes.c_uint32
+    )
+    _get_result = _bind(
+        "GetOverlappedResult",
+        [
+            ctypes.c_void_p,
+            ctypes.POINTER(_Overlapped),
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.c_int,
+        ],
+        ctypes.c_int,
+    )
+    _cancel_io = _bind(
+        "CancelIoEx", [ctypes.c_void_p, ctypes.POINTER(_Overlapped)], ctypes.c_int
+    )
+    _close_handle = _bind("CloseHandle", [ctypes.c_void_p], ctypes.c_int)
 else:
     ctypes = cast(Any, None)
-    msvcrt = cast(Any, None)
-    _peek_named_pipe = cast(Any, None)
+    _Overlapped = cast(Any, None)
+    _create_file = _create_event = _read_file = _write_file = cast(Any, None)
+    _wait_event = _get_result = _cancel_io = _close_handle = cast(Any, None)
+
+
+def _raise_pipe_error(operation: str, error: int | None = None) -> NoReturn:
+    code = int(ctypes.get_last_error()) if error is None else error
+    if code in (109, 232, 233, 995):
+        raise ConnectionError("managed control endpoint closed")
+    raise OSError(code, f"{operation} failed")
 
 
 class _NamedPipeStream:
-    def __init__(self, fd: int) -> None:
-        self._fd = fd
+    def __init__(self, handle: int) -> None:
+        self._handle: int | None = handle
 
     @classmethod
     def connect(cls, path: Path, timeout: float) -> _NamedPipeStream:
         normalized = os.fspath(path).replace("/", "\\")
         deadline = time.monotonic() + timeout
-        flags = os.O_RDWR | getattr(os, "O_BINARY", 0)
         while True:
-            try:
-                return cls(os.open(normalized, flags))
-            except OSError as error:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        f"managed control endpoint did not become available: {path}"
-                    ) from error
-                if error.errno not in (
-                    errno.ENOENT,
-                    errno.EACCES,
-                    errno.EBUSY,
-                    errno.EAGAIN,
-                    # The Windows CRT reports the reconnect transition as EINVAL.
-                    errno.EINVAL,
-                ):
-                    raise
-                time.sleep(0.025)
+            # OPEN_EXISTING, GENERIC_READ | GENERIC_WRITE, FILE_FLAG_OVERLAPPED.
+            handle = _create_file(normalized, 0xC0000000, 0, None, 3, 0x40000000, None)
+            if handle is not None and handle != ctypes.c_void_p(-1).value:
+                return cls(int(handle))
+            error = int(ctypes.get_last_error())
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"managed control endpoint did not become available: {path}"
+                ) from OSError(error, "CreateFileW failed")
+            if error not in (2, 3, 5, 231, 233):
+                _raise_pipe_error("CreateFileW", error)
+            time.sleep(0.025)
 
-    def _available(self) -> int:
-        available = ctypes.c_uint32()
-        handle = msvcrt.get_osfhandle(self._fd)
-        if not _peek_named_pipe(
-            handle,
-            None,
-            0,
-            None,
-            ctypes.byref(available),
-            None,
-        ):
-            error = ctypes.get_last_error()
-            if error in (109, 233):
-                raise ConnectionError("managed control endpoint closed")
-            raise OSError(error, "PeekNamedPipe failed")
-        return int(available.value)
+    def _transfer(
+        self, buffer: Any, length: int, *, write: bool, deadline: float | None
+    ) -> int:
+        if self._handle is None:
+            raise ConnectionError("managed control endpoint closed")
+        event = _create_event(None, True, False, None)
+        if not event:
+            _raise_pipe_error("CreateEventW")
+        overlapped = _Overlapped()
+        overlapped.hEvent = event
+        transferred = ctypes.c_uint32()
+        pending = False
+        try:
+            operation = _write_file if write else _read_file
+            if not operation(
+                self._handle, buffer, length, None, ctypes.byref(overlapped)
+            ):
+                error = int(ctypes.get_last_error())
+                if error != 997:  # ERROR_IO_PENDING.
+                    _raise_pipe_error("WriteFile" if write else "ReadFile", error)
+                pending = True
+                wait_ms = (
+                    0xFFFFFFFF
+                    if deadline is None
+                    else min(
+                        0xFFFFFFFE,
+                        max(0, math.ceil((deadline - time.monotonic()) * 1000)),
+                    )
+                )
+                status = _wait_event(event, wait_ms)
+                if status == 258:  # WAIT_TIMEOUT.
+                    raise TimeoutError("managed control response timed out")
+                if status != 0:  # WAIT_OBJECT_0.
+                    _raise_pipe_error("WaitForSingleObject")
+            if not _get_result(
+                self._handle, ctypes.byref(overlapped), ctypes.byref(transferred), False
+            ):
+                _raise_pipe_error("GetOverlappedResult")
+            pending = False
+            return int(transferred.value)
+        finally:
+            if pending:
+                # Cancellation only requests completion. Keep the buffer, event
+                # and OVERLAPPED alive until the kernel has finished using them.
+                _cancel_io(self._handle, ctypes.byref(overlapped))
+                _get_result(
+                    self._handle,
+                    ctypes.byref(overlapped),
+                    ctypes.byref(transferred),
+                    True,
+                )
+            _close_handle(event)
 
     def read_exact(self, length: int, deadline: float) -> bytes:
         output = bytearray()
         while len(output) != length:
             if time.monotonic() >= deadline:
                 raise TimeoutError("managed control response timed out")
-            available = self._available()
-            if available == 0:
-                time.sleep(0.01)
-                continue
-            chunk = os.read(self._fd, min(length - len(output), available))
-            if not chunk:
+            buffer = ctypes.create_string_buffer(length - len(output))
+            count = self._transfer(buffer, len(buffer), write=False, deadline=deadline)
+            if count == 0:
                 raise ConnectionError("managed control endpoint closed")
-            output.extend(chunk)
+            output.extend(buffer.raw[:count])
         return bytes(output)
 
     def write_all(self, data: bytes) -> None:
-        remaining = memoryview(data)
-        while remaining:
-            count = os.write(self._fd, remaining)
+        offset = 0
+        while offset != len(data):
+            buffer = ctypes.create_string_buffer(data[offset:], len(data) - offset)
+            count = self._transfer(buffer, len(buffer), write=True, deadline=None)
             if count <= 0:
                 raise ConnectionError("managed control endpoint closed")
-            remaining = remaining[count:]
+            offset += count
 
     def close(self) -> None:
-        os.close(self._fd)
+        if self._handle is not None:
+            handle, self._handle = self._handle, None
+            if not _close_handle(handle):
+                _raise_pipe_error("CloseHandle")
 
 
 class ControlSession:
