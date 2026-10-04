@@ -174,9 +174,11 @@ class LifecycleTests(unittest.TestCase):
                         "--microvm-workload-identity",
                         "--memory",
                         "--net",
-                        "--network-profile",
                     ):
                         self.assertNotIn(flag, args)
+                    self.assertEqual(
+                        args[args.index("--network-profile") + 1], "portable"
+                    )
                     self.assertIn("--network-egress", args)
                     self.assertIn("--restore-snapshot", args)
                     self.assertIn("--restore-entropy", args)

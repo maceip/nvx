@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import tempfile
 import threading
 import unittest
@@ -22,7 +24,13 @@ class EventTests(unittest.TestCase):
                 thread.join()
             records = read_events(path)
             self.assertEqual([row["sequence"] for row in records], list(range(1, 31)))
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            mode = path.stat().st_mode
+            self.assertTrue(stat.S_ISREG(mode))
+            if os.name == "nt":
+                # Windows reports the read-only attribute as synthetic Unix bits.
+                self.assertEqual(mode & (stat.S_IREAD | stat.S_IWRITE), 0o600)
+            else:
+                self.assertEqual(mode & 0o777, 0o600)
 
     def test_redacts_nested_secrets_and_token_shapes(self) -> None:
         tokens = (

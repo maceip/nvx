@@ -644,15 +644,12 @@ def start(
         )
     net = config.get("net")
     network_profile = config.get("network_profile")
-    if net is not None and not arm and restore is None:
-        command.extend(
-            [
-                "--net",
-                microvm_network_endpoint(str(net)),
-                "--network-profile",
-                str(network_profile),
-            ]
-        )
+    if net is not None and not arm:
+        if restore is None:
+            command.extend(["--net", microvm_network_endpoint(str(net))])
+        # Restore takes the address from saved state, but the core still requires
+        # explicit admission of the saved portable adapter and its policy.
+        command.extend(["--network-profile", str(network_profile)])
     for name in ("network_egress", "network_ingress", "host_loopback"):
         value = config.get(name)
         if value is not None and not arm:

@@ -31,13 +31,13 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-inherited-console-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `5d0433f41c6f4e582457ba18004de8faee579f46` and core
+- `build/completion-windows-host-fixes-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `887d9f5b85f6d2c641c067b573750ebd3a0ea128` and core
   `32b120c1ac4aca1c264b30c69b83cc40d9e3d259`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.65 ms p50**, completion **3.88 ms**, cold first stdout **913.53 ms**.
+  **2.78 ms p50**, completion **4.34 ms**, cold first stdout **966.14 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
 - `build/completion-capture-namespace-offline.log`: **130 offline tests**, ruff clean.
@@ -106,7 +106,13 @@ inspection/disassembly; that work is not part of the completion commits.
   validator rejecting the supported stderr boot console. The corrected inherited
   provider allowlist accepts only console and stderr. Check, all-target clippy,
   docs, **89 helper tests**, including valid/invalid provider controls, and final
-  repository formatting pass. Native runtime verification is being repeated.
+  repository formatting pass. The native KVM repeat now captures and publishes
+  the protected and legacy credential snapshots and passes credential isolation.
+  Its first clone identified the separate restore-time portable-adapter admission.
+- Networked x86 restore now supplies the explicit portable network profile required
+  by the core while taking the saved address and identity from the snapshot. The
+  persisted-configuration regression covers all four x86 backends; it continues to
+  reject fresh address, workload identity and memory overrides during restore.
 - Intel HVF is admitted by the x86 microVM frontend, fixed network IRQ and snapshot
   contract. The three affected core crates pass check, all-target clippy, docs and
   **267 Rust tests**, plus Intel cross-compilation and final repository formatting.
@@ -124,6 +130,14 @@ inspection/disassembly; that work is not part of the completion commits.
   Bundles now close and fsync staging before atomic no-overwrite publication and
   cleanup. The Windows lane runs offline host tests and strict types before its
   native build, so this platform's filesystem behavior is checked directly.
+- Native Windows offline checks found mandatory-lock reads before lock acquisition,
+  read-only cache GC, Unix path assumptions and open-file unlink incompatibility.
+  Windows now acquires the lock before any protected-byte access, makes only
+  unreferenced cache blobs writable for deletion, validates archive paths in guest
+  POSIX coordinates and opens shared files with delete sharing. A guest can unlink
+  an open file, read the retained handle and then close it. The native repeat passes
+  these functional regressions; its remaining Unix-only mode assertion is corrected
+  to check the permission bits actually reported by each platform.
 - MCP obtains each new instance ID from bounded, atomically published private
   host metadata. Workload stderr and image-conversion diagnostics cannot supply
   or replace an instance ID. Exec retains its known owned ID. A live TypeScript
