@@ -7,14 +7,15 @@ import json
 import os
 import queue
 import secrets
+import shutil
 import socket
 import subprocess
 import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Sequence
-from contextlib import ExitStack
+from collections.abc import Generator, Sequence
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -3223,6 +3224,19 @@ def run_filesystem_snapshot(
             )
 
 
+@contextmanager
+def _scratch_snapshot_directory(output_dir: Path) -> Generator[Path]:
+    with tempfile.TemporaryDirectory(prefix="nvx-scratch-snapshot-") as temporary:
+        root = Path(temporary)
+        try:
+            yield root
+        except Exception:
+            retained = output_dir / ("scratch-snapshot-failure-" + uuid.uuid4().hex)
+            shutil.copytree(root, retained, symlinks=True)
+            print("Scratch snapshot failure payloads retained at " + str(retained))
+            raise
+
+
 def run_scratch_snapshot(
     executable: Path,
     kernel: Path,
@@ -3233,8 +3247,7 @@ def run_scratch_snapshot(
     timeout: float,
     output_dir: Path,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="nvx-scratch-snapshot-") as temporary:
-        root = Path(temporary)
+    with _scratch_snapshot_directory(output_dir) as root:
         layer = root / "distro.erofs"
         wrong_layer = root / "wrong-distro.erofs"
         source_scratch = root / "source-scratch.raw"
@@ -3286,7 +3299,21 @@ def run_scratch_snapshot(
             paired_snapshot / "scratch.img",
             "paired scratch snapshot artifact",
         )
+        from .snapshot import verify_snapshot
+
         paired_fingerprint = _scratch_snapshot_fingerprint(paired_snapshot)
+        capture_integrity: dict[str, object] = {"fingerprint": paired_fingerprint}
+        try:
+            verify_snapshot(paired_snapshot)
+            capture_integrity["verified_before_restore"] = True
+        except ScriptError as error:
+            capture_integrity["verified_before_restore"] = False
+            capture_integrity["error"] = str(error)
+            raise
+        finally:
+            (output_dir / "scratch-paired-capture-integrity.json").write_text(
+                json.dumps(capture_integrity, indent=2) + "\n"
+            )
 
         def paired_restore_command(selected_layer: Path) -> list[str]:
             command = snapshot_restore_command(executable, backend, paired_snapshot)

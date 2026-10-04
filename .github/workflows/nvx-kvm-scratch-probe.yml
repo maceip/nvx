@@ -1,0 +1,52 @@
+name: NVX native KVM scratch snapshot probe
+
+on:
+  push:
+    branches: [completion/guest-stream-boundary]
+    paths:
+      - '.github/workflows/nvx-kvm-scratch-probe.yml'
+      - 'scripts/nvx_tools/microvm_tests.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scratch-snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - name: Identify the pinned core
+        id: core
+        run: echo "revision=$(git -C openvmm rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: core-cache
+        with:
+          path: |
+            openvmm/target/release/openvmm
+            build/openvmm.provenance.json
+          key: kvm-x86_64-core-${{ steps.core.outputs.revision }}-${{ hashFiles('scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_constants.py', '.github/workflows/nvx-hosted-validation.yml') }}
+      - name: Require the completed pinned native build
+        run: test "${{ steps.core-cache.outputs.cache-hit }}" = true
+      - uses: ./.github/actions/build-guest
+      - name: Admit an actual KVM VM
+        run: |
+          sudo modprobe kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - run: python3 scripts/nvx.py verify
+      - name: Repeat the first failing scenario with capture integrity and retained payloads
+        run: python3 scripts/nvx.py test-microvm --backend kvm --scenario scratch-snapshot --output-dir build/scratch-probe
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kvm-scratch-snapshot-probe
+          path: build/scratch-probe
+          if-no-files-found: warn
+          include-hidden-files: true
