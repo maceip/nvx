@@ -17,6 +17,8 @@ from .runtime_release import PLATFORMS
 REQUIRED_STEPS = frozenset(
     (
         "doctor",
+        "prepare-alpine",
+        "prepare-python",
         "scenarios",
         "determinism",
         "warm",

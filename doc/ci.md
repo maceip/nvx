@@ -280,3 +280,9 @@ credential-redacted log tail and upload the complete available evidence. Its nat
 core binary and provenance are cached by core revision and builder source before
 the scenario gate. Restored binaries still require matching clean-source provenance
 and a verified digest before acceptance.
+
+Image download and conversion run as separate preparation gates before timed
+guest probes. A host probe timeout retains both partial streams and reports a
+redacted diagnostic tail. Linux and Intel hosted lanes also cache the pinned
+native binary after their architecture-specific core checks pass; cache hits
+reuse that checked artifact and still run the full guest acceptance battery.

@@ -168,27 +168,39 @@ def execute(
     env.pop("NVX_NETWORK_LEGACY_DROP", None)
     if legacy_drop:
         env["NVX_NETWORK_LEGACY_DROP"] = "1"
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(BuildConstants.REPO_ROOT / "scripts/nvx.py"),
-            "run",
-            "--image",
-            "python:3.12-slim",
-            "--hypervisor",
-            backend,
-            *(["--profile", profile] if profile is not None else []),
-            *extra,
-            "--",
-            "python",
-            "-c",
-            script,
-        ],
-        capture_output=True,
-        timeout=timeout * 3,
-        env=env,
-    )
+    command = [
+        sys.executable,
+        str(BuildConstants.REPO_ROOT / "scripts/nvx.py"),
+        "run",
+        "--image",
+        "python:3.12-slim",
+        "--hypervisor",
+        backend,
+        *(["--profile", profile] if profile is not None else []),
+        *extra,
+        "--",
+        "python",
+        "-c",
+        script,
+    ]
     output.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            command, capture_output=True, timeout=timeout * 3, env=env
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout or b""
+        stderr = error.stderr or b""
+        if isinstance(stdout, str):
+            stdout = stdout.encode()
+        if isinstance(stderr, str):
+            stderr = stderr.encode()
+        (output / f"{label}.stdout").write_bytes(stdout)
+        (output / f"{label}.stderr").write_bytes(stderr)
+        raise ScriptError(
+            f"{label} host probe timed out after {timeout * 3:g}s; see {output}\n"
+            f"{redact(stderr[-4096:].decode('utf-8', errors='replace'))}"
+        ) from None
     (output / f"{label}.stdout").write_bytes(result.stdout)
     (output / f"{label}.stderr").write_bytes(result.stderr)
     if result.returncode != expected_status:

@@ -91,6 +91,8 @@ def main() -> None:
             raise gate_failure(name, log)
 
     run("doctor", "doctor", "--backend", backend, "--json")
+    run("prepare-alpine", "image", "pull", "alpine:3.20")
+    run("prepare-python", "image", "pull", "python:3.12-slim")
     run(
         "scenarios",
         "test-microvm",

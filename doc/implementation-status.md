@@ -31,24 +31,24 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-binary-bound-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF run to NVX `d8235802d6c655ef3c02162add5a148d8974728c` and core
+- `build/completion-rebuilt-guest-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `fe531e7fae0e8101948a0299ed191cdf4b505b1c` and core
   `5c1f378cb94de28eba919c786d0a50e76f2d76f9`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.94 ms p50**, completion **4.40 ms**, cold first stdout **998.46 ms**.
+  **3.94 ms p50**, completion **5.89 ms**, cold first stdout **972.06 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-binary-acceptance-offline.log`: **117 offline tests**, ruff clean.
+- `build/completion-cold-preparation-offline.log`: **122 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-final-offline.log` in the main checkout: **125 tests**
+- `build/completion-root-independent-offline.log` in the main checkout: **129 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
-  and its actual guest printed `NVX-FINAL-INTEGRATION-OK`.
+  and its rebuilt guest printed `NVX-REBUILT-ROOT-GUEST-OK`.
 - The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
@@ -58,8 +58,10 @@ inspection/disassembly; that work is not part of the completion commits.
   four-CPU, 6 GiB host. The gate refused zero-metric Warmup; those measurements
   establish the first ARM baseline, and independent comparison remains required.
   An earlier failed run encountered host disk exhaustion.
-- Hosted Intel HVF and Windows WHP admission succeeded. These are admission results,
-  not full guest acceptance. Hosted Ubuntu x86 KVM admission succeeded; the hosted
+- Hosted Intel's native build, clippy, docs and core tests passed; its first timed
+  guest probe timed out without guest logs. Windows native builds and doctor passed,
+  but scenario acceptance failed and the earlier cross-drive upload lost the logs.
+  Corrected repeats are being followed. Hosted Ubuntu x86 KVM admission succeeded; the hosted
   ARM runners expose no usable `/dev/kvm`, so their runtime lane fails explicitly.
 
 ## Fixes found by the repeated platform tests
@@ -72,6 +74,9 @@ inspection/disassembly; that work is not part of the completion commits.
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after
   a scenario failure; acceptance still checks its source revision and digest.
+- Image download/conversion precede timed guest probes as separately recorded
+  gates. Host probe timeouts preserve partial stdout/stderr and print a bounded,
+  redacted cause instead of losing the evidence in a command traceback.
 - First-use image conversion keeps workload stdout free of a trailing image digest.
 - Intel macOS's owned OCI converter installs its QEMU dependency explicitly.
   The package CLI also admits Intel macOS alongside the other five release targets;

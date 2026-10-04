@@ -12,6 +12,31 @@ from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_host_probe_timeout_preserves_partial_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with patch(
+                "nvx_tools.policy_tests.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(
+                    ["probe"],
+                    15,
+                    output=b"partial stdout",
+                    stderr=b"converting image\nBearer private-token-value",
+                ),
+            ):
+                with self.assertRaises(ScriptError) as caught:
+                    execute("hvf", "probe", output, "control", 5)
+            self.assertIn("host probe timed out after 15s", str(caught.exception))
+            self.assertIn("converting image", str(caught.exception))
+            self.assertNotIn("private-token-value", str(caught.exception))
+            self.assertEqual(
+                (output / "control.stdout").read_bytes(), b"partial stdout"
+            )
+            self.assertEqual(
+                (output / "control.stderr").read_bytes(),
+                b"converting image\nBearer private-token-value",
+            )
+
     def test_guest_kernels_support_unconfined_namespace_and_socket_controls(
         self,
     ) -> None:
