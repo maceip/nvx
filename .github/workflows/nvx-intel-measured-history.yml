@@ -2,6 +2,11 @@ name: NVX source-bound Intel HVF performance history
 
 on:
   workflow_dispatch:
+    inputs:
+      measure:
+        description: Measure history after exporting the verified native build
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -46,19 +51,29 @@ jobs:
           test "$(uname -m)" = x86_64
           codesign --verify --strict openvmm/target/release/openvmm
           python3 scripts/nvx.py verify
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-bound-intel-build
+          path: |
+            build/openvmm.provenance.json
+            openvmm/target/release/openvmm
+          if-no-files-found: error
       - name: Start the owned Linux OCI converter
         id: converter
+        if: inputs.measure
         timeout-minutes: 15
         run: |
           brew install colima docker qemu
           colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
           docker info
       - name: Measure ten existing source revisions
+        if: inputs.measure
+        timeout-minutes: 100
         run: |
           cp .github/scripts/measure-history.py build/measure-history.py
           python3 -u build/measure-history.py --platform darwin-x86_64
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && inputs.measure
         with:
           name: source-bound-intel-history
           path: |
