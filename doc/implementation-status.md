@@ -372,8 +372,16 @@ inspection/disassembly; that work is not part of the completion commits.
   are verified. The Windows reader now uses overlapped I/O completion events;
   expired reads are cancelled and drained before buffers or events are released.
   Partial-read, disconnect and cancelled-read reuse regressions accompany the fix.
-  Native transport and full guest acceptance validation remain required for this
-  new reader; the earlier failed acceptance remains bound to its original source.
+  Native transport validation at `e78e181` now passes all eight control-session
+  tests, including the three named-pipe regressions. The same immediate-response
+  check fails against retained `1878a06` in
+  [37192976045](https://github.com/maceip/nvx/actions/runs/37192976045) and passes
+  the fixed reader in
+  [37192977864](https://github.com/maceip/nvx/actions/runs/37192977864).
+  The medians of trial medians are **15.39 ms** before and **0.07 ms** after.
+  Both source digests and all eight hundred raw samples are independently verified.
+  Full guest acceptance validation remains required for the new reader; the
+  earlier failed acceptance remains bound to its original source.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks
