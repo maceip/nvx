@@ -244,6 +244,7 @@ def command_check_required_ci(args: argparse.Namespace) -> None:
     failures = required_ci_failures(
         args.event_name,
         same_repository=args.same_repository == "true",
+        self_hosted=args.self_hosted == "true",
         run_tests=args.run_tests == "true",
         run_workloads=args.run_workloads == "true",
         results=results,
@@ -1508,6 +1509,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("false", "true"),
         required=True,
     )
+    required_ci.add_argument("--self-hosted", choices=("false", "true"), default="true")
     required_ci.add_argument("--run-tests", required=True)
     required_ci.add_argument("--run-workloads", required=True)
     required_ci.set_defaults(handler=command_check_required_ci)

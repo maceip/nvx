@@ -48,6 +48,8 @@ def github_submodule_repository(url: str) -> str:
 
 REQUIRED_CI_RESULT_ENVIRONMENTS = {
     "quality": "QUALITY_RESULT",
+    "hosted-linux": "HOSTED_LINUX_RESULT",
+    "hosted-windows": "HOSTED_WINDOWS_RESULT",
     "openvmm-changes": "CHANGES_RESULT",
     "artifacts": "ARTIFACTS_RESULT",
     "build-openvmm-linux-gnu": "BUILD_LINUX_GNU_RESULT",
@@ -63,6 +65,7 @@ REQUIRED_CI_RESULT_ENVIRONMENTS = {
     "platform-whp": "PLATFORM_WHP_RESULT",
     "performance-gate": "PERFORMANCE_GATE_RESULT",
 }
+REQUIRED_CI_HOSTED_JOBS = ("hosted-linux", "hosted-windows")
 REQUIRED_CI_BUILD_JOBS = (
     "build-openvmm-linux-gnu",
     "build-openvmm-linux-musl",
@@ -102,11 +105,13 @@ def required_ci_expected_results(
     same_repository: bool,
     run_tests: bool,
     run_workloads: bool,
+    self_hosted: bool = True,
 ) -> dict[str, str]:
     if event_name not in ("pull_request", "push"):
         raise ValueError(f"unsupported CI event {event_name!r}")
 
-    repository_jobs_enabled = event_name == "push" or same_repository
+    trusted_event = event_name == "push" or same_repository
+    repository_jobs_enabled = trusted_event and self_hosted
     expected = {
         "quality": "success",
         "openvmm-changes": "success",
@@ -119,6 +124,16 @@ def required_ci_expected_results(
             else "skipped"
         ),
     }
+    expected.update(
+        {
+            job: (
+                "success"
+                if trusted_event and not self_hosted and (run_tests or run_workloads)
+                else "skipped"
+            )
+            for job in REQUIRED_CI_HOSTED_JOBS
+        }
+    )
     expected.update(
         {
             job: (
@@ -164,12 +179,14 @@ def required_ci_failures(
     run_tests: bool,
     run_workloads: bool,
     results: Mapping[str, str],
+    self_hosted: bool = True,
 ) -> list[str]:
     expected = required_ci_expected_results(
         event_name,
         same_repository=same_repository,
         run_tests=run_tests,
         run_workloads=run_workloads,
+        self_hosted=self_hosted,
     )
     failures: list[str] = []
     for job, expected_result in expected.items():

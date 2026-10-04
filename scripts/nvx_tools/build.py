@@ -381,7 +381,10 @@ def record_openvmm_provenance(config: OpenVmmBuildConfig) -> None:
 
 
 def _is_apple_silicon() -> bool:
-    return sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64")
+    return sys.platform == "darwin" and platform.machine().lower() in (
+        "arm64",
+        "aarch64",
+    )
 
 
 def detect_openvmm_platform(backend: OpenVmmBackend | None = None) -> OpenVmmPlatform:

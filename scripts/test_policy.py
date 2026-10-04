@@ -60,9 +60,7 @@ class PolicyTests(unittest.TestCase):
                 port = address[1]
                 if kind == socket.SOCK_STREAM and port == 55000:
                     raise PermissionError(errno.EACCES, "TCP excluded port")
-                selected[0] = port or (
-                    55000 if kind == socket.SOCK_DGRAM else 60001
-                )
+                selected[0] = port or (55000 if kind == socket.SOCK_DGRAM else 60001)
 
             listener.bind.side_effect = bind
             listener.getsockname.side_effect = lambda: ("127.0.0.1", selected[0])

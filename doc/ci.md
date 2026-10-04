@@ -1,5 +1,20 @@
 # Continuous integration
 
+Forks use GitHub-hosted CI by default. The required status check waits for the
+quality checks, shared guest artifacts, Linux x86 KVM acceptance, Windows WHP
+acceptance, and ARM64 native build, clippy, documentation and unit checks. The
+Linux and Windows acceptance jobs call the same workflows available through
+manual dispatch; they retain their complete runtime proof artifacts. Documentation
+changes only run quality checks. New pushes cancel superseded CI runs so an old
+queued job cannot block the current commit.
+
+The Microsoft repository retains its self-hosted backend fleet. A fork with the
+same enrolled KVM/MSHV/WHP runner pools can set the repository Actions variable
+`NVX_SELF_HOSTED_CI=true` to use that full matrix. The required status check enforces
+the jobs for the selected mode; a failed, cancelled or skipped required acceptance
+job fails CI. Development publishing and performance baseline updates continue to
+require all three fleet-backed platform lanes.
+
 The GitHub Actions workflow has two microVM test layers on Azure-hosted
 self-hosted KVM, MSHV, and WHP virtual machines. Each backend has a pool of
 three runners labeled by operating system, backend, and `virtual-machine`.
@@ -266,9 +281,11 @@ into an empty directory and cache, run doctor and boot a real workload. Only suc
 download smoke promotes the candidate to a stable release. A failed candidate stays prerelease.
 Workflow dispatch builds and records evidence without publishing.
 
-`nvx-hosted-validation.yml` probes actual `/dev/kvm` access on hosted x86 and ARM Linux runners.
-It then builds and runs the full acceptance battery. An unavailable hypervisor fails the lane;
-it never becomes a skipped runtime pass. The native Windows and Intel macOS workflows independently build and exercise WHP and
+`nvx-hosted-validation.yml` probes actual `/dev/kvm` access on hosted x86 Linux runners
+and runs the full acceptance battery. Hosted ARM64 runs native core build and unit checks;
+it does not claim guest runtime evidence. Manual dispatch with `require-arm-kvm=true`
+also requires ARM KVM admission and full acceptance, failing if the device is unavailable.
+An unavailable hypervisor fails every requested runtime lane. The native Windows and Intel macOS workflows build and exercise WHP and
 Intel Hypervisor.framework with a Linux OCI converter. ARM KVM runtime evidence requires
 a host that exposes nested virtualization; the hosted ARM runner currently does not. The full
 publication pipeline still requires the documented runner labels and the Mac's Developer

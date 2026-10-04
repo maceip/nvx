@@ -1,16 +1,7 @@
 name: NVX hosted Windows runtime validation
 
 on:
-  push:
-    branches: [dev, completion/ten-items]
-    paths:
-      - '.github/workflows/nvx-hosted-windows.yml'
-      - '.github/scripts/docker-wsl.py'
-      - '.github/actions/build-guest/**'
-      - 'openvmm'
-      - 'scripts/**'
-      - 'docker/**'
-      - 'guest/**'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

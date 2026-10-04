@@ -1,17 +1,18 @@
 name: NVX hosted Linux validation
 
 on:
-  push:
-    branches: [dev, completion/ten-items]
-    paths:
-      - '.github/workflows/nvx-hosted-validation.yml'
-      - '.github/actions/checkout-openvmm/**'
-      - '.github/actions/build-guest/**'
-      - 'openvmm'
-      - 'docker/**'
-      - 'scripts/**'
-      - 'sdk/**'
+  workflow_call:
+    inputs:
+      require-arm-kvm:
+        description: Require ARM KVM runtime on a host exposing /dev/kvm
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      require-arm-kvm:
+        description: Require ARM KVM runtime on a host exposing /dev/kvm
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        runner: ${{ fromJSON(inputs.require-arm-kvm && '["ubuntu-24.04", "ubuntu-24.04-arm"]' || '["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 5
     steps:
@@ -49,15 +50,17 @@ jobs:
               os.close(device)
           PY
   linux:
-    name: Actual KVM probe and tests / ${{ matrix.arch }}
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
+            name: x86_64 core checks and KVM acceptance
             platform: linux-kvm
             runner: ubuntu-24.04
           - arch: aarch64
+            name: ARM64 core checks (runtime requires explicit KVM admission)
             platform: linux-arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -108,7 +111,9 @@ jobs:
             build/openvmm.provenance.json
           key: ${{ steps.core-cache.outputs.cache-primary-key }}
       - uses: ./.github/actions/build-guest
+        if: matrix.arch == 'x86_64' || inputs.require-arm-kvm
       - name: Require real nested virtualization
+        if: matrix.arch == 'x86_64' || inputs.require-arm-kvm
         run: |
           sudo modprobe kvm || true
           if test -c /dev/kvm; then
@@ -119,8 +124,12 @@ jobs:
             exit 1
           }
       - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/hosted-proof
+        if: matrix.arch == 'x86_64' || inputs.require-arm-kvm
+      - name: Record ARM64 coverage
+        if: matrix.arch == 'aarch64' && !inputs.require-arm-kvm
+        run: echo 'ARM64 build, clippy, documentation and unit tests passed. KVM guest runtime is not exercised on this hosted runner; use the ARM release lane on an admitted host.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && (matrix.arch == 'x86_64' || inputs.require-arm-kvm)
         with:
           name: hosted-linux-${{ matrix.arch }}-proof
           path: |

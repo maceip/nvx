@@ -40,6 +40,7 @@ class WarmPerformanceTests(unittest.TestCase):
                 )
 
             self.assertEqual(gate(), 0)
+
             def strict_gate(require_history: bool = False) -> int:
                 return gate_results(
                     baseline_dir=root / "baseline",

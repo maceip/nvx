@@ -20,7 +20,9 @@ from nvx_tools.quota import Limits  # noqa: E402
 
 
 class MCPTests(unittest.TestCase):
-    def test_snapshot_remove_deletes_windows_readonly_payload_and_releases_pin(self) -> None:
+    def test_snapshot_remove_deletes_windows_readonly_payload_and_releases_pin(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             service = mcp.Service("whp", Path(directory))
             identifier = "a" * 32
@@ -45,7 +47,9 @@ class MCPTests(unittest.TestCase):
 
             try:
                 with (
-                    patch("nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}),
+                    patch(
+                        "nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}
+                    ),
                     patch("nvx_tools.mcp.ImageCache") as cache,
                     patch("os.unlink", side_effect=windows_unlink),
                 ):
@@ -58,7 +62,9 @@ class MCPTests(unittest.TestCase):
                     )
                     self.assertEqual(result, {"id": identifier, "removed": True})
                     self.assertFalse(snapshot.exists())
-                    cache.return_value.release.assert_called_once_with("fixture-snapshot")
+                    cache.return_value.release.assert_called_once_with(
+                        "fixture-snapshot"
+                    )
             finally:
                 service.close()
 
@@ -70,9 +76,13 @@ class MCPTests(unittest.TestCase):
             before = service.quota.counts()
             try:
                 with (
-                    patch("nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}),
+                    patch(
+                        "nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}
+                    ),
                     patch("nvx_tools.mcp.ImageCache") as cache,
-                    patch("shutil.rmtree", side_effect=PermissionError("unrelated denial")),
+                    patch(
+                        "shutil.rmtree", side_effect=PermissionError("unrelated denial")
+                    ),
                 ):
                     with self.assertRaisesRegex(PermissionError, "unrelated denial"):
                         service.call(

@@ -187,7 +187,9 @@ def capture(
             keep_stdin=True,
             snapshot_destination=snapshot if microvm_snapshot else None,
         )
-        running = cast(dict[str, Any], json.loads((state / "runtime.json").read_bytes()))
+        running = cast(
+            dict[str, Any], json.loads((state / "runtime.json").read_bytes())
+        )
         command = workload_argv(manifest, prelude or ("/bin/true",), proxy_environment)
         result = lifecycle.exec_workload(
             state, command, timeout_ms=60_000, response_timeout=timeout
