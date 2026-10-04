@@ -64,7 +64,37 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          python3 scripts/nvx.py image pull python:3.12-slim 2>&1 | tee build/intel-image-prepare.log
+          python3 -u - <<'PY'
+          import json,os,subprocess,sys,time
+          from pathlib import Path
+          cache=Path(os.environ['NVX_IMAGE_CACHE'])
+          offsets={}
+          with Path('build/intel-image-prepare.log').open('w') as output, Path('build/intel-image-progress.log').open('w') as progress:
+              child=subprocess.Popen([sys.executable,'-u','scripts/nvx.py','image','pull','python:3.12-slim'],stdout=output,stderr=subprocess.STDOUT)
+              def report():
+                  for work in sorted(cache.glob('nvx-image-*')):
+                      try:
+                          files={p.name:p.stat().st_size for p in work.iterdir() if p.is_file()}
+                      except FileNotFoundError:
+                          continue
+                      line=json.dumps({'elapsed_seconds':round(time.monotonic()-started),'directory':work.name,'files':files})
+                      print(line,flush=True);progress.write(line+'\n')
+                      log=work/'convert.log'
+                      try:
+                          with log.open('rb') as stream:
+                              stream.seek(offsets.get(str(log),0))
+                              detail=stream.read()[-4096:].decode(errors='replace')
+                              offsets[str(log)]=stream.tell()
+                          if detail:print(detail,flush=True);progress.write(detail+'\n')
+                      except FileNotFoundError:
+                          pass
+                  progress.flush()
+              started=time.monotonic()
+              while child.poll() is None:
+                  report();time.sleep(20)
+              report()
+              raise SystemExit(child.returncode)
+          PY
       - name: Reproduce the first failed policy scenario
         run: python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
       - uses: actions/upload-artifact@v7
@@ -73,6 +103,9 @@ jobs:
           name: intel-guest-diagnostic
           path: |
             build/intel-image-prepare.log
+            build/intel-image-progress.log
+            build/intel-image-cache/nvx-image-*/convert.log
+            build/intel-image-cache/nvx-image-*/result.json
             build/intel-guest-diagnostic
             build/intel-image-cache/instances/*/*.json
             build/intel-image-cache/instances/*/openvmm.log
