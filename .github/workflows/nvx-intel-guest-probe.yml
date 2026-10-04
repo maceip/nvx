@@ -1,0 +1,77 @@
+name: NVX native Intel HVF guest diagnostic
+
+on:
+  push:
+    branches: [completion/guest-stream-boundary]
+    paths: ['.github/workflows/nvx-intel-guest-probe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  exact-build-guest:
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/intel-image-cache
+      OPENVMM_LOG: debug
+      OPENVMM_STARTUP_PROFILE: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: b7e30586722ff0228b071d49c129de53acb9df52
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python3 -m pip install -r requirements-dev.txt
+      - uses: actions/download-artifact@v6
+        with:
+          name: hosted-intel-hvf-build
+          run-id: 37176187450
+          github-token: ${{ github.token }}
+          path: .
+      - uses: actions/download-artifact@v6
+        with:
+          name: intel-macos-guest
+          run-id: 37176187450
+          github-token: ${{ github.token }}
+          path: build
+      - name: Verify the exact completed source and executable
+        run: |
+          chmod +x openvmm/target/release/openvmm
+          codesign --verify --strict openvmm/target/release/openvmm
+          python3 scripts/nvx.py verify
+          python3 - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          metadata=json.loads(Path('build/openvmm.provenance.json').read_text())
+          core=subprocess.check_output(['git','-C','openvmm','rev-parse','HEAD'],text=True).strip()
+          assert metadata['source_revision']==core and metadata['source_clean'] is True
+          assert metadata['executable_sha256']==hashlib.sha256(Path('openvmm/target/release/openvmm').read_bytes()).hexdigest()
+          print('Exact previously built Intel executable verified',core)
+          PY
+      - name: Start the owned Linux OCI converter
+        id: converter
+        run: |
+          brew install colima docker qemu
+          colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
+          docker info
+      - name: Reproduce the first failed policy scenario
+        run: python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: intel-guest-diagnostic
+          path: |
+            build/intel-guest-diagnostic
+            build/intel-image-cache/instances/*/*.json
+            build/intel-image-cache/instances/*/openvmm.log
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Stop the owned converter
+        if: always() && steps.converter.outcome != 'skipped'
+        run: colima stop nvx-converter

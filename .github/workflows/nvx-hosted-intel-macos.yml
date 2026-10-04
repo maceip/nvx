@@ -43,6 +43,8 @@ jobs:
     needs: guest
     runs-on: macos-26-intel
     timeout-minutes: 180
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/hosted-image-cache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -63,6 +65,7 @@ jobs:
           name: intel-macos-guest
           path: build
       - name: Start the owned Linux OCI converter
+        id: converter
         run: |
           brew install colima docker protobuf qemu
           colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
@@ -102,7 +105,7 @@ jobs:
           name: hosted-intel-hvf-proof
           path: |
             build/intel-hvf-proof
-            ~/.nvx/cache/instances/*/openvmm.log
+            build/hosted-image-cache/instances/*/openvmm.log
           include-hidden-files: true
           if-no-files-found: warn
       - uses: actions/upload-artifact@v7
@@ -114,5 +117,5 @@ jobs:
             openvmm/target/release/openvmm
           if-no-files-found: warn
       - name: Stop the owned Linux converter
-        if: always()
+        if: always() && steps.converter.outcome != 'skipped'
         run: colima stop nvx-converter

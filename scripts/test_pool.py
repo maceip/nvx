@@ -21,8 +21,10 @@ class PoolTests(unittest.TestCase):
 
             def finish() -> None:
                 time.sleep(0.15)
-                runtime.unlink()
                 completed.set()
+                # The worker removes runtime.json after all VM/refill cleanup.
+                # Publish the simulated cleanup before removing that marker.
+                runtime.unlink()
 
             worker = threading.Thread(target=finish)
             with (
