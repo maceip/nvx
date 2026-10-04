@@ -73,6 +73,19 @@ inspection/disassembly; that work is not part of the completion commits.
   `../nvx-mac-proof-repeat/build/completion-immutable-full-macos-proof/NVX-ACCEPTANCE.json`.
   The preceding diagnostic-checkout run passed its gates but correctly withheld
   a proof after a workflow edit changed HEAD; its rejection and logs are retained.
+- The control-register correction repeat at NVX `65329b2` / core `d591aaee1`
+  passes all nine Mac acceptance gates. The complete scenario battery, all eight
+  containment families and opposite controls, four simulants, MCP, twenty
+  repaired clones with disabled controls, image determinism and twenty cold/warm
+  requests pass. First output is **2.76 ms p50**, completion **4.15 ms**, cold
+  first output **1045.67 ms**. The unchanged strict ten-point comparison checks
+  all three metrics with zero regressions. Actual executable bytes, unchanged
+  clean source, every gate log, containment schema/render and sample medians
+  are independently verified in
+  `build/completion-intel-control-state-full-macos-proof/NVX-ACCEPTANCE.json`
+  in the diagnostic checkout. The user checkout independently passes 143 of
+  146 host tests with three Windows-only skips, lint and all eleven doctor
+  checks, and preserves all eleven original user-edited files byte for byte.
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
   records NVX `b7e3058` / core `94d8908b0` on the owned
   four-CPU, 6 GiB nested ARM/KVM host.
@@ -225,10 +238,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Mach-O architecture are verified in
   `build/completion-f1-native-intel-build-result.json` in the diagnostic checkout.
   The separate history collector
-  [37195251612](https://github.com/maceip/nvx/actions/runs/37195251612) is exercising
-  ten distinct existing ancestor revisions, each pinning core-f1, with twenty
-  cold and twenty warm requests per revision. No history points or guest
-  acceptance are inferred before its results and raw samples are audited.
+  [37195251612](https://github.com/maceip/nvx/actions/runs/37195251612) was cancelled
+  after the same pinned core failed actual guest VM entry. It preserves no
+  downloadable history artifact, and its completed job-log API returns 404.
+  Its actual guest/measurement progress is unknown. No history points are
+  admitted; the cancellation investigation and API results are retained.
   A native capability probe,
   [37197539325](https://github.com/maceip/nvx/actions/runs/37197539325),
   confirms CR0 fixed-one bits `0x80000021` and CR4 fixed-one bits `0x2000`.
@@ -238,7 +252,15 @@ inspection/disassembly; that work is not part of the completion commits.
   LMSW, and retains guest cache-disable state virtually. All seventeen backend
   tests pass, as do native ARM and cross-Intel check, all-target clippy, docs,
   and the final repository formatter. These source checks do not establish
-  native guest acceptance; the new core is being validated separately.
+  native guest acceptance; the new core is being validated separately in
+  [37197856945](https://github.com/maceip/nvx/actions/runs/37197856945).
+  A second native API probe,
+  [37198280068](https://github.com/maceip/nvx/actions/runs/37198280068),
+  accepts every new register mask, read shadow, normalized write and TLB
+  invalidation. Its actual VMCS hardware state includes the required NE and
+  VMXE bits while the guest read shadows retain the loader's original values.
+  Source and native-log hashes are verified. This probe creates and cleans up
+  a VM and vCPU without executing a guest; it supplies no runtime acceptance.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and

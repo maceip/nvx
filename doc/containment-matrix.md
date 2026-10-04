@@ -5,9 +5,9 @@ each platform; a passing row includes its opposite control.
 
 ## Apple Silicon macOS / HVF
 
-NVX `7c7f7239c7abc046fd4ec352e4e794670b07dae9`; core `f1f6019b73a891b0cc9be381eba220750cfb9146`.
+NVX `65329b2db8bb1a1fa10013816834306500468c51`; core `d591aaee1c5c10a10d8df85a48e865ec13031dc2`.
 
-Containment SHA-256: `ceb6e73151d77c7d30f923ce8c0bfcfc479a1ab7914ccd26ae1844cc2a6466ea`.
+Containment SHA-256: `762a6a4585457e68c1d6c71e7d3e97655a254e1bf489a22aaf7b05c576c4230d`.
 
 | Probe family | Backend | Protected | Negative control | Scope |
 | --- | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ Containment SHA-256: `43fce254ecdd8b32867c4fe78ce108097ff80935474d610cb26a4e2de7
 
 NVX `de301089694241d606c46f5003f87edca6284686`; core `f1f6019b73a891b0cc9be381eba220750cfb9146`.
 
-[Native run](https://github.com/maceip/nvx/actions/runs/37193112844).
+[Native run](https://github.com/maceip/nvx/actions/runs/37193112844/job/111409310803).
 
 Containment SHA-256: `de463d9ac0152fede5158295cc70b51b04653c792a9cf1d20ef53ea9836b11ff`.
 
@@ -75,7 +75,4 @@ Containment SHA-256: `de463d9ac0152fede5158295cc70b51b04653c792a9cf1d20ef53ea983
 | snapshot integrity | whp | CONTAINED | UNCONTAINED | same-length RAM/state tamper rejected; foreign arch refused |
 | tenant isolation | whp | CONTAINED | UNCONTAINED | private scratch hides previous instance writes |
 
-## Pending platforms
-
-Intel macOS/HVF and Linux/MSHV still require accepted runtime results. Their
-containment rows are not inferred from the other platforms.
+Intel macOS / HVF and Linux / MSHV remain pending real runtime acceptance.
