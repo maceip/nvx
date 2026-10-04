@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import os
@@ -13,7 +14,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, cast
 
@@ -438,6 +439,23 @@ def microvm_network_endpoint(value: str) -> str:
     return f"{address}/{network.prefixlen}"
 
 
+@contextlib.contextmanager
+def sealed_capability_pipe(capability: bytes) -> Generator[int, None, None]:
+    """Present the complete capability and EOF before the VMM can read either."""
+    if len(capability) != 32 or capability == bytes(32):
+        raise ScriptError("control capability must be 32 nonzero bytes")
+    reader, writer = os.pipe()
+    try:
+        try:
+            if os.write(writer, capability) != len(capability):
+                raise ScriptError("failed to write the complete control capability")
+        finally:
+            os.close(writer)
+        yield reader
+    finally:
+        os.close(reader)
+
+
 def start(
     state_path: Path,
     timeout: float,
@@ -606,21 +624,25 @@ def start(
     )
     process: subprocess.Popen[bytes] | None = None
     try:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=os.name != "nt",
-            creationflags=creationflags,
-            env=environment,
-        )
-        if process.stdin is None:
-            raise ScriptError("failed to create the OpenVMM capability pipe")
-        process.stdin.write(capability)
-        process.stdin.flush()
-        if not keep_stdin:
-            process.stdin.close()
+        with (
+            contextlib.nullcontext(subprocess.PIPE)
+            if keep_stdin
+            else sealed_capability_pipe(capability)
+        ) as capability_input:
+            process = subprocess.Popen(
+                command,
+                stdin=capability_input,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=os.name != "nt",
+                creationflags=creationflags,
+                env=environment,
+            )
+        if keep_stdin:
+            if process.stdin is None:
+                raise ScriptError("failed to create the OpenVMM capability pipe")
+            process.stdin.write(capability)
+            process.stdin.flush()
         _write_json(
             state_dir / RUNTIME_NAME,
             {

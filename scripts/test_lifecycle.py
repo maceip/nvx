@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +9,31 @@ from nvx_tools.common import ScriptError
 from nvx_tools.sandbox_lifecycle import (
     deprovision,
     microvm_network_endpoint,
+    sealed_capability_pipe,
     startup_failure,
 )
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_capability_is_complete_and_closed_before_child_starts(self) -> None:
+        capability = bytes(range(32))
+        with sealed_capability_pipe(capability) as reader:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os; data=os.read(0,32); os.set_blocking(0,False); "
+                    "assert data==bytes(range(32)); assert os.read(0,1)==b''",
+                ],
+                stdin=reader,
+                capture_output=True,
+                timeout=5,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        for invalid in (bytes(32), b"short", bytes(33)):
+            with self.assertRaises(ScriptError), sealed_capability_pipe(invalid):
+                self.fail("invalid capability admitted")
+
     def test_microvm_network_uses_guest_address_and_rejects_reserved_hosts(
         self,
     ) -> None:
