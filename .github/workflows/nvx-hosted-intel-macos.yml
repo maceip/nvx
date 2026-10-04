@@ -45,6 +45,7 @@ jobs:
     timeout-minutes: 180
     env:
       NVX_IMAGE_CACHE: ${{ github.workspace }}/build/hosted-image-cache
+      HOMEBREW_NO_AUTO_UPDATE: '1'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -64,12 +65,9 @@ jobs:
         with:
           name: intel-macos-guest
           path: build
-      - name: Start the owned Linux OCI converter
-        id: converter
-        run: |
-          brew install colima docker protobuf qemu
-          colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
-          docker info
+      - name: Install the native compiler prerequisite
+        timeout-minutes: 8
+        run: brew install protobuf
       - name: Identify the pinned core
         id: core
         run: echo "revision=$(git -C openvmm rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -98,6 +96,13 @@ jobs:
             openvmm/target/release/openvmm
             build/openvmm.provenance.json
           key: ${{ steps.core-cache.outputs.cache-primary-key }}
+      - name: Start the owned Linux OCI converter
+        id: converter
+        timeout-minutes: 15
+        run: |
+          brew install colima docker qemu
+          colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
+          docker info
       - run: python3 scripts/release-proof.py --platform darwin-x86_64 --output-dir build/intel-hvf-proof
       - uses: actions/upload-artifact@v7
         if: always()
