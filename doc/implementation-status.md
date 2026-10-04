@@ -12,15 +12,15 @@ are recorded separately from that result.
 
 | # | Implemented behavior | Acceptance evidence and remaining gates |
 | --- | --- | --- |
-| 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF. KVM, Intel HVF, WHP and MSHV full runs are tracked below. |
-| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF, Linux ARM and native x86 KVM full acceptance passes. Native WHP passes its complete runtime battery; its strict performance gate is being repeated. Intel HVF and MSHV controls remain required. |
-| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF passes a strict ten-commit trend gate against independently measured source-bound runs. Fourteen Mac, ten ARM and eleven base-branch native x86 Linux points are recorded with source, sample and log verification. ARM now passes its full strict ten-point repeat. The additional real Linux and Windows diagnostic-branch measurements are retained with their actual identities and excluded from base-branch comparisons. The fresh strict x86 Linux repeat passes all nine acceptance gates. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
-| 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF and Linux ARM real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Other backend results remain required. |
-| 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF and Linux ARM real credential isolation tests pass, including the leaking legacy-env control. Other backend results remain required. |
-| 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF and Linux ARM receipt/flow scenarios pass. Host signature/tamper tests pass. Other backend results remain required. |
-| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Native HVF acceptance passes on Apple Silicon; Linux ARM builds/boots/restores. Native Windows and Intel hosted runs are being exercised. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
+| 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF, ARM/KVM, native x86 KVM and WHP at the exact revisions below. Intel HVF and MSHV full runs remain required. |
+| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF, Linux ARM, native x86 KVM and native WHP full acceptance passes at the exact revisions below. Current-core ARM and Mac protected/opposite controls also pass. Intel HVF and MSHV controls remain required. |
+| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF, ARM/KVM, native x86 KVM and WHP pass 20-clone repair with disabled controls, 20 cold/warm requests and strict ten-point trend gates at the revisions below. Fourteen Mac, ten ARM, eleven native x86 Linux and ten Windows points are independently source/sample/log verified. Diagnostic-branch measurements retain their identities and are excluded. The nested ARM host exceeds the under-50-ms target. Intel HVF and MSHV still need runtime/history proof; other runtime shims require separate proof. |
+| 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
+| 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
+| 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
+| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. A new-core Windows repeat and native Intel build/runtime run are being exercised. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
-| 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF and Linux ARM. Native x86 KVM also passes its full strict matrix. WHP passes its runtime matrix and awaits the repeated performance gate; Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
+| 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF, Linux ARM, native x86 KVM and native WHP at the source-bound revisions below. Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
 
 [Image formats](image-formats.md) explains the OCI import boundary and the existing
@@ -168,9 +168,13 @@ inspection/disassembly; that work is not part of the completion commits.
   default macOS HVF as for explicit HVF. The discovery regression fails before
   the fix and passes afterward; compile, all-target clippy, docs, all fourteen
   definitions tests and final repository formatting pass. Native Mac build and
-  protected/control execution pass at `8c7963a`; a fresh native Intel build and
-  complete runtime repeat are running in `37185577628`. The previous executable
-  is not relabeled as the new core.
+  protected/control execution pass at `8c7963a`. Run `37185577628` was cancelled
+  after converter setup took more than twenty-five minutes; native compilation
+  and guest execution were not reached. GitHub returned no cancelled-job log,
+  so the setup delay's cause remains undetermined. The replacement
+  `37187107040` at `1afbb56` builds and checks the native core before starting
+  the separately bounded converter, then runs the unchanged acceptance suite.
+  The previous executable is not relabeled as the new core.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
@@ -270,7 +274,41 @@ inspection/disassembly; that work is not part of the completion commits.
   source in `37185576621` checks unchanged clean source/executable before and
   afterward; all raw samples, collected medians and four log hashes are verified.
   First stdout is **40.29 ms p50**, completion **59.09 ms**, cold first stdout
-  **2381.57 ms**. The Windows job in `37184454453` completes all ten requested source measurements. Its nine base-branch points plus the separately verified `2131a1e` point provide ten admitted measurements; the diagnostic-branch point retains its actual identity and is excluded. All samples, source/executable invariants, collected medians and logs are verified. A fresh strict full WHP repeat is being launched.
+  **2381.57 ms**. The Windows job in `37184454453` completes all ten requested source measurements. Its nine base-branch points plus the separately verified `2131a1e` point provide ten admitted measurements; the diagnostic-branch point retains its actual identity and is excluded. All samples, source/executable invariants, collected medians and logs are verified.
+- Native WHP strict repeat [37186596678](https://github.com/maceip/nvx/actions/runs/37186596678)
+  at NVX `19459df` / core `75b656015` passes all nine acceptance gates, including
+  the strict ten-point performance comparison. All nine gate-log hashes, the
+  containment digest and the raw twenty-cold/twenty-warm samples are independently
+  verified. First stdout is **34.91 ms p50**, completion **52.68 ms**, cold first
+  stdout **2210.35 ms**, with zero regressions across the three metrics. The
+  accepted proof is
+  `build/completion-strict-native-windows-repeat-evidence/measured-history-full-proof/NVX-ACCEPTANCE.json`
+  in the diagnostic checkout. Current-core native Windows repeat `37186695373`
+  at `fd63923` / core `4b20f45f1` passes all eight runtime gates but fails the
+  strict performance comparison. First stdout is **57.96 ms p50** against a
+  **43.72 ms** historical median; completion is **73.79 ms** against **58.27 ms**.
+  Cold first stdout is **2174.15 ms** and passes. All nine logs and the raw
+  twenty-cold/twenty-warm samples are independently verified; no complete
+  acceptance proof is published. An unchanged-source repeat, `37189066404`,
+  retains the same ten-point history, 20% threshold and 1 ms tolerance. The
+  failing measurements remain retained and are not imported into the baseline.
+- Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
+  at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
+  newly compiled, source-bound executable. The strict ten-point comparison checks
+  all three metrics with zero regressions. First stdout is **15.93 ms p50**,
+  completion **18.82 ms**, cold first stdout **1915.54 ms**. All gate logs,
+  the containment digest and raw twenty-cold/twenty-warm samples are independently
+  verified in
+  `build/completion-core4b20-native-kvm-proof-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`.
+  The overall workflow fails on its separate hosted ARM job because that host
+  exposes no usable KVM device; the successful x86 result is independent.
+- The newly compiled native ARM executable from `37186695364` passes doctor and
+  a real seccomp protected/opposite control on the owned nested ARM/KVM VM at
+  NVX `1afbb56` / core `4b20f45f1`. Clean source, executable digest and both logs
+  are verified before and after testing. This is a focused current-core repeat,
+  recorded in `build/completion-arm-host/core4b20-focused-runtime/REPEAT-RESULT.json`,
+  and does not replace the full nine-gate core-`75b656015` result. The VM was
+  stopped cleanly afterward.
 - Hosted ARM runners expose no usable `/dev/kvm`; their runtime lane fails
   explicitly. Actual ARM runtime evidence comes from the owned nested host above.
 
