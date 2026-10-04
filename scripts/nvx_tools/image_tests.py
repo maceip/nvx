@@ -53,7 +53,7 @@ def run(backend: str, output: Path, timeout: float) -> None:
             else result.stdout != b"1\n"
         ):
             raise ScriptError(f"image workload failed: {ref}; see {label}-run.log")
-        match = re.search(rb"^NVX-ID: ([0-9a-f]{32})$", result.stderr, re.M)
+        match = re.search(rb"^NVX-ID: ([0-9a-f]{32})\r?$", result.stderr, re.M)
         if match is None:
             raise ScriptError("image run did not publish an instance ID")
         image = cast(

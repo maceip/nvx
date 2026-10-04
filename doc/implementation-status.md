@@ -60,11 +60,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
-  `build/completion-prepared-arm-evidence/NVX-ACCEPTANCE.json` records an independent
-  full acceptance run at NVX `6974b017a604f13cb6407cc04e86c5a60383a33a` and
-  core revision `5c1f378cb94de28eba919c786d0a50e76f2d76f9`. Its
-  20-request cold/warm benchmark measured first stdout **184.98 ms p50**,
-  completion **233.92 ms** and cold first stdout **7620.74 ms** on the nested
+  `build/completion-warm-boundary-arm-evidence/NVX-ACCEPTANCE.json` records an independent
+  full acceptance run at NVX `1f8b9be157d5adb25dda12c1c7fb788ad8ba2876` and
+  core revision `5cb6890a39744321baa57d788f7f791dfad81c3d`. Its
+  20-request cold/warm benchmark measured first stdout **212.01 ms p50**,
+  completion **275.63 ms** and cold first stdout **8745.39 ms** on the nested
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
   regressions against the earlier separately measured ARM baseline.
   An earlier failed run encountered host disk exhaustion.
@@ -107,7 +107,9 @@ inspection/disassembly; that work is not part of the completion commits.
   stderr and none, and identifies any unexpectedly admitted rejection case.
   Scoped entry checks, clippy, docs, 166 local tests and repository formatting pass;
   native x86 verification is being repeated.
-- Windows receipt probes accept the CLI's CRLF instance-ID line.
+- Windows receipt and image probes accept the CLI's CRLF instance-ID line. The
+  latest native WHP repeat passed all eight containment families, simulants and
+  receipts before identifying the separate image probe's old LF-only parser.
 - MCP obtains each new instance ID from bounded, atomically published private
   host metadata. Workload stderr and image-conversion diagnostics cannot supply
   or replace an instance ID. Exec retains its known owned ID. A live TypeScript
