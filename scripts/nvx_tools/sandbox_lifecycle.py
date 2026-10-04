@@ -456,6 +456,34 @@ def sealed_capability_pipe(capability: bytes) -> Generator[int, None, None]:
         os.close(reader)
 
 
+def connect_when_ready(
+    endpoint: Path,
+    capability: bytes,
+    process: subprocess.Popen[bytes],
+    log_path: Path,
+    timeout: float,
+) -> ControlSession:
+    deadline = time.monotonic() + timeout
+    while True:
+        status = process.poll()
+        if status is not None:
+            raise startup_failure(log_path, status)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("managed guest did not become ready")
+        try:
+            # WAIT belongs to this attachment. Reconnecting every second
+            # resets the guest protocol and can starve a slower cold boot.
+            return ControlSession.connect(endpoint, capability, remaining)
+        except TimeoutError:
+            continue
+        except (ConnectionError, OSError):
+            status = process.poll()
+            if status is not None:
+                raise startup_failure(log_path, status) from None
+            raise
+
+
 def start(
     state_path: Path,
     timeout: float,
@@ -655,21 +683,9 @@ def start(
                 else None,
             },
         )
-        deadline = time.monotonic() + timeout
-        while True:
-            status = process.poll()
-            if status is not None:
-                raise startup_failure(log_path, status)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("managed guest did not become ready")
-            try:
-                session = ControlSession.connect(
-                    Path(endpoint_value), capability, min(1.0, remaining)
-                )
-                break
-            except TimeoutError:
-                continue
+        session = connect_when_ready(
+            Path(endpoint_value), capability, process, log_path, timeout
+        )
         with session:
             session.ping(timeout)
         EventLog(state_dir / "events.jsonl", state_dir.name).emit(

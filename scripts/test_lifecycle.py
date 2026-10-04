@@ -1,12 +1,18 @@
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from typing import cast
+from unittest.mock import MagicMock
 
+from nvx_tools import control_session
 from nvx_tools.common import ScriptError
 from nvx_tools.sandbox_lifecycle import (
+    connect_when_ready,
     deprovision,
     microvm_network_endpoint,
     sealed_capability_pipe,
@@ -15,6 +21,71 @@ from nvx_tools.sandbox_lifecycle import (
 
 
 class LifecycleTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Unix control transport regression")
+    def test_cold_start_retains_waiting_attachment_until_guest_is_ready(self) -> None:
+        capability = bytes(range(32))
+        failures: list[BaseException] = []
+        with tempfile.TemporaryDirectory(prefix="nvx-ready-", dir="/tmp") as directory:
+            root = Path(directory)
+            endpoint = root / "control.sock"
+            log = root / "openvmm.log"
+            log.write_bytes(b"booting\n")
+            process = MagicMock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            family = cast(int, getattr(socket, "AF_UNIX", None))
+            with socket.socket(family, socket.SOCK_STREAM) as listener:
+                listener.bind(str(endpoint))
+                listener.listen(1)
+                listener.settimeout(5)
+
+                def serve() -> None:
+                    try:
+                        connection, _ = listener.accept()
+                        with connection:
+                            connection.settimeout(5)
+                            with connection.makefile("rb") as incoming:
+                                frame = incoming.read(
+                                    control_session.OUTER_HEADER.size + 32
+                                )
+                            self.assertEqual(frame[-32:], capability)
+                            connection.sendall(
+                                control_session.OUTER_HEADER.pack(
+                                    b"NVXS",
+                                    1,
+                                    control_session.OUTER_WAIT,
+                                    0,
+                                    bytes(16),
+                                    0,
+                                    0,
+                                    0,
+                                )
+                            )
+                            # A boot taking longer than the old one-second
+                            # attach timeout must preserve this connection.
+                            threading.Event().wait(1.25)
+                            connection.sendall(
+                                control_session.OUTER_HEADER.pack(
+                                    b"NVXS",
+                                    1,
+                                    control_session.OUTER_READY,
+                                    0,
+                                    bytes([1]) * 16,
+                                    1,
+                                    0,
+                                    0,
+                                )
+                            )
+                    except BaseException as error:
+                        failures.append(error)
+
+                worker = threading.Thread(target=serve, daemon=True)
+                worker.start()
+                with connect_when_ready(endpoint, capability, process, log, 15):
+                    pass
+                worker.join(5)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(failures, [])
+
     def test_capability_is_complete_and_closed_before_child_starts(self) -> None:
         capability = bytes(range(32))
         with sealed_capability_pipe(capability) as reader:
