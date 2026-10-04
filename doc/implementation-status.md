@@ -32,20 +32,21 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-intel-shared-memory-macos-docker-recovery-proof/NVX-ACCEPTANCE.json`
+- `build/completion-independent-capture-macos-proof/NVX-ACCEPTANCE.json`
   binds the latest full accepted HVF repeat to NVX
-  `b7e30586722ff0228b071d49c129de53acb9df52` and core
-  `94d8908b05547be28425ba7c2d70dc91b51753ea`: all 18 supported scenarios,
+  `81233b9ae75431f2d56795d64b5d94f938dd3067` and core
+  `e1cd86c1880066227ca10f564a2056cf06d0f637`: all 18 supported scenarios,
   eight containment families and opposite controls, four simulants, workspace/copy,
   credentials/RAM/snapshots, 20 repaired clones with disabled controls, MCP,
   determinism and teardown. All nine acceptance steps passed.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.68 ms p50**, completion **3.78 ms**, cold first stdout **915.09 ms**.
+  **2.52 ms p50**, completion **3.85 ms**, cold first stdout **950.42 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
-  The separate strict ten-commit comparison checked all three metrics and found
-  zero regressions (`build/completion-intel-shared-memory-macos-strict-performance.md`).
+  The full run enforced the strict ten-commit comparison, checked all three metrics
+  and found zero regressions (`build/completion-independent-capture-macos-proof/performance-gate.md`).
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
-  records the same NVX/core pair on the owned four-CPU, 6 GiB nested ARM/KVM host.
+  records NVX `b7e3058` / core `94d8908b0` on the owned
+  four-CPU, 6 GiB nested ARM/KVM host.
   All nine acceptance steps and all 18 supported ARM scenarios passed. Its
   20 cold and 20 warm samples measured **165.73 ms** first stdout,
   **210.10 ms** completion and **7462.49 ms** cold first stdout, with zero
@@ -53,7 +54,7 @@ inspection/disassembly; that work is not part of the completion commits.
   This is a bootstrap comparison; the ARM ten-commit gate remains outstanding.
   Metadata and all step logs were exported and SHA-256 verified. Full RAM and
   scratch remain inside the owned VM disk.
-- Fresh installed packages at that NVX/core pair passed doctor, empty-cache
+- Fresh installed packages at NVX `b7e3058` / core `94d8908b0` passed doctor, empty-cache
   first-use guest execution and all six real TypeScript SDK tools on both hosts.
   Results are `build/completion-intel-shared-memory-typescript-live/result.json`
   and `build/completion-intel-shared-memory-arm-typescript-live-result.json`.
@@ -75,7 +76,14 @@ inspection/disassembly; that work is not part of the completion commits.
   cancellation and an exec workload's forged instance marker. This is our own
   integration test; the separate-person acceptance requirement remains open.
 - Native Windows now passes its corrected named-pipe listener regression at
-  NVX `3cf89c4` / core `beacdd8c6`; its full WHP runtime repeat remains in progress.
+  NVX `3cf89c4` / core `beacdd8c6`; its full WHP repeat then passed containment, workspace and credentials but
+  failed on the first warm restore with a closed control endpoint. The exact
+  executable reproduced that failure in native diagnostic run `37178705609`.
+  A fresh named-pipe connection arrived during RAM copying and was discarded
+  during restore. Core `464978e47` preserves that unprocessed connection, still
+  authenticates with fresh credentials and rejects the captured capability. The
+  regression failed before the fix; check, clippy, docs, all 82 console tests
+  and final formatting pass. Native twenty-clone run `37179030537` is pending.
 - Intel's native probe rejects POSIX shared-memory RAM and admits regular-file
   RAM. The corrected core `94d8908b0` native build and full HVF lane remain in
   progress. VM admission alone is not full guest acceptance.
@@ -88,7 +96,10 @@ inspection/disassembly; that work is not part of the completion commits.
   but its RAM digest changed after source teardown. Both full failing artifacts
   are retained. Guest-requested capture now publishes an independent RAM copy;
   the focused source-overwrite regression, scoped core checks, 258 Rust tests
-  and final repository formatting pass. Its native stress repeat is pending.
+  and final repository formatting pass. Native run `37178498614` now passes
+  all ten scratch captures and all processor-restore profile checks at NVX
+  `81233b9` / core `e1cd86c18`. Capture checksum checks and corrupt/missing
+  scratch controls remain enforced (`build/completion-independent-capture-kvm-result.json`).
 - Hosted ARM runners expose no usable `/dev/kvm`; their runtime lane fails
   explicitly. Actual ARM runtime evidence comes from the owned nested host above.
 
