@@ -58,7 +58,26 @@ jobs:
           $script = Join-Path $env:GITHUB_WORKSPACE .github/scripts/docker-wsl.py
           Set-Content (Join-Path $wrapper docker.cmd) "@python `"$script`" %*"
           $wrapper | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Build the corrected pinned core when the reused executable differs
+        shell: pwsh
+        run: |
+          $pinned = git -C openvmm rev-parse HEAD
+          $reused = (Get-Content build/openvmm.provenance.json | ConvertFrom-Json).source_revision
+          if ($reused -ne $pinned) {
+            python scripts/nvx.py build-openvmm --backend whp
+            if ($LASTEXITCODE -ne 0) { throw 'Native corrected core build failed' }
+          }
       - run: python scripts/nvx.py verify
+      - name: Native restore broker regressions
+        working-directory: openvmm
+        run: cargo test --release -p virtio_console broker_restore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hosted-whp-build
+          path: |
+            build/openvmm.provenance.json
+            openvmm/target/release/openvmm.exe
+          if-no-files-found: error
       - name: Exercise retained runtime warm restore with native debug logs
         run: python scripts/nvx.py test-microvm --backend whp --scenario warm-clone --output-dir build/warm-probe
       - uses: actions/upload-artifact@v7
