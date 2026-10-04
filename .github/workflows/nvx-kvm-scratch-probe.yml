@@ -38,8 +38,11 @@ jobs:
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
       - run: python3 scripts/nvx.py verify
-      - name: Repeat the first failing scenario with capture integrity and retained payloads
-        run: python3 scripts/nvx.py test-microvm --backend kvm --scenario scratch-snapshot --output-dir build/scratch-probe
+      - name: Repeat scratch snapshots ten times with capture integrity and retained failures
+        run: |
+          for trial in $(seq 1 10); do
+            python3 scripts/nvx.py test-microvm --backend kvm --scenario scratch-snapshot --output-dir "build/scratch-probe/repeat-$trial"
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
