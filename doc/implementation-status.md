@@ -53,6 +53,15 @@ inspection/disassembly; that work is not part of the completion commits.
   fix fixture ordering, owned Windows snapshot
   deletion and shared-port allocation, and retain native diagnostics; the full
   acceptance proof above remains bound to its exact source.
+- The current-core full Mac repeat at NVX `423b838` / core `4b20f45f1`
+  passes all nine acceptance gates, including the complete scenario battery,
+  opposite controls, MCP, determinism, twenty repaired clones and twenty
+  cold/warm requests. Its strict ten-point comparison checks all three metrics
+  with zero regressions. First stdout is **2.59 ms p50**, completion **3.87 ms**,
+  cold first stdout **926.07 ms**. Source, executable, every gate log, containment
+  digest and raw sample medians are independently verified in
+  `build/completion-core4b20-full-macos-proof/NVX-ACCEPTANCE.json` in the
+  diagnostic checkout.
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
   records NVX `b7e3058` / core `94d8908b0` on the owned
   four-CPU, 6 GiB nested ARM/KVM host.
@@ -175,6 +184,14 @@ inspection/disassembly; that work is not part of the completion commits.
   `37187107040` at `1afbb56` builds and checks the native core before starting
   the separately bounded converter, then runs the unchanged acceptance suite.
   The previous executable is not relabeled as the new core.
+  That replacement completes native compilation, clippy, docs and tests, starts
+  the converter and prepares both real images. Its first policy guest then
+  fails during VP creation: `Intel HVF lacks required VMCS control bits 0x4000
+  for 0x4012`. The failed guest log and actual native executable are retained and
+  hash-verified; the earlier default-network rejection no longer occurs. A
+  separate native framework capability diagnostic queries PAT/EFER support
+  without running a guest before changing CPU state handling. No Intel runtime
+  acceptance is inferred from the successful build or capability calls.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and

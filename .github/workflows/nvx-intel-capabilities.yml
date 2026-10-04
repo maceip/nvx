@@ -1,0 +1,33 @@
+name: NVX native Intel HVF capability diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capabilities:
+    runs-on: macos-26-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Probe framework capabilities without running a guest
+        run: |
+          mkdir -p build
+          {
+            git rev-parse HEAD
+            git ls-tree HEAD openvmm
+            shasum -a 256 .github/scripts/hvf-capabilities.c
+            cc -Wall -Wextra -Werror -Wno-deprecated-declarations .github/scripts/hvf-capabilities.c -framework Hypervisor -o build/hvf-capabilities
+            codesign --force --sign - --entitlements scripts/nvx_tools/openvmm-macos.entitlements.plist build/hvf-capabilities
+            build/hvf-capabilities
+          } > build/intel-hvf-capabilities.log 2>&1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: intel-hvf-capabilities
+          path: build/intel-hvf-capabilities.log
+          if-no-files-found: error
