@@ -3,7 +3,7 @@ name: NVX native Intel HVF guest diagnostic
 on:
   push:
     branches: [completion/guest-stream-boundary]
-    paths: ['.github/workflows/nvx-intel-guest-probe.yml', '.github/diagnostics/intel_readiness_inspection.py']
+    paths: ['.github/workflows/nvx-intel-guest-probe.yml', '.github/diagnostics/intel_readiness_sampling.py']
   workflow_dispatch:
 
 permissions:
@@ -39,11 +39,11 @@ jobs:
           run-id: 37197856945
           github-token: ${{ github.token }}
           path: build
-      - name: Install the read-only management inspection hook
+      - name: Install the passive native thread sampling hook
         run: |
           git fetch --no-tags --depth=1 --no-recurse-submodules https://github.com/maceip/nvx.git "${GITHUB_SHA}"
-          mkdir -p build/intel-inspection-hook
-          git show "${GITHUB_SHA}:.github/diagnostics/intel_readiness_inspection.py" > build/intel-inspection-hook/sitecustomize.py
+          mkdir -p build/intel-sampling-hook
+          git show "${GITHUB_SHA}:.github/diagnostics/intel_readiness_sampling.py" > build/intel-sampling-hook/sitecustomize.py
       - name: Verify the exact completed source and executable
         run: |
           chmod +x openvmm/target/release/openvmm
@@ -66,8 +66,8 @@ jobs:
           baseline={'nvx_revision':revision,'core_revision':core,'executable_sha256':metadata['executable_sha256'],
                     'python_version':sys.version,'host':platform.platform(),
                     'workflow_revision':os.environ['GITHUB_SHA'],
-                    'inspection_hook_sha256':hashlib.sha256(Path('build/intel-inspection-hook/sitecustomize.py').read_bytes()).hexdigest(),
-                    'changed_option':'managed REPL enabled with read-only inspection after the last TRACE marker; TRACE unchanged; no timing is admitted to history'}
+                    'sampling_hook_sha256':hashlib.sha256(Path('build/intel-sampling-hook/sitecustomize.py').read_bytes()).hexdigest(),
+                    'changed_option':'passive three-second native thread sample after the last TRACE marker; guest arguments and sealed stdin unchanged; no timing is admitted to history'}
           Path('build/intel-guest-source-before.json').write_text(json.dumps(baseline,indent=2)+'\n')
           print('Exact previously built Intel executable verified',core)
           PY
@@ -113,8 +113,9 @@ jobs:
               raise SystemExit(child.returncode)
           PY
       - name: Reproduce the first failed policy scenario
+        timeout-minutes: 5
         run: |
-          PYTHONPATH="$PWD/build/intel-inspection-hook${PYTHONPATH:+:$PYTHONPATH}" python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
+          PYTHONPATH="$PWD/build/intel-sampling-hook${PYTHONPATH:+:$PYTHONPATH}" python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
       - name: Verify unchanged source and executable after the diagnostic
         if: always()
         run: |
@@ -144,13 +145,15 @@ jobs:
             build/intel-guest-source-after.json
             build/intel-image-prepare.log
             build/intel-image-progress.log
-            build/intel-inspection-hook/sitecustomize.py
-            build/intel-inspection-hook/inspection.jsonl
+            build/intel-sampling-hook/sitecustomize.py
+            build/intel-sampling-hook/sampling.jsonl
             build/intel-image-cache/nvx-image-*/convert.log
             build/intel-image-cache/nvx-image-*/result.json
             build/intel-guest-diagnostic
             build/intel-image-cache/instances/*/*.json
             build/intel-image-cache/instances/*/openvmm.log
+            build/intel-image-cache/instances/*/native-thread-sample.txt
+            build/intel-image-cache/instances/*/native-thread-sample-tool.log
           include-hidden-files: true
           if-no-files-found: warn
       - name: Stop the owned converter

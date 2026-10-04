@@ -18,7 +18,7 @@ are recorded separately from that result.
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
-| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. The fixed Windows reader passes the unchanged performance gate; earlier failed measurements remain retained. The corrected Intel build passes native checks, but its first protected guest times out before readiness. Exact-build debug and trace replays reproduce that timeout; trace proves Linux kernel execution and ends at a virtio-fs configuration read. A management-inspection replay follows to distinguish the cause. Intel full acceptance remains absent. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
+| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. The fixed Windows reader passes the unchanged performance gate; earlier failed measurements remain retained. The corrected Intel build passes native checks, but its first protected guest times out before readiness. Exact-build debug and trace replays reproduce that timeout; trace proves Linux kernel execution and ends at a virtio-fs configuration read. The management-inspection replay hung and was cancelled. A passive native thread sample follows, preserving the original guest arguments and sealed stdin. Intel full acceptance remains absent. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
 | 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF, Linux ARM, native x86 KVM and native WHP at the source-bound revisions below. Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
@@ -281,9 +281,15 @@ inspection/disassembly; that work is not part of the completion commits.
   the subsequent stall remains unestablished. All bounded evidence and actual
   job-log hashes are verified in
   `build/completion-intel-control-state-native-intel-trace-result.json`.
-  A further replay adds only the existing managed REPL and requests read-only
-  VM inspection after that same trace marker. None of these focused diagnostics
-  supplies full acceptance or performance history.
+  The managed REPL inspection replay,
+  [37205054757](https://github.com/maceip/nvx/actions/runs/37205054757),
+  exceeded the original 180-second scenario-family bound and was cancelled.
+  No VM inspection state or completed source-after check is inferred from that
+  attempt. The next diagnostic uses a passive three-second native thread sample
+  after the same trace marker, retaining every original guest argument and the
+  EOF-sealed capability pipe. A five-minute infrastructure bound also limits the
+  guest step. None of these focused diagnostics supplies full acceptance or
+  performance history.
   A second native API probe,
   [37198280068](https://github.com/maceip/nvx/actions/runs/37198280068),
   accepts every new register mask, read shadow, normalized write and TLB
@@ -693,8 +699,9 @@ repeat still exceeds the roadmap's under-50-ms warm target. Its preceding
 storage-failed attempt and partial evidence remain retained separately.
 Intel HVF fails its first protected guest's readiness check. Exact-build debug and
 trace replays reproduce it; the trace reaches Linux virtio-fs configuration reads
-before stopping. The cause remains unestablished; a management-inspection replay
-follows. Full Intel runtime acceptance remains absent.
+before stopping. The cause remains unestablished. The management-inspection replay
+hung and was cancelled; a passive native thread sample follows with the original
+guest arguments and stdin intact. Full Intel runtime acceptance remains absent.
 No missing runtime result, notarization, public publication or external integration
 is inferred from checked-in source or CI wiring. Snapshots remain architecture and
 backend bound. Credential snapshots exclude host proxy state and require a fresh
