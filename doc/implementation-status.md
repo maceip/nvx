@@ -31,27 +31,27 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-mcp-identity-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `66498ba7348f69649a29dbe5a024d664be9ea9e3` and core
-  `5cb6890a39744321baa57d788f7f791dfad81c3d`: all 18 scenarios, eight containment
+- `build/completion-capture-namespace-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `426ddf6e09b445a9e25e415abecb26595b1175c8` and core
+  `46f86483f037f343458bc32c8c4f8062595309c5`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.77 ms p50**, completion **4.16 ms**, cold first stdout **1022.52 ms**.
+  **2.67 ms p50**, completion **3.97 ms**, cold first stdout **972.44 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-mcp-host-metadata-offline.log`: **129 offline tests**, ruff clean.
+- `build/completion-capture-namespace-offline.log`: **130 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-mcp-identity-offline.log` in the completion checkout: **136 tests**
+- `build/completion-capture-namespace-root-offline.log` in the main checkout: **138 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
-  and its rebuilt guest printed `NVX-CURRENT-ROOT-GUEST-OK`. The separately installed
+  and its rebuilt guest printed `NVX-HOST-METADATA-ROOT-GUEST-OK`. The separately installed
   current development archive also passed all 11 doctor checks and a real first-use
   OCI guest with an empty image cache.
-- `build/completion-mcp-typescript-live/result.json` records all six tools through
+- `build/completion-capture-namespace-typescript-live/result.json` records all six tools through
   the installed TypeScript SDK against a real HVF guest: both output streams,
   status 37, idempotence, byte-exact 1 MiB copy, snapshot operations, quota denial,
   cancellation and an exec workload's forged instance marker. This is our own
@@ -60,11 +60,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
-  `build/completion-warm-boundary-arm-evidence/NVX-ACCEPTANCE.json` records an independent
-  full acceptance run at NVX `1f8b9be157d5adb25dda12c1c7fb788ad8ba2876` and
-  core revision `5cb6890a39744321baa57d788f7f791dfad81c3d`. Its
-  20-request cold/warm benchmark measured first stdout **212.01 ms p50**,
-  completion **275.63 ms** and cold first stdout **8745.39 ms** on the nested
+  `build/completion-host-metadata-arm-evidence/NVX-ACCEPTANCE.json` records an independent
+  full acceptance run at NVX `2d7b0ee0d41b3c7b3fc61daf7d01ef98fcd4765a` and
+  core revision `46f86483f037f343458bc32c8c4f8062595309c5`. Its
+  20-request cold/warm benchmark measured first stdout **182.65 ms p50**,
+  completion **232.53 ms** and cold first stdout **7698.87 ms** on the nested
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
   regressions against the earlier separately measured ARM baseline.
   An earlier failed run encountered host disk exhaustion.
@@ -98,6 +98,15 @@ inspection/disassembly; that work is not part of the completion commits.
   the guest repair acknowledgement before thawing disk I/O. ARM retains its disk
   snapshot path. Wire compatibility and restore-argument regressions pass; both
   guest helpers compile for ARM and x86 with warnings treated as errors.
+- The x86 KVM repeat exposed the console/snapshot namespace constraint. Capture
+  and restore sockets now share the snapshot's immediate parent. Long paths capture
+  in a short private directory and publish after the source VM exits; both path
+  lengths and temporary namespace cleanup have a persisted-configuration regression.
+- The next KVM repeat reached the actual PMIO boundary and found the core's snapshot
+  validator rejecting the supported stderr boot console. The corrected inherited
+  provider allowlist accepts only console and stderr. Check, all-target clippy,
+  docs, **89 helper tests**, including valid/invalid provider controls, and final
+  repository formatting pass. Native runtime verification is being repeated.
 - Intel HVF is admitted by the x86 microVM frontend, fixed network IRQ and snapshot
   contract. The three affected core crates pass check, all-target clippy, docs and
   **267 Rust tests**, plus Intel cross-compilation and final repository formatting.
