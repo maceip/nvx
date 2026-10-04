@@ -11,9 +11,15 @@ import time
 from pathlib import Path
 
 from nvx_tools.build_constants import BuildConstants
-from nvx_tools.common import ScriptError, openvmm_git_state, sha256_file
+from nvx_tools.common import (
+    ScriptError,
+    artifact_path,
+    openvmm_binary_path,
+    openvmm_git_state,
+    sha256_file,
+)
 from nvx_tools.containment import render, validate_document
-from nvx_tools.release_gate import require_checked_performance
+from nvx_tools.release_gate import require_checked_performance, require_core_artifact
 from nvx_tools.runtime_release import PLATFORMS
 
 BACKENDS = {
@@ -49,6 +55,9 @@ def main() -> None:
         return revision, core
 
     revision, core = source_state()
+    executable = openvmm_binary_path()
+    provenance = artifact_path("openvmm.provenance.json")
+    core_digest = require_core_artifact(core, executable, provenance)
     proof = args.output_dir.resolve()
     if proof.exists():
         raise ScriptError("release proof must use a new directory")
@@ -178,6 +187,7 @@ def main() -> None:
         "architecture": PLATFORMS[args.platform],
         "nvx_revision": revision,
         "core_revision": core,
+        "core_executable_sha256": core_digest,
         "steps": steps,
         "containment_sha256": sha256_file(
             proof / "scenarios/containment/containment.json"
@@ -186,6 +196,10 @@ def main() -> None:
     if source_state() != (revision, core):
         raise ScriptError(
             "source changed during acceptance; no release proof was published"
+        )
+    if require_core_artifact(core, executable, provenance) != core_digest:
+        raise ScriptError(
+            "core binary changed during acceptance; no proof was published"
         )
     (proof / "NVX-ACCEPTANCE.json").write_text(json.dumps(document, indent=2) + "\n")
 

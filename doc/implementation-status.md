@@ -69,6 +69,10 @@ inspection/disassembly; that work is not part of the completion commits.
 - Startup keeps one authenticated attachment through delayed guest readiness.
 - Pool stop waits for handlers, refill threads and VM teardown before a temporary
   template is removed. Release benchmarking allows the full clone readiness budget.
+- Acceptance verifies the actual core binary revision and digest before and after
+  testing, so an older or replaced binary cannot be labelled as the current source.
+  Its stale/dirty/tampered regression checks pass with all 117 offline tests and
+  strict macOS/Linux/Windows types.
 - WHP/MSHV save and restore pending userspace ExtINT state; Windows-only constructors
   and OpenHCL activity conversions are checked on their actual target bodies.
 - The x86 command-line builder carries the explicit `unsafe-root` authorization

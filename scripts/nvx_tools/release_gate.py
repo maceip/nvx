@@ -7,7 +7,7 @@ import re
 import shutil
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .common import ScriptError, sha256_file
 from .containment import validate_document
@@ -24,6 +24,31 @@ REQUIRED_STEPS = frozenset(
         "performance",
     )
 )
+
+
+def require_core_artifact(core: str, executable: Path, provenance: Path) -> str:
+    """Bind acceptance to the actual clean pinned binary before exercising it."""
+    try:
+        value: object = json.loads(provenance.read_bytes())
+    except (OSError, ValueError) as error:
+        raise ScriptError(
+            "release acceptance requires valid core provenance"
+        ) from error
+    if not isinstance(value, dict):
+        raise ScriptError("release acceptance requires a core provenance object")
+    metadata = cast(dict[str, Any], value)
+    digest = sha256_file(executable)
+    if (
+        metadata.get("format") != 1
+        or metadata.get("source_clean") is not True
+        or metadata.get("source_revision") != core
+        or metadata.get("executable_sha256") != digest
+    ):
+        raise ScriptError(
+            "release acceptance requires the binary built from the clean pinned core; "
+            "finish build-openvmm before starting the tests"
+        )
+    return digest
 
 
 def require_checked_performance(log: Path, platform: str) -> None:

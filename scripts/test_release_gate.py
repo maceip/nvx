@@ -9,11 +9,46 @@ from pathlib import Path
 
 from nvx_tools.common import ScriptError, sha256_file
 from nvx_tools.containment import PROBES
-from nvx_tools.release_gate import REQUIRED_STEPS, verify_matrix
+from nvx_tools.release_gate import REQUIRED_STEPS, require_core_artifact, verify_matrix
 from nvx_tools.runtime_release import PLATFORMS
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_acceptance_rejects_old_dirty_or_changed_core_binaries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "openvmm"
+            executable.write_bytes(b"current compiled core")
+            provenance = root / "openvmm.provenance.json"
+            expected = {
+                "format": 1,
+                "source_revision": "b" * 40,
+                "source_clean": True,
+                "executable_sha256": sha256_file(executable),
+            }
+            provenance.write_text(json.dumps(expected))
+            self.assertEqual(
+                require_core_artifact("b" * 40, executable, provenance),
+                expected["executable_sha256"],
+            )
+            for field, value in (
+                ("source_revision", "a" * 40),
+                ("source_clean", False),
+                ("executable_sha256", "0" * 64),
+                ("format", 2),
+            ):
+                with self.subTest(field=field):
+                    provenance.write_text(json.dumps({**expected, field: value}))
+                    with self.assertRaises(ScriptError):
+                        require_core_artifact("b" * 40, executable, provenance)
+            provenance.write_text(json.dumps(expected))
+            executable.write_bytes(b"replaced compiled core")
+            with self.assertRaises(ScriptError):
+                require_core_artifact("b" * 40, executable, provenance)
+            provenance.write_text("[]")
+            with self.assertRaises(ScriptError):
+                require_core_artifact("b" * 40, executable, provenance)
+
     def fixture(self, root: Path) -> None:
         for platform, arch in PLATFORMS.items():
             lane = root / f"release-runtime-{platform}"
