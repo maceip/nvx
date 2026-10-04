@@ -53,18 +53,34 @@ int main(void) {
         HV_VMX_CAP_CR0_FIXED0, HV_VMX_CAP_CR0_FIXED1,
         HV_VMX_CAP_CR4_FIXED0, HV_VMX_CAP_CR4_FIXED1,
     };
+    uint64_t fixed_values[4] = {0};
     for (size_t i = 0; i < sizeof(fixed) / sizeof(fixed[0]); i++) {
         uint64_t value = 0;
         status = hv_vmx_read_capability(fixed[i], &value);
+        fixed_values[i] = value;
         printf("fixed_cap=%u status=%#x value=%#" PRIx64 "\n", fixed[i], status, value);
     }
     const uint32_t control_state[] = {0x6800, 0x6804, 0x6000, 0x6002, 0x6004, 0x6006};
-    for (unsigned phase = 0; phase < 2; phase++) {
-        if (phase) {
+    for (unsigned phase = 0; phase < 3; phase++) {
+        if (phase == 1) {
             printf("clear_cr0_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6000, 0));
             printf("clear_cr4_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6002, 0));
             printf("write_unmasked_protected_cr0=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR0, 1));
             printf("write_unmasked_protected_cr4=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR4, 0));
+        }
+        if (phase == 2) {
+            uint64_t required_cr0 = fixed_values[0] & ~UINT64_C(0x80000001);
+            uint64_t cr0_mask = required_cr0 | ~fixed_values[1] | UINT64_C(0xe0000000);
+            uint64_t cr4_mask = fixed_values[2] | ~fixed_values[3];
+            printf("write_virtual_cr0_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6000, cr0_mask));
+            printf("write_virtual_cr4_mask=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6002, cr4_mask));
+            printf("write_cr0_shadow=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6004, UINT64_C(0x80000001)));
+            printf("write_cr4_shadow=%#x\n", hv_vmx_vcpu_write_vmcs(cpu, 0x6006, UINT64_C(0x20)));
+            uint64_t cr0 = (UINT64_C(0x80000001) | required_cr0) & fixed_values[1] & ~UINT64_C(0x60000000);
+            uint64_t cr4 = (UINT64_C(0x20) | fixed_values[2]) & fixed_values[3];
+            printf("write_normalized_cr0=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR0, cr0));
+            printf("write_normalized_cr4=%#x\n", hv_vcpu_write_register(cpu, HV_X86_CR4, cr4));
+            printf("invalidate_guest_tlb=%#x\n", hv_vcpu_invalidate_tlb(cpu));
         }
         for (size_t i = 0; i < sizeof(control_state) / sizeof(control_state[0]); i++) {
             uint64_t value = 0;
