@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 45
     env:
       NVX_IMAGE_CACHE: ${{ github.workspace }}/build/intel-image-cache
-      OPENVMM_LOG: debug
+      OPENVMM_LOG: trace
     steps:
       - uses: actions/checkout@v5
         with:
@@ -60,7 +60,7 @@ jobs:
           assert platform.system()=='Darwin' and platform.machine()=='x86_64'
           baseline={'nvx_revision':revision,'core_revision':core,'executable_sha256':metadata['executable_sha256'],
                     'python_version':sys.version,'host':platform.platform(),
-                    'changed_option':'OPENVMM_LOG=debug; startup profiling disabled; no timing is admitted to history'}
+                    'changed_option':'OPENVMM_LOG=trace; startup profiling disabled; no timing is admitted to history'}
           Path('build/intel-guest-source-before.json').write_text(json.dumps(baseline,indent=2)+'\n')
           print('Exact previously built Intel executable verified',core)
           PY
