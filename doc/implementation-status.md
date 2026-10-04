@@ -18,7 +18,7 @@ are recorded separately from that result.
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
-| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. The fixed Windows reader passes the unchanged performance gate; earlier failed measurements remain retained. The Intel PAT/EFER fix requires a fresh native runtime result. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
+| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. The fixed Windows reader passes the unchanged performance gate; earlier failed measurements remain retained. The Intel PAT/EFER build passes native checks but the repeated guest run fails VM entry; the fixed control-register backend requires a fresh native runtime result. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
 | 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF, Linux ARM, native x86 KVM and native WHP at the source-bound revisions below. Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
@@ -211,7 +211,7 @@ inspection/disassembly; that work is not part of the completion commits.
   EFER write rules. Native ARM and cross-Intel check, all-target clippy and docs,
   plus final repository formatting pass. A new native Intel build and full
   runtime run, [37190449136](https://github.com/maceip/nvx/actions/runs/37190449136),
-  is executing at NVX `6521f01` / core `f1f6019b7`. The matching new Mac executable
+  completed its second attempt at NVX `6521f01` / core `f1f6019b7` with a guest VM-entry failure. The matching new Mac executable
   passes all eleven doctor checks and real protected/opposite seccomp execution.
   All eleven pre-existing user edits remain byte-identical after integration.
   No Intel runtime acceptance is inferred from these checks.
@@ -219,8 +219,7 @@ inspection/disassembly; that work is not part of the completion commits.
   reports that the hosted runner lost communication with the server during the
   acceptance step. Neither its job log nor a runtime proof was preserved; the
   job-log API returns 404 and the completed-run fallback reports no log. The
-  underlying cause and guest results remain undetermined. The failed job is
-  being repeated at the exact same NVX and core revisions. Independent export
+  underlying cause and guest results remain undetermined. The second attempt at the exact same NVX and core revisions retains its actual VMM log: the first protected seccomp guest fails VM entry with `0x80000021` (invalid guest state). All three preparation gates pass; the guest never becomes ready, and no acceptance or history point is admitted. The build artifact from that actual attempt is independently byte-verified and matches the separately exported executable. Independent export
   [37195655106](https://github.com/maceip/nvx/actions/runs/37195655106) retains
   the cached executable: its actual bytes, clean core-f1 provenance and x86-64
   Mach-O architecture are verified in
@@ -230,6 +229,16 @@ inspection/disassembly; that work is not part of the completion commits.
   ten distinct existing ancestor revisions, each pinning core-f1, with twenty
   cold and twenty warm requests per revision. No history points or guest
   acceptance are inferred before its results and raw samples are audited.
+  A native capability probe,
+  [37197539325](https://github.com/maceip/nvx/actions/runs/37197539325),
+  confirms CR0 fixed-one bits `0x80000021` and CR4 fixed-one bits `0x2000`.
+  Direct unmasked writes omit the required NE and VMXE bits. Core `d591aaee1`
+  applies native fixed-bit policy while keeping architectural guest values in
+  read shadows and saved state. It handles paging transitions, MOV, CLTS and
+  LMSW, and retains guest cache-disable state virtually. All seventeen backend
+  tests pass, as do native ARM and cross-Intel check, all-target clippy, docs,
+  and the final repository formatter. These source checks do not establish
+  native guest acceptance; the new core is being validated separately.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
