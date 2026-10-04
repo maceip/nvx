@@ -60,6 +60,11 @@ jobs:
           brew install colima docker qemu
           colima start nvx-converter --cpus 2 --memory 4 --disk 20 --arch x86_64 --vm-type qemu --runtime docker
           docker info
+      - name: Prepare the OCI image before the timed guest probe
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          python3 scripts/nvx.py image pull python:3.12-slim 2>&1 | tee build/intel-image-prepare.log
       - name: Reproduce the first failed policy scenario
         run: python3 scripts/nvx.py test-microvm --backend hvf --scenario seccomp-profile --output-dir build/intel-guest-diagnostic
       - uses: actions/upload-artifact@v7
@@ -67,6 +72,7 @@ jobs:
         with:
           name: intel-guest-diagnostic
           path: |
+            build/intel-image-prepare.log
             build/intel-guest-diagnostic
             build/intel-image-cache/instances/*/*.json
             build/intel-image-cache/instances/*/openvmm.log
