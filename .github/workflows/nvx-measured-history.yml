@@ -3,6 +3,11 @@ name: NVX source-bound native performance history
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: Native platform to exercise
+        type: choice
+        options: [all, linux, windows]
+        default: all
       full_proof:
         description: Run the full acceptance proof against the committed measured history
         type: boolean
@@ -18,6 +23,7 @@ permissions:
 
 jobs:
   linux:
+    if: ${{ inputs.platform != 'windows' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -73,7 +79,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
   windows:
-    if: ${{ !inputs.linux_diagnostic }}
+    if: ${{ !inputs.linux_diagnostic && inputs.platform != 'linux' }}
     runs-on: windows-2025
     timeout-minutes: 120
     env:
