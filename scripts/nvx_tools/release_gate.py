@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from .common import ScriptError, sha256_file
 from .containment import validate_document
+from .events import redact
 from .runtime_release import PLATFORMS
 
 REQUIRED_STEPS = frozenset(
@@ -57,6 +58,14 @@ def require_checked_performance(log: Path, platform: str) -> None:
             f"{platform}: performance Warmup is not a checked regression gate; "
             "record a measured matching-platform baseline before release acceptance"
         )
+
+
+def gate_failure(name: str, log: Path) -> ScriptError:
+    with log.open("rb") as source:
+        source.seek(0, 2)
+        source.seek(max(0, source.tell() - 4096))
+        detail = redact(source.read(4096).decode("utf-8", errors="replace"))
+    return ScriptError(f"release gate {name} failed; see {log}\n{detail}")
 
 
 def verify_matrix(

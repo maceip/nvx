@@ -11,6 +11,24 @@ from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_probe_failure_keeps_the_startup_cause_and_redacts_credentials(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch(
+                "nvx_tools.policy_tests.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    [],
+                    1,
+                    b"",
+                    b"fatal: root identity rejected\nBearer private-token-value",
+                ),
+            ):
+                with self.assertRaises(ScriptError) as caught:
+                    execute("whp", "probe", Path(directory), "control", 5)
+                self.assertIn("root identity rejected", str(caught.exception))
+                self.assertNotIn("private-token-value", str(caught.exception))
+
     def test_wall_deadline_can_expire_before_output_but_requires_timeout_status(
         self,
     ) -> None:

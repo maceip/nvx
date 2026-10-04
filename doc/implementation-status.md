@@ -53,8 +53,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
-  The 20-request cold/warm benchmark and matching-platform baseline gate are being
-  exercised next. An earlier failed run encountered host disk exhaustion.
+  The 20-request cold/warm benchmark measured first stdout **199.85 ms p50**,
+  completion **257.32 ms** and cold first stdout **7882.57 ms** on the nested
+  four-CPU, 6 GiB host. The gate refused zero-metric Warmup; those measurements
+  establish the first ARM baseline, and independent comparison remains required.
+  An earlier failed run encountered host disk exhaustion.
 - Hosted Intel HVF and Windows WHP admission succeeded. These are admission results,
   not full guest acceptance. Hosted Ubuntu x86 KVM admission succeeded; the hosted
   ARM runners expose no usable `/dev/kvm`, so their runtime lane fails explicitly.
@@ -62,6 +65,10 @@ inspection/disassembly; that work is not part of the completion commits.
 ## Fixes found by the repeated platform tests
 
 - Windows Docker launches use the resolved executable/wrapper path.
+- Windows proof logs and the image cache share the checkout drive so failed gates
+  can upload their evidence. Gate errors include bounded, credential-redacted
+  diagnostics. A source-keyed cache retains the verified native core binary after
+  a scenario failure; acceptance still checks its source revision and digest.
 - First-use image conversion keeps workload stdout free of a trailing image digest.
 - Intel macOS's owned OCI converter installs its QEMU dependency explicitly.
   The package CLI also admits Intel macOS alongside the other five release targets;

@@ -273,3 +273,10 @@ Intel Hypervisor.framework with a Linux OCI converter. ARM KVM runtime evidence 
 a host that exposes nested virtualization; the hosted ARM runner currently does not. The full
 publication pipeline still requires the documented runner labels and the Mac's Developer
 ID/notary profiles. Hardware admission alone never counts as a guest scenario pass.
+
+The Windows hosted lane keeps its image cache and proof logs under the checkout's
+`build/` directory, avoiding cross-drive artifact paths. Failed gates print a bounded,
+credential-redacted log tail and upload the complete available evidence. Its native
+core binary and provenance are cached by core revision and builder source before
+the scenario gate. Restored binaries still require matching clean-source provenance
+and a verified digest before acceptance.

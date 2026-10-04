@@ -9,11 +9,30 @@ from pathlib import Path
 
 from nvx_tools.common import ScriptError, sha256_file
 from nvx_tools.containment import PROBES
-from nvx_tools.release_gate import REQUIRED_STEPS, require_core_artifact, verify_matrix
+from nvx_tools.release_gate import (
+    REQUIRED_STEPS,
+    gate_failure,
+    require_core_artifact,
+    verify_matrix,
+)
 from nvx_tools.runtime_release import PLATFORMS
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_failed_gate_reports_bounded_redacted_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "scenarios.log"
+            log.write_text(
+                "early-only\n"
+                + "padding " * 2000
+                + "\nactual startup failure\nBearer private-token-value"
+            )
+            error = str(gate_failure("scenarios", log))
+            self.assertIn("actual startup failure", error)
+            self.assertNotIn("early-only", error)
+            self.assertNotIn("private-token-value", error)
+            self.assertLess(len(error), 4500)
+
     def test_acceptance_rejects_old_dirty_or_changed_core_binaries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

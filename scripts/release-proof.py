@@ -19,7 +19,11 @@ from nvx_tools.common import (
     sha256_file,
 )
 from nvx_tools.containment import render, validate_document
-from nvx_tools.release_gate import require_checked_performance, require_core_artifact
+from nvx_tools.release_gate import (
+    gate_failure,
+    require_checked_performance,
+    require_core_artifact,
+)
 from nvx_tools.runtime_release import PLATFORMS
 
 BACKENDS = {
@@ -84,7 +88,7 @@ def main() -> None:
         )
         (proof / "progress.json").write_text(json.dumps(steps, indent=2) + "\n")
         if result.returncode:
-            raise ScriptError(f"release gate {name} failed; see {log}")
+            raise gate_failure(name, log)
 
     run("doctor", "doctor", "--backend", backend, "--json")
     run(

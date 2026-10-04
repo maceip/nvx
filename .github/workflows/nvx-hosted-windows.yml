@@ -42,6 +42,8 @@ jobs:
     needs: guest
     runs-on: windows-2025
     timeout-minutes: 180
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/hosted-image-cache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -78,7 +80,28 @@ jobs:
           $script = Join-Path $env:GITHUB_WORKSPACE .github/scripts/docker-wsl.py
           Set-Content (Join-Path $wrapper docker.cmd) "@python `"$script`" %*"
           $wrapper | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Identify the pinned core
+        id: core
+        shell: pwsh
+        run: |
+          "revision=$(git -C openvmm rev-parse HEAD)" | Out-File $env:GITHUB_OUTPUT -Append
+      - uses: actions/cache/restore@v4
+        id: core-cache
+        with:
+          path: |
+            openvmm/target/release/openvmm.exe
+            build/openvmm.provenance.json
+          key: whp-core-${{ steps.core.outputs.revision }}-${{ hashFiles('scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_constants.py') }}
       - run: python scripts/nvx.py build-openvmm --backend whp
+        id: build-core
+        if: steps.core-cache.outputs.cache-hit != 'true'
+      - uses: actions/cache/save@v4
+        if: steps.build-core.conclusion == 'success' && steps.core-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            openvmm/target/release/openvmm.exe
+            build/openvmm.provenance.json
+          key: ${{ steps.core-cache.outputs.cache-primary-key }}
       - run: python scripts/release-proof.py --platform windows-whp --output-dir build/whp-proof
       - uses: actions/upload-artifact@v7
         if: always()
@@ -86,7 +109,7 @@ jobs:
           name: hosted-whp-proof
           path: |
             build/whp-proof
-            ~/.nvx/cache/instances/*/openvmm.log
+            build/hosted-image-cache/instances/*/openvmm.log
           include-hidden-files: true
           if-no-files-found: warn
       - uses: actions/upload-artifact@v7

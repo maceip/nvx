@@ -1,0 +1,4 @@
+platform,microvm_abi_version,processors,commit,metric,unit,direction,p50
+linux-arm64-kvm,2,1,9f7b241a11414d0c712c8679886b087f56f49896,warm_pool_first_stdout,ms,lower,199.8495305
+linux-arm64-kvm,2,1,9f7b241a11414d0c712c8679886b087f56f49896,warm_pool_completion,ms,lower,257.3180565
+linux-arm64-kvm,2,1,9f7b241a11414d0c712c8679886b087f56f49896,cold_image_first_stdout,ms,lower,7882.5724465

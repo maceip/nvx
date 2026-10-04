@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from .build_constants import BuildConstants
 from .common import ScriptError
+from .events import redact
 from .image import ImageCache, ensure
 
 SCENARIOS = ("seccomp-profile", "egress-fast-fail", "resource-caps", "device-policy")
@@ -192,7 +193,8 @@ def execute(
     (output / f"{label}.stderr").write_bytes(result.stderr)
     if result.returncode != expected_status:
         raise ScriptError(
-            f"{label} failed with status {result.returncode}; see {output}"
+            f"{label} failed with status {result.returncode}; see {output}\n"
+            f"{redact(result.stderr[-4096:].decode('utf-8', errors='replace'))}"
         )
     # A real execution deadline can expire during interpreter startup.
     # Status 124 is required above; the uncapped control must finish below.
