@@ -11,7 +11,9 @@ import os
 import queue
 import re
 import secrets
+import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -36,6 +38,35 @@ from .quota import Limits, Quota
 PROTOCOL = "2025-06-18"
 VERSION = "1.0"
 MAX_MESSAGE = 1 << 20
+
+
+def _remove_snapshot(directory: Path) -> None:
+    root = directory.resolve()
+
+    def remove_readonly(
+        function: Callable[..., Any],
+        path: str,
+        exception: tuple[type[BaseException], BaseException, object],
+    ) -> None:
+        error = exception[1]
+        candidate = Path(path)
+        if (
+            getattr(error, "winerror", None) != 5
+            or function not in (os.unlink, os.remove)
+            or candidate.is_symlink()
+            or not candidate.is_file()
+            or not candidate.resolve().is_relative_to(root)
+            or candidate.stat().st_mode & stat.S_IWRITE
+        ):
+            raise error
+        # Windows forbids unlinking readonly files, including captured scratch.
+        # Change only this validated snapshot payload while deleting its owner.
+        candidate.chmod(candidate.stat().st_mode | stat.S_IWRITE)
+        function(path)
+
+    shutil.rmtree(directory, onerror=remove_readonly)
+
+
 TOOL_NAMES = (
     "nvx_run",
     "nvx_exec",
@@ -586,10 +617,8 @@ class Service:
             if re.fullmatch("[0-9a-f]{32}", identifier) is None:
                 raise ScriptError("invalid snapshot ID")
             document = warm.admit(directory / identifier)
+            _remove_snapshot(directory / identifier)
             ImageCache().release(document["owner"] + "-snapshot")
-            import shutil
-
-            shutil.rmtree(directory / identifier)
             self.quota.release_snapshot(identifier)
             return {"id": identifier, "removed": True}
         raise ScriptError("unsupported tool")

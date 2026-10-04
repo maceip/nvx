@@ -1,0 +1,84 @@
+name: NVX native WHP MCP snapshot diagnostic
+
+on:
+  push:
+    branches: [completion/guest-stream-boundary]
+    paths: ['.github/workflows/nvx-whp-mcp-probe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  mcp-tools:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      NVX_IMAGE_CACHE: ${{ github.workspace }}/build/hosted-image-cache
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checkout-openvmm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - run: python -m pip install -r requirements-dev.txt
+      - uses: actions/download-artifact@v6
+        with:
+          name: hosted-whp-build
+          run-id: 37180859116
+          github-token: ${{ github.token }}
+          path: .
+      - uses: actions/download-artifact@v6
+        with:
+          name: whp-x86-guest
+          run-id: 37180859116
+          github-token: ${{ github.token }}
+          path: build
+      - name: Verify the exact failed native core and guest
+        run: |
+          python scripts/nvx.py verify
+          python -c "import hashlib,json,subprocess;from pathlib import Path;m=json.loads(Path('build/openvmm.provenance.json').read_text());assert m['source_revision']==subprocess.check_output(['git','-C','openvmm','rev-parse','HEAD'],text=True).strip();assert m['source_clean'] is True;assert m['executable_sha256']==hashlib.sha256(Path('openvmm/target/release/openvmm.exe').read_bytes()).hexdigest()"
+      - name: Native snapshot deletion regressions
+        run: python -m unittest discover -s scripts -p test_mcp.py -k snapshot_remove
+      - name: Set up a Linux OCI converter in disposable WSL2
+        id: converter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = python -c "import sys;sys.path.insert(0,'scripts');from nvx_tools.build_constants import AlpineBuildConstants as A;print(A.MINIROOTFS_URL)"
+          $expected = python -c "import sys;sys.path.insert(0,'scripts');from nvx_tools.build_constants import AlpineBuildConstants as A;print(A.MINIROOTFS_SHA256)"
+          $archive = Join-Path $env:RUNNER_TEMP alpine.tar.gz
+          Invoke-WebRequest $url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'WSL rootfs checksum mismatch' }
+          wsl --import NVX-Converter (Join-Path $env:RUNNER_TEMP nvx-converter) $archive --version 2
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 import failed' }
+          wsl -d NVX-Converter -u root --exec sh -c 'apk add --no-cache docker; (dockerd > /tmp/nvx-docker.log 2>&1 < /dev/null &) ; for attempt in $(seq 1 120); do docker info >/dev/null 2>&1 && exit 0; sleep 1; done; cat /tmp/nvx-docker.log; exit 1'
+          if ($LASTEXITCODE -ne 0) { throw 'Linux OCI converter daemon failed' }
+          $wrapper = Join-Path $env:RUNNER_TEMP nvx-docker
+          New-Item -ItemType Directory $wrapper | Out-Null
+          $script = Join-Path $env:GITHUB_WORKSPACE .github/scripts/docker-wsl.py
+          Set-Content (Join-Path $wrapper docker.cmd) "@python `"$script`" %*"
+          $wrapper | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Prepare image outside the timed MCP scenario
+        run: python scripts/nvx.py image pull alpine:3.20
+      - name: Exercise all six MCP tools against actual WHP guests
+        run: python scripts/nvx.py test-microvm --backend whp --scenario mcp-portable --output-dir build/mcp-probe
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: whp-mcp-snapshot-diagnostic
+          path: |
+            build/mcp-probe/mcp/result.json
+            build/mcp-probe/**/*.stdout
+            build/mcp-probe/**/*.stderr
+            build/hosted-image-cache/instances/*/*.json
+            build/hosted-image-cache/instances/*/openvmm.log
+          if-no-files-found: warn
+          include-hidden-files: true
+      - name: Stop the owned converter
+        if: always() && steps.converter.outcome != 'skipped'
+        shell: pwsh
+        run: wsl --terminate NVX-Converter

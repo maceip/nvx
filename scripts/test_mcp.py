@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import stat
 import sys
 import tempfile
 import threading
@@ -19,6 +20,73 @@ from nvx_tools.quota import Limits  # noqa: E402
 
 
 class MCPTests(unittest.TestCase):
+    def test_snapshot_remove_deletes_windows_readonly_payload_and_releases_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = mcp.Service("whp", Path(directory))
+            identifier = "a" * 32
+            snapshot = service.root / "snapshots" / identifier
+            snapshot.mkdir(parents=True)
+            scratch = snapshot / "scratch.ext4"
+            scratch.write_bytes(b"private snapshot scratch")
+            scratch.chmod(0o400)
+            service.quota.reserve_snapshot(identifier, 1024)
+            unlink = os.unlink
+
+            def windows_unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+                if (
+                    Path(path).name == "scratch.ext4"
+                    and scratch.exists()
+                    and not scratch.stat().st_mode & stat.S_IWRITE
+                ):
+                    error = PermissionError("Windows readonly file")
+                    error.winerror = 5  # type: ignore[attr-defined]
+                    raise error
+                unlink(path, *args, **kwargs)
+
+            try:
+                with (
+                    patch("nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}),
+                    patch("nvx_tools.mcp.ImageCache") as cache,
+                    patch("os.unlink", side_effect=windows_unlink),
+                ):
+                    result = service.call(
+                        "nvx_snapshot",
+                        {"operation": "remove", "id": identifier},
+                        mcp.Job("remove"),
+                        lambda value: None,
+                        None,
+                    )
+                    self.assertEqual(result, {"id": identifier, "removed": True})
+                    self.assertFalse(snapshot.exists())
+                    cache.return_value.release.assert_called_once_with("fixture-snapshot")
+            finally:
+                service.close()
+
+    def test_snapshot_remove_failure_preserves_image_pin_and_quota(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = mcp.Service("whp", Path(directory))
+            identifier = "b" * 32
+            service.quota.reserve_snapshot(identifier, 1024)
+            before = service.quota.counts()
+            try:
+                with (
+                    patch("nvx_tools.mcp.warm.admit", return_value={"owner": "fixture"}),
+                    patch("nvx_tools.mcp.ImageCache") as cache,
+                    patch("shutil.rmtree", side_effect=PermissionError("unrelated denial")),
+                ):
+                    with self.assertRaisesRegex(PermissionError, "unrelated denial"):
+                        service.call(
+                            "nvx_snapshot",
+                            {"operation": "remove", "id": identifier},
+                            mcp.Job("remove"),
+                            lambda value: None,
+                            None,
+                        )
+                    cache.return_value.release.assert_not_called()
+                    self.assertEqual(service.quota.counts(), before)
+            finally:
+                service.close()
+
     def initialized(self, service: mcp.Service) -> None:
         service.handle(
             {
