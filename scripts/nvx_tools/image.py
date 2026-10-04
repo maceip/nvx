@@ -25,7 +25,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from .build_constants import BuildConstants
-from .common import ScriptError, sha256_file
+from .common import ScriptError, require_tool, sha256_file
 from .doctor import canonical_arch
 from .locking import locked
 from .sandbox import SandboxLayer
@@ -440,23 +440,26 @@ def ensure(ref: str) -> tuple[str, dict[str, Any]]:
 
 def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
     cache = ImageCache()
+    docker = require_tool(
+        "docker", "Docker with a Linux engine is required for OCI conversion"
+    )
     arch = canonical_arch(platform.machine())
     docker_arch = "arm64" if arch == "aarch64" else "amd64"
     if pull:
         subprocess.run(
-            ["docker", "pull", "--platform", f"linux/{docker_arch}", ref],
+            [docker, "pull", "--platform", f"linux/{docker_arch}", ref],
             check=True,
             stdout=sys.stderr,
         )
     with tempfile.TemporaryDirectory(prefix="nvx-image-", dir=cache.root) as temporary:
         work = Path(temporary)
         subprocess.run(
-            ["docker", "save", "--output", str(work / "image.tar"), ref], check=True
+            [docker, "save", "--output", str(work / "image.tar"), ref], check=True
         )
         with (work / "convert.log").open("wb") as log:
             build = subprocess.run(
                 [
-                    "docker",
+                    docker,
                     "build",
                     "--target",
                     "converter",
@@ -475,7 +478,7 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
                 raise ScriptError(f"OCI converter setup failed:\n{detail}")
             result = subprocess.run(
                 [
-                    "docker",
+                    docker,
                     "run",
                     "--rm",
                     "--network",

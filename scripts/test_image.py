@@ -47,6 +47,7 @@ class ImageTests(unittest.TestCase):
             def run(
                 command: list[str], **options: object
             ) -> subprocess.CompletedProcess[bytes]:
+                self.assertEqual(command[0], "/converter/docker.cmd")
                 if command[1] == "build":
                     output = cast(BinaryIO, options["stdout"])
                     output.write(b"dpkg: No space left on device\n")
@@ -55,6 +56,9 @@ class ImageTests(unittest.TestCase):
 
             with (
                 patch("nvx_tools.image.ImageCache", return_value=cache),
+                patch(
+                    "nvx_tools.image.require_tool", return_value="/converter/docker.cmd"
+                ),
                 patch("nvx_tools.image.subprocess.run", side_effect=run),
             ):
                 with self.assertRaisesRegex(
