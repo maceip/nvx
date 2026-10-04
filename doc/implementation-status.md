@@ -65,6 +65,9 @@ inspection/disassembly; that work is not part of the completion commits.
 ## Fixes found by the repeated platform tests
 
 - Windows Docker launches use the resolved executable/wrapper path.
+- The x86 guest enables user namespaces and packet sockets, matching ARM. Build
+  validation requires them so unconfined seccomp controls can exercise the blocked
+  operations instead of failing because the kernel lacks the feature.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

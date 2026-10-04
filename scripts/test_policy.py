@@ -5,12 +5,38 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from nvx_tools.build import assert_required_kernel_config
 from nvx_tools.common import ScriptError
 from nvx_tools.policy import read_config, resolve
 from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_guest_kernels_support_unconfined_namespace_and_socket_controls(
+        self,
+    ) -> None:
+        root = Path(__file__).resolve().parents[1] / "kernel"
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory) / "config"
+            for architecture, name in (
+                ("x86_64", "config-microvm"),
+                ("aarch64", "config-microvm-aarch64"),
+            ):
+                source = root / name
+                with patch(
+                    "nvx_tools.build.host_guest_arch", return_value=architecture
+                ):
+                    assert_required_kernel_config(source)
+                    for feature in ("CONFIG_USER_NS", "CONFIG_PACKET"):
+                        with self.subTest(architecture=name, feature=feature):
+                            generated.write_text(
+                                source.read_text().replace(
+                                    f"{feature}=y", f"# {feature} is not set"
+                                )
+                            )
+                            with self.assertRaisesRegex(ScriptError, feature):
+                                assert_required_kernel_config(generated)
+
     def test_probe_failure_keeps_the_startup_cause_and_redacts_credentials(
         self,
     ) -> None:
