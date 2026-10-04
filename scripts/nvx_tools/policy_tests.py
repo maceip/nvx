@@ -98,7 +98,7 @@ print(json.dumps(dict(signal=os.WTERMSIG(status) if os.WIFSIGNALED(status) else 
 WALL = r"""
 import json,time
 print(json.dumps(dict(phase='started')),flush=True)
-time.sleep(2)
+time.sleep(5)
 print(json.dumps(dict(phase='completed')),flush=True)
 """
 
@@ -196,7 +196,7 @@ def execute(
         )
     try:
         value: object = json.loads(result.stdout.splitlines()[-1])
-    except ValueError as error:
+    except (ValueError, IndexError) as error:
         raise ScriptError(f"{label} did not return a probe record") from error
     if not isinstance(value, dict):
         raise ScriptError(f"{label} probe record is not an object")
@@ -416,7 +416,7 @@ def run(backend: str, scenarios: tuple[str, ...], output: Path, timeout: float) 
                 output,
                 "wall-protected",
                 timeout,
-                extra=("--exec-timeout-ms", "100"),
+                extra=("--exec-timeout-ms", "1000"),
                 expected_status=124,
             )
             wall_control = execute(

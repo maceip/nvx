@@ -522,7 +522,6 @@ def convert(ref: str, *, pull: bool, curated_base: bool = False) -> str:
                 cache.root / "bases" / value[7:],
                 {"image": value, "prefix": manifest["oci_layers"]},
             )
-        print(value)
         return value
 
 
@@ -759,10 +758,12 @@ def worker(curated: bool) -> None:
 
 def command(args: argparse.Namespace) -> None:
     if args.image_operation in ("pull", "convert"):
-        convert(
-            args.ref,
-            pull=args.image_operation == "pull",
-            curated_base=args.curated_base,
+        print(
+            convert(
+                args.ref,
+                pull=args.image_operation == "pull",
+                curated_base=args.curated_base,
+            )
         )
         return
     cache = ImageCache()

@@ -1,9 +1,11 @@
 import errno
 import io
+import json
 import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stdout
 from pathlib import Path
 from tarfile import TarInfo
 from tarfile import open as tar_open
@@ -11,6 +13,7 @@ from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from nvx_tools.common import ScriptError
+from nvx_tools.doctor import canonical_arch
 from nvx_tools.image import (
     ImageCache,
     apply_layer,
@@ -40,6 +43,47 @@ def layer(path: Path, entries: list[tuple[str, bytes | str]]) -> Path:
 
 
 class ImageTests(unittest.TestCase):
+    def test_first_use_conversion_keeps_workload_stdout_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = ImageCache(Path(directory))
+
+            def run(
+                arguments: list[str], **options: object
+            ) -> subprocess.CompletedProcess[bytes]:
+                if arguments[1] == "run":
+                    work = Path(arguments[arguments.index("-v") + 1].removesuffix(":/out"))
+                    (work / "custom.erofs").write_bytes(b"fixture root")
+                    (work / "scratch.ext4").write_bytes(b"fixture scratch")
+                    (work / "result.json").write_text(
+                        json.dumps(
+                            {
+                                "image_version": 1,
+                                "converter_version": 1,
+                                "architecture": canonical_arch("aarch64"),
+                                "layers": [
+                                    {
+                                        "role": "custom",
+                                        "file": "custom.erofs",
+                                        "uuid": "11111111-1111-1111-1111-111111111111",
+                                    }
+                                ],
+                            }
+                        )
+                    )
+                return subprocess.CompletedProcess(arguments, 0)
+
+            output = io.StringIO()
+            with (
+                patch("nvx_tools.image.ImageCache", return_value=cache),
+                patch("nvx_tools.image.require_tool", return_value="docker"),
+                patch("nvx_tools.image.platform.machine", return_value="aarch64"),
+                patch("nvx_tools.image.subprocess.run", side_effect=run),
+                redirect_stdout(output),
+            ):
+                value, _ = ensure("fixture:first-use")
+            self.assertTrue(value.startswith("sha256:"))
+            self.assertEqual(output.getvalue(), "")
+
     def test_converter_setup_failure_preserves_the_actionable_reason(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache = ImageCache(Path(directory))
