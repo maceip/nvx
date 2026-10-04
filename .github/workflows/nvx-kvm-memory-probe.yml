@@ -1,0 +1,32 @@
+name: NVX native KVM memory persistence probe
+
+on:
+  push:
+    branches: [completion/guest-stream-boundary]
+    paths:
+      - '.github/workflows/nvx-kvm-memory-probe.yml'
+      - 'scripts/probes/kvm-memory.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  memory-persistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile and exercise guest writes and independent-copy control
+        run: |
+          sudo modprobe kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          mkdir -p build/kvm-memory-probe
+          cc -std=c11 -O2 -Wall -Wextra -Werror scripts/probes/kvm-memory.c -o build/kvm-memory-probe/probe
+          build/kvm-memory-probe/probe | tee build/kvm-memory-probe/result.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kvm-memory-persistence-probe
+          path: build/kvm-memory-probe/result.log
+          if-no-files-found: warn
