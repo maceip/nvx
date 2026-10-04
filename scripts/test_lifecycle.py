@@ -4,10 +4,30 @@ import unittest
 from pathlib import Path
 
 from nvx_tools.common import ScriptError
-from nvx_tools.sandbox_lifecycle import deprovision, startup_failure
+from nvx_tools.sandbox_lifecycle import (
+    deprovision,
+    microvm_network_endpoint,
+    startup_failure,
+)
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_microvm_network_uses_guest_address_and_rejects_reserved_hosts(
+        self,
+    ) -> None:
+        self.assertEqual(
+            microvm_network_endpoint("192.168.127.0/24"), "192.168.127.2/24"
+        )
+        self.assertEqual(microvm_network_endpoint("10.23.4.7/24"), "10.23.4.7/24")
+        for value in (
+            "192.168.127.1/24",
+            "192.168.127.255/24",
+            "192.168.127.0/31",
+            "::/64",
+        ):
+            with self.assertRaises(ScriptError):
+                microvm_network_endpoint(value)
+
     def test_startup_failure_preserves_cause_with_bounded_redacted_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "openvmm.log"

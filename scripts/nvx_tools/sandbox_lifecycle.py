@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import platform
@@ -420,6 +421,23 @@ def provision(
     )
 
 
+def microvm_network_endpoint(value: str) -> str:
+    """Accept a subnet or guest CIDR and pass the actual guest address to core."""
+    try:
+        interface = ipaddress.IPv4Interface(value)
+    except ValueError as error:
+        raise ScriptError("microVM networking requires an IPv4 CIDR") from error
+    network = interface.network
+    if network.num_addresses < 4:
+        raise ScriptError("microVM subnet must have room for gateway and guest")
+    address = interface.ip
+    if address == network.network_address:
+        address = network.network_address + 2
+    if address in (network.network_address + 1, network.broadcast_address):
+        raise ScriptError("microVM guest address conflicts with gateway or broadcast")
+    return f"{address}/{network.prefixlen}"
+
+
 def start(
     state_path: Path,
     timeout: float,
@@ -541,7 +559,14 @@ def start(
     net = config.get("net")
     network_profile = config.get("network_profile")
     if net is not None and not arm:
-        command.extend(["--net", str(net), "--network-profile", str(network_profile)])
+        command.extend(
+            [
+                "--net",
+                microvm_network_endpoint(str(net)),
+                "--network-profile",
+                str(network_profile),
+            ]
+        )
     for name in ("network_egress", "network_ingress", "host_loopback"):
         value = config.get(name)
         if value is not None and not arm:
