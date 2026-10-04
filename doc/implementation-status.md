@@ -18,7 +18,7 @@ are recorded separately from that result.
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
-| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. Two core-4b20 Windows repeats fail the performance gate; the Intel PAT/EFER fix requires a fresh native runtime run. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
+| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. The fixed Windows reader passes the unchanged performance gate; earlier failed measurements remain retained. The Intel PAT/EFER fix requires a fresh native runtime result. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
 | 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF, Linux ARM, native x86 KVM and native WHP at the source-bound revisions below. Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
@@ -349,7 +349,7 @@ inspection/disassembly; that work is not part of the completion commits.
   Source, actual executable, every step log and all raw sample medians are
   independently verified. Variation between repeats of the same binary prevents
   attributing the earlier failed gates to a consistent binary slowdown. Those
-  failed gates remain unresolved; the diagnostic supplies neither acceptance nor
+  failed measurements remain retained; the diagnostic supplies neither acceptance nor
   baseline history. Earlier handoff and Python 3.10 hashing failures occurred before any
   guest ran, retain their original logs and supply no runtime measurements.
 - Fresh core-`f1f6019b7` Windows repeat
@@ -380,8 +380,23 @@ inspection/disassembly; that work is not part of the completion commits.
   [37192977864](https://github.com/maceip/nvx/actions/runs/37192977864).
   The medians of trial medians are **15.39 ms** before and **0.07 ms** after.
   Both source digests and all eight hundred raw samples are independently verified.
-  Full guest acceptance validation remains required for the new reader; the
-  earlier failed acceptance remains bound to its original source.
+  The subsequent full guest acceptance result is below; the earlier failed
+  acceptance remains bound to its original source.
+- The fixed-reader full Windows repeat
+  [37193112844](https://github.com/maceip/nvx/actions/runs/37193112844) at
+  NVX `de30108` / core `f1f6019b7` now passes all nine acceptance gates,
+  including the complete runtime scenarios, opposite controls, MCP, determinism,
+  twenty repaired clones and twenty cold/warm requests. First output is
+  **26.53 ms p50**, completion **32.35 ms**, cold first output **2091.29 ms**.
+  The strict ten-point comparison checks all three metrics with zero regressions;
+  both warm medians are below 50 ms. The actual executable, all nine gate-log
+  hashes, containment digest and raw sample medians are independently verified.
+  The VMM binary is identical to the earlier core-f1 run; the measured polling
+  reader was replaced without changing the benchmark or its thresholds.
+  The accepted proof is
+  `build/completion-event-reader-native-whp-repeat-evidence/whp-proof/NVX-ACCEPTANCE.json`
+  in the diagnostic checkout. The earlier failed results remain retained and
+  excluded from baseline history.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks
@@ -405,6 +420,19 @@ inspection/disassembly; that work is not part of the completion commits.
   No complete acceptance proof is published, and this failed measurement is not
   imported into history. The separate hosted ARM jobs compile the new core but
   reject absent `/dev/kvm`; they supply no new ARM guest runtime evidence.
+- The current-source native x86 KVM repeat
+  [37193112786](https://github.com/maceip/nvx/actions/runs/37193112786) at
+  NVX `de30108` / core `f1f6019b7` passes all nine acceptance gates. First output
+  is **17.81 ms p50**, completion **21.98 ms**, cold first output **1972.70 ms**;
+  its strict ten-point comparison checks all three metrics with zero regressions.
+  Every gate-log hash, containment digest and raw twenty-cold/twenty-warm median
+  is independently verified. The actual executable and compressed build archive
+  are byte-identical to the earlier core-f1 run that failed first-output latency.
+  That earlier failure remains retained; no Linux performance fix is inferred
+  from the passing repeat. The complete accepted proof is
+  `build/completion-event-reader-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`
+  in the diagnostic checkout. Separate hosted ARM jobs again reject absent KVM,
+  so the overall workflow conclusion is failure despite the accepted x86 job.
 - The newly compiled native ARM executable from `37186695364` passes doctor and
   a real seccomp protected/opposite control on the owned nested ARM/KVM VM at
   NVX `1afbb56` / core `4b20f45f1`. Clean source, executable digest and both logs
@@ -542,8 +570,10 @@ inspection/disassembly; that work is not part of the completion commits.
    signed/notarized six-platform release and clean-host public download smoke.
 3. An SDK/MCP integration built and exercised by another person.
 
-Native Windows and Intel HVF repeats are still being followed and repaired.
-Native ARM and x86 KVM strict repeats now pass their nine acceptance gates.
+Native Windows, Apple Silicon macOS and native x86 KVM repeats pass all nine
+acceptance gates with core `f1f6019b7`. The earlier owned ARM/KVM strict repeat
+also passes all nine gates at its separately recorded revision. The Intel HVF
+repeat is still running; its runtime result is not yet established.
 No missing runtime result, notarization, public publication or external integration
 is inferred from checked-in source or CI wiring. Snapshots remain architecture and
 backend bound. Credential snapshots exclude host proxy state and require a fresh
