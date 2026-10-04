@@ -18,7 +18,7 @@ are recorded separately from that result.
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
-| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. A new-core Windows repeat and native Intel build/runtime run are being exercised. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
+| 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Full acceptance passes on Apple Silicon/HVF, Linux ARM/KVM, native x86 KVM and native WHP at the source-bound revisions below. Two core-4b20 Windows repeats fail the performance gate; the Intel PAT/EFER fix requires a fresh native runtime run. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
 | 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF, Linux ARM, native x86 KVM and native WHP at the source-bound revisions below. Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
@@ -189,9 +189,17 @@ inspection/disassembly; that work is not part of the completion commits.
   fails during VP creation: `Intel HVF lacks required VMCS control bits 0x4000
   for 0x4012`. The failed guest log and actual native executable are retained and
   hash-verified; the earlier default-network rejection no longer occurs. A
-  separate native framework capability diagnostic queries PAT/EFER support
-  without running a guest before changing CPU state handling. No Intel runtime
-  acceptance is inferred from the successful build or capability calls.
+  separate native framework capability diagnostic, run `37190028573` at
+  `fd57e2b`, confirms that neither native PAT/EFER MSR access nor the guest PAT
+  VMCS field is exposed; the guest EFER VMCS field is exposed. VM and vCPU
+  creation and cleanup pass. Source and log digests are independently verified.
+  Core `f1f6019b7` preserves and validates PAT in software, accesses EFER through
+  VMCS, restores its guest-mode entry control and retains the existing snapshot
+  format. Both framework-constraint regressions fail before the fix; all thirteen
+  local tests pass afterward, including invalid PAT writes, capture/restore and
+  EFER write rules. Native ARM and cross-Intel check, all-target clippy and docs,
+  plus final repository formatting pass. A new native Intel build and full
+  runtime run are required; no runtime acceptance is inferred from these checks.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
@@ -307,8 +315,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Cold first stdout is **2174.15 ms** and passes. All nine logs and the raw
   twenty-cold/twenty-warm samples are independently verified; no complete
   acceptance proof is published. An unchanged-source repeat, `37189066404`,
-  retains the same ten-point history, 20% threshold and 1 ms tolerance. The
-  failing measurements remain retained and are not imported into the baseline.
+  retains the same ten-point history, 20% threshold and 1 ms tolerance and
+  reproduces both regressions: first stdout **60.67 ms**, completion **80.72 ms**,
+  cold first stdout **2254.91 ms**. All eight runtime gates pass again. Every
+  recorded gate-log hash and the twenty-cold/twenty-warm medians are verified.
+  The failing measurements remain retained and are not imported into the baseline.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks
