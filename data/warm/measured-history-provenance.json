@@ -5339,6 +5339,569 @@
       "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
       "source_is_current_branch_ancestor": true,
       "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "darwin-arm64",
+      "proof_platform": "darwin-arm64",
+      "nvx_revision": "65329b2db8bb1a1fa10013816834306500468c51",
+      "core_revision": "d591aaee1c5c10a10d8df85a48e865ec13031dc2",
+      "core_executable_sha256": "6d09791e18e527af46df7dfac69077c79c729e2fd53ef1f9013cd48622c4082f",
+      "proof_artifact": "build/completion-intel-control-state-full-macos-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "493996cc13611355e9906357722a3237dc57346ac593165a3053b150038fccea",
+      "benchmark_sha256": "ba775e01a9e3ddf2ebf3ca71597a9c0538e466cfcad9fc46b4ca1e6ca95758af",
+      "collected_csv_sha256": "63e85662a6807974404d684bc155ca1de1d8e230363d838079fee19aa2e17c80",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "darwin-arm64-hvf",
+        "backend": "hvf",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              3.041042,
+              2.49,
+              2.59775,
+              3.340959,
+              11.064291,
+              2.604334,
+              2.799084,
+              2.753667,
+              2.470708,
+              2.808125,
+              2.746625,
+              3.106625,
+              2.675125,
+              2.5885,
+              3.861417,
+              4.759167,
+              2.710834,
+              2.55925,
+              5.131875,
+              2.765375
+            ],
+            "p50_ms": 2.7595210000000003
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              4.346334,
+              8.394166,
+              4.183958,
+              5.060334,
+              72.416125,
+              3.946167,
+              4.295167,
+              4.022542,
+              3.944458,
+              3.994208,
+              4.063125,
+              4.983875,
+              4.107125,
+              3.861209,
+              6.159417,
+              6.925084,
+              3.929125,
+              3.807042,
+              8.056417,
+              4.029625
+            ],
+            "p50_ms": 4.1455415
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              1076.89375,
+              977.482334,
+              1087.823458,
+              1138.87625,
+              1036.92725,
+              2640.823291,
+              1094.414041,
+              1039.556792,
+              1103.661875,
+              1046.482,
+              1050.329292,
+              1012.096333,
+              1001.974834,
+              1044.261709,
+              992.775625,
+              1002.089959,
+              1044.916917,
+              1054.132833,
+              1046.4255,
+              995.958625
+            ],
+            "p50_ms": 1045.6712085
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/doctor.log",
+          "sha256": "9ce2b0d61f77ea57b6e746d975c3f22b622bdd6073c38864be77e2f4fe761290"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/prepare-alpine.log",
+          "sha256": "ec45aec0785ec326ee227b075acfb15b10e888339501559d84dc3f58067428cc"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/warm.log",
+          "sha256": "122191e1b6e5002e52d58d4a3110b6adebaa4f1fc7b3a93c71a6e12dc25b242c"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/benchmark.log",
+          "sha256": "b324b89ed6363a005a290ba65a6ee933fdb9a6cee308caae8f6d8430c8cde526"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/collect.log",
+          "sha256": "8d30bb895410e748bfe11f3ab1dcb64a315d3c0c2e30fcf1612533bca6064d88"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-full-macos-proof/performance.log",
+          "sha256": "2cc354b1b9d06f911774f6869704f5bb2833d124e094bfbc10ebcf4674a7ff05"
+        }
+      ],
+      "acceptance_scope": "Complete nine-step acceptance and unchanged strict ten-point/20-percent/1-ms gate passed before importing this point",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true,
+      "under_50_ms_warm_target_met": true
+    },
+    {
+      "platform": "linux-x86_64",
+      "proof_platform": "linux-kvm",
+      "nvx_revision": "65329b2db8bb1a1fa10013816834306500468c51",
+      "core_revision": "d591aaee1c5c10a10d8df85a48e865ec13031dc2",
+      "core_executable_sha256": "8754dd8bba55cde59ddeb4695b83c6e6f3a0699b15c3fbb835de1f4a669177a2",
+      "proof_artifact": "build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "9cdc0009e6c7afc6ed57a88e9ac0bf4e64aa1671077cc7686f93fc6152bb2b71",
+      "benchmark_sha256": "db83daab6d01f40764caf8fc6073ca541f93eec7c2da5bb30980390cfd6de263",
+      "collected_csv_sha256": "745341b850afeb59d91e608e4c72b8c94ea6b1788de38a65faf7c39bd96bd609",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              16.201183,
+              15.444106,
+              16.867324,
+              14.85258,
+              16.350085,
+              15.330355,
+              136.660891,
+              15.283741,
+              20.234037,
+              15.346439,
+              16.195928,
+              21.616965,
+              15.943458,
+              15.185317,
+              17.694851,
+              20.935469,
+              17.967077,
+              16.025459,
+              17.807581,
+              17.302524
+            ],
+            "p50_ms": 16.275634
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              18.993846,
+              19.241755,
+              19.808344,
+              36.372774,
+              19.373763,
+              18.671834,
+              380.026303,
+              18.286562,
+              22.893489,
+              17.903933,
+              22.631838,
+              25.079329,
+              19.147882,
+              17.78272,
+              21.153135,
+              25.035675,
+              20.887028,
+              20.953841,
+              21.139844,
+              20.507271
+            ],
+            "p50_ms": 20.697149500000002
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2205.318392,
+              2004.965727,
+              2151.020762,
+              1990.559177,
+              2005.662724,
+              2009.361695,
+              2019.877694,
+              2082.284451,
+              2069.104749,
+              1991.719249,
+              1992.985261,
+              1993.834503,
+              2002.542552,
+              2000.962752,
+              1999.568922,
+              2094.973454,
+              2159.601248,
+              1996.597969,
+              1993.720388,
+              1999.649267
+            ],
+            "p50_ms": 2003.7541394999998
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/doctor.log",
+          "sha256": "7b4b907c1c98d22c25d0446facb054eafbf45500eb8f879a041c741f8637748b"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/prepare-alpine.log",
+          "sha256": "018c1556ab1f4219b33c669125fabdb5d8aef66008199f612719ab5869918134"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/prepare-python.log",
+          "sha256": "299e57340cff8fcc091c2b2c5d089d9d9bf75255d781a4dee51f1d56b4e7af5a"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/scenarios.log",
+          "sha256": "329726e921862cbfe1225e2a39489749e158edf5771d8e34e2d2d1751b00a404"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/warm.log",
+          "sha256": "ff862ed978c6fa30f41bcc5f3ae80ecb9c0fa81ff22f7ef7f4b31ebe22a68826"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/benchmark.log",
+          "sha256": "a4a27e2cd8f93d282c04c800d188e16aeb6764468e76873f3489eb89c06bf540"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/collect.log",
+          "sha256": "8d11d35dc5fe411fdc61c46e24060fc00c7f610fb392907e85b0047a3249f933"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-kvm-repeat-evidence/work/nvx/nvx/build/hosted-proof/performance.log",
+          "sha256": "d11923d94a57e6285bb151352cd91d4724386de33b7df58a49a7943c0f759f24"
+        }
+      ],
+      "acceptance_scope": "Complete nine-step acceptance and unchanged strict ten-point/20-percent/1-ms gate passed before importing this point",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true,
+      "under_50_ms_warm_target_met": true,
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37197876063/job/111423381901"
+    },
+    {
+      "platform": "windows-whp",
+      "proof_platform": "windows-whp",
+      "nvx_revision": "65329b2db8bb1a1fa10013816834306500468c51",
+      "core_revision": "d591aaee1c5c10a10d8df85a48e865ec13031dc2",
+      "core_executable_sha256": "128f32cec5d5bba6fd6459a85dab0d17407fb513d98c4487a66cf5cfbfb49deb",
+      "proof_artifact": "build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "c3d4e1df9bea62104ed1937ee25eff255dc8871987c5296325c83c6e5cd86616",
+      "benchmark_sha256": "48d2cc8c84d095d6b21f8301fb84ce013f4d277705684337369b210315a33f53",
+      "collected_csv_sha256": "3920547305f6f1124619207ce9d7cee2a259cb960aa56f0c791a38ff37c35475",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              22.7046,
+              42.3242,
+              23.4495,
+              24.3033,
+              21.3479,
+              25.1473,
+              21.9513,
+              26.1611,
+              22.9516,
+              28.9699,
+              21.5371,
+              22.4003,
+              22.7323,
+              27.5662,
+              34.0226,
+              38.5019,
+              22.834,
+              36.0889,
+              35.8459,
+              21.1691
+            ],
+            "p50_ms": 23.8764
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              27.5679,
+              50.5073,
+              28.6038,
+              30.1998,
+              26.5372,
+              31.134,
+              26.8285,
+              32.3619,
+              27.9545,
+              36.4371,
+              26.4681,
+              28.146,
+              28.0506,
+              33.6607,
+              38.8566,
+              44.9682,
+              28.0578,
+              41.6109,
+              40.7823,
+              26.1206
+            ],
+            "p50_ms": 29.4018
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2155.7183,
+              2139.7689,
+              2159.823,
+              2375.792,
+              2318.8421,
+              2565.5849,
+              2343.925,
+              2375.1679,
+              2333.9886,
+              2437.0816,
+              2442.5295,
+              2359.7659,
+              2447.0097,
+              2443.6625,
+              2460.1169,
+              2498.0908,
+              2372.7466,
+              2120.7485,
+              1997.7773,
+              2074.341
+            ],
+            "p50_ms": 2366.25625
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/doctor.log",
+          "sha256": "4036a309c3f62291d9aac54e9e21abdb10e2a96d9fc7a75bddf48e41d70c47f9"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/prepare-alpine.log",
+          "sha256": "55d83691110e6d7a0e9adfc41c5829273ed936d294028054f5db72afb9d43be6"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/prepare-python.log",
+          "sha256": "77df7f90675272d1da6ac1d7e845cc17a460cbde6a2a1118dc1ce04b5f95fefc"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/scenarios.log",
+          "sha256": "4e3cccd72a02b07338104baf082f39ae5d88654324394ab031cf2c40a457974e"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/determinism.log",
+          "sha256": "13f4bf4b8f76854371bf8af9470115d10662e587350326d414e892580465893d"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/warm.log",
+          "sha256": "c1d3619847f979775355abe28371d49eba36ab77dcfb1f6f9fc75c2783ce0f0d"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/benchmark.log",
+          "sha256": "5e8be300d59342b99ddb9ebcef3c6bda8eea00256ecc566ded8d6636f85f11dd"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/collect.log",
+          "sha256": "2a40345b7c11fc7c57fc92b2759e83b18b8f7aadf77442ab2ef8d05bedbf5947"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-intel-control-state-native-whp-repeat-evidence/whp-proof/performance.log",
+          "sha256": "a729e3e650d0ac54cbc98e4a14b2034ab2bd4a4db81aa3ed25f5f5ca07efd09a"
+        }
+      ],
+      "acceptance_scope": "Complete nine-step acceptance and unchanged strict ten-point/20-percent/1-ms gate passed before importing this point",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true,
+      "under_50_ms_warm_target_met": true,
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37197876018/job/111423514217"
+    },
+    {
+      "platform": "linux-arm64",
+      "proof_platform": "linux-arm64",
+      "nvx_revision": "65329b2db8bb1a1fa10013816834306500468c51",
+      "core_revision": "d591aaee1c5c10a10d8df85a48e865ec13031dc2",
+      "core_executable_sha256": "561d4891c0e9d98c78c4942229dc88d37a913fae81df4171510731a859593519",
+      "proof_artifact": "../nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "ef165dcf22c9f20079b9fe38c26f0a0f75fc2a76ff0be4a5d4c5b7ab91b6a667",
+      "benchmark_sha256": "4f71cc34e656f917198287c42391f2746f91894fb7c038f732656536f458b3c7",
+      "collected_csv_sha256": "9041323c33d87370e5f5547cf482fd6ca8d6d16d30889f57b0b06ac82e774593",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              129.407696,
+              221.978546,
+              207.121085,
+              212.396342,
+              146.967352,
+              201.353443,
+              169.416,
+              216.093753,
+              154.192347,
+              213.864653,
+              187.385754,
+              222.850589,
+              203.917492,
+              216.043411,
+              187.436181,
+              202.025172,
+              195.004296,
+              238.321534,
+              165.764265,
+              216.159231
+            ],
+            "p50_ms": 202.97133200000002
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              163.498473,
+              279.405454,
+              241.818877,
+              267.669867,
+              181.813219,
+              254.854696,
+              203.622721,
+              271.82346,
+              190.116376,
+              272.717364,
+              223.868884,
+              281.497012,
+              245.513677,
+              283.674532,
+              238.659958,
+              254.80264,
+              229.840772,
+              321.429019,
+              201.306627,
+              274.416233
+            ],
+            "p50_ms": 250.1581585
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              7378.821798,
+              7358.782742,
+              7316.255597,
+              7530.144456,
+              7357.928339,
+              7365.637875,
+              7234.217738,
+              7214.276687,
+              7142.888985,
+              7225.552014,
+              7426.021334,
+              7378.566713,
+              7199.997954,
+              7228.963913,
+              7365.77808,
+              7581.462745,
+              11169.356309,
+              8240.927253,
+              7607.83185,
+              7625.417831
+            ],
+            "p50_ms": 7365.7079775
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/doctor.log",
+          "sha256": "6b6d07558ea24dd9f6e2df36e834e7ad6a10f682a2b650b36758daa1c29aeb61"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/prepare-alpine.log",
+          "sha256": "99632f78a4b6e2bf61daf120a5a899c49b8d7fad971ed98679818540a1977edd"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/warm.log",
+          "sha256": "2094e5266648d168ecf1bfdf42dfe95e1b73e7edd9c13f182e37933c6b5b9230"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/benchmark.log",
+          "sha256": "e826ff516d29a85257f2c529a8be2fe40e00e577373b18b5dd1fa9c10b13def6"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/collect.log",
+          "sha256": "c3cc2062fa795f3a66e4ba9f8fea56d4eb653ebc8b63787f5c9338f204f0d04c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/core-d591-native-repeat/after-host-space-recovery/proof/performance.log",
+          "sha256": "cd24556c08be6c47a06e60dd5c1918c606216363b8b3bf9741ec915f9279f6d4"
+        }
+      ],
+      "acceptance_scope": "Complete nine-step acceptance and unchanged strict ten-point/20-percent/1-ms gate passed before importing this point",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true,
+      "under_50_ms_warm_target_met": false,
+      "host_scope": "Owned four-CPU six-GiB nested ARM/KVM VM; roadmap latency target remains unmet"
     }
   ]
 }

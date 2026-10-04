@@ -14,7 +14,7 @@ are recorded separately from that result.
 | --- | --- | --- |
 | 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF, ARM/KVM, native x86 KVM and WHP at the exact revisions below. Intel HVF and MSHV full runs remain required. |
 | 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF, Linux ARM, native x86 KVM and native WHP full acceptance passes at the exact revisions below. Current-core ARM and Mac protected/opposite controls also pass. Intel HVF and MSHV controls remain required. |
-| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF, ARM/KVM, native x86 KVM and WHP pass 20-clone repair with disabled controls, 20 cold/warm requests and strict ten-point trend gates at the revisions below. Fourteen Mac, ten ARM, eleven native x86 Linux and ten Windows points are independently source/sample/log verified. Diagnostic-branch measurements retain their identities and are excluded. The nested ARM host exceeds the under-50-ms target. Intel HVF and MSHV still need runtime/history proof; other runtime shims require separate proof. |
+| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF, ARM/KVM, native x86 KVM and WHP pass 20-clone repair with disabled controls, 20 cold/warm requests and strict ten-point trend gates at the revisions below. Fifteen Mac, eleven ARM, twelve native x86 Linux and eleven Windows points are independently source/sample/log verified. Diagnostic-branch measurements retain their identities and are excluded. The nested ARM host exceeds the under-50-ms target. Intel HVF and MSHV still need runtime/history proof; other runtime shims require separate proof. |
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF, ARM/KVM, native x86 KVM and WHP real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Intel HVF and MSHV results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF, ARM/KVM, native x86 KVM and WHP real credential isolation tests pass, including the leaking legacy-env control. Intel HVF and MSHV results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF, ARM/KVM, native x86 KVM and WHP receipt/flow scenarios pass. Host signature/tamper tests pass. Intel HVF and MSHV results remain required. |
@@ -493,6 +493,12 @@ inspection/disassembly; that work is not part of the completion commits.
   in the isolated completion checkout. The first attempt's storage failure and
   partial evidence remain retained separately. The nested host still exceeds
   the roadmap's under-50-ms warm target.
+  All four core-`d591aaee1` repeats are now retained as source-bound performance
+  history at their actual measured NVX revision `65329b2`. Their strict gates
+  passed against the prior history before these points were imported. The
+  history contains 49 admitted measurements across four platforms and 51 raw
+  records; the two diagnostic-branch records remain excluded. Original CSV
+  rows and all previous provenance records are preserved without alteration.
 - The control-register correction's native Windows WHP repeat
   [37197876018](https://github.com/maceip/nvx/actions/runs/37197876018/job/111423514217)
   at NVX `65329b2` / core `d591aaee1` passes all nine acceptance gates.

@@ -32,3 +32,6 @@ linux-arm64-kvm,2,1,75c513f58d6f183fbea14fb8588360b7e6cf2a07,cold_image_first_st
 linux-arm64-kvm,2,1,598ca08b987c186fbde8a5757dd66dc379e70860,warm_pool_first_stdout,ms,lower,159.4684325
 linux-arm64-kvm,2,1,598ca08b987c186fbde8a5757dd66dc379e70860,warm_pool_completion,ms,lower,193.996255
 linux-arm64-kvm,2,1,598ca08b987c186fbde8a5757dd66dc379e70860,cold_image_first_stdout,ms,lower,8196.833431
+linux-arm64-kvm,2,1,65329b2db8bb1a1fa10013816834306500468c51,warm_pool_first_stdout,ms,lower,202.971332
+linux-arm64-kvm,2,1,65329b2db8bb1a1fa10013816834306500468c51,warm_pool_completion,ms,lower,250.1581585
+linux-arm64-kvm,2,1,65329b2db8bb1a1fa10013816834306500468c51,cold_image_first_stdout,ms,lower,7365.7079775

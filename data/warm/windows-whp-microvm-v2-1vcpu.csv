@@ -29,3 +29,6 @@ windows-whp,2,1,b49531628e340b2c3e03766c6beeaae4cfec0ab4,cold_image_first_stdout
 windows-whp,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,warm_pool_first_stdout,ms,lower,38.5307
 windows-whp,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,warm_pool_completion,ms,lower,57.8116
 windows-whp,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,cold_image_first_stdout,ms,lower,2674.4757
+windows-whp,2,1,65329b2db8bb1a1fa10013816834306500468c51,warm_pool_first_stdout,ms,lower,23.8764
+windows-whp,2,1,65329b2db8bb1a1fa10013816834306500468c51,warm_pool_completion,ms,lower,29.4018
+windows-whp,2,1,65329b2db8bb1a1fa10013816834306500468c51,cold_image_first_stdout,ms,lower,2366.25625
