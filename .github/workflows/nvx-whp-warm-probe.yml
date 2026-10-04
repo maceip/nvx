@@ -68,9 +68,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Native corrected core build failed' }
           }
       - run: python scripts/nvx.py verify
-      - name: Native restore broker regressions
-        working-directory: openvmm
-        run: cargo test --release -p virtio_console broker_restore
       - uses: actions/upload-artifact@v7
         with:
           name: hosted-whp-build
@@ -90,6 +87,14 @@ jobs:
             build/hosted-image-cache/instances/*/openvmm.log
           if-no-files-found: warn
           include-hidden-files: true
+      - name: Restore native regression build prerequisites
+        if: always()
+        working-directory: openvmm
+        run: cargo xflowey restore-packages --no-compat-igvm
+      - name: Native restore broker regressions
+        if: always()
+        working-directory: openvmm
+        run: cargo test --release -p virtio_console broker_restore
       - name: Stop the owned converter
         if: always() && steps.converter.outcome != 'skipped'
         shell: pwsh
