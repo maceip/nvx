@@ -61,6 +61,9 @@ def workload_argv(
 def run_image(
     args: argparse.Namespace, backend: str, *, sandbox: bool = False
 ) -> ManagedExecResult:
+    instance_id_file = getattr(args, "instance_id_file", None)
+    if instance_id_file is not None:
+        sandbox_lifecycle.validate_outcome_destination(instance_id_file)
     cache = ImageCache()
     value, manifest = ensure(args.image)
     from . import secrets as host_secrets
@@ -214,7 +217,12 @@ def run_image(
             )
             + "\n"
         )
-        print(f"NVX-ID: {instance}", file=sys.stderr)
+        if instance_id_file is not None:
+            sandbox_lifecycle.publish_json(
+                instance_id_file, {"version": 1, "instance_id": instance}
+            )
+        else:
+            print(f"NVX-ID: {instance}", file=sys.stderr)
         (state / "versions.json").write_text(
             json.dumps(receipt.versions(manifest["architecture"]), sort_keys=True)
             + "\n"

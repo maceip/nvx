@@ -13,7 +13,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sdk/python"))
 
-from nvx_tools import mcp  # noqa: E402
+from nvx_tools import mcp, sandbox_lifecycle  # noqa: E402
+from nvx_tools.common import ScriptError  # noqa: E402
 from nvx_tools.quota import Limits  # noqa: E402
 
 
@@ -174,32 +175,72 @@ class MCPTests(unittest.TestCase):
         )
         self.assertEqual(output, b"prefix [redacted] suffix")
 
-    def test_host_identity_marker_handles_every_split_and_preserves_guest_markers(
-        self,
-    ) -> None:
-        identifier = "a" * 32
-        guest = b"error\nNVX-ID: " + b"b" * 32 + b"\n"
-        for ending in (b"\n", b"\r\n"):
-            line = b"NVX-ID: " + identifier.encode() + ending
-            for split in range(len(line) + 1):
-                with self.subTest(ending=ending, split=split):
-                    marker = mcp.InstanceMarker()
-                    output = (
-                        marker.feed(b"Preparing image\n" + line[:split])
-                        + marker.feed(line[split:] + guest)
-                        + marker.feed(b"", final=True)
-                    )
-                    self.assertEqual(marker.identifier, identifier)
-                    self.assertEqual(output, b"Preparing image\n" + guest)
-        marker = mcp.InstanceMarker()
-        self.assertEqual(
-            marker.feed(b"prefix NVX-ID: " + b"a" * 32 + b"\n"),
-            b"prefix NVX-ID: " + b"a" * 32 + b"\n",
-        )
-        self.assertIsNone(marker.identifier)
-        self.assertEqual(marker.feed(b"NVX-ID: invalid\n"), b"NVX-ID: invalid\n")
-        self.assertEqual(marker.feed(b"NVX-I"), b"")
-        self.assertEqual(marker.feed(b"", final=True), b"NVX-I")
+    def test_private_instance_metadata_is_bounded_and_never_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "instance.json"
+            self.assertIsNone(mcp.read_instance_id(path))
+            self.assertIsNone(mcp.read_instance_id(None))
+            sandbox_lifecycle.publish_json(
+                path, {"version": 1, "instance_id": "a" * 32}
+            )
+            self.assertEqual(mcp.read_instance_id(path), "a" * 32)
+            if os.name != "nt":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(ScriptError):
+                sandbox_lifecycle.publish_json(
+                    path, {"version": 1, "instance_id": "b" * 32}
+                )
+            self.assertEqual(mcp.read_instance_id(path), "a" * 32)
+            for raw in (
+                b"{}",
+                b"[]",
+                b"malformed",
+                b"x" * 513,
+                json.dumps({"version": 2, "instance_id": "a" * 32}).encode(),
+                json.dumps({"version": 1, "instance_id": "not-an-id"}).encode(),
+            ):
+                path.write_bytes(raw)
+                with self.subTest(raw=raw[:30]), self.assertRaises(ScriptError):
+                    mcp.read_instance_id(path)
+
+    def test_real_new_run_diagnostics_cannot_supply_an_instance_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = mcp.Service("hvf", Path(directory))
+            identity_path = Path(directory) / "instance.json"
+            stderr = b"Preparing OCI image\nNVX-ID: " + b"b" * 32 + b"\r\nerror"
+            try:
+                command = [
+                    sys.executable,
+                    "-c",
+                    f"import os;os.write(2,{stderr!r});raise SystemExit(37)",
+                ]
+                result = service._program(
+                    command,
+                    mcp.Job("missing"),
+                    lambda value: None,
+                    None,
+                    (),
+                    time.monotonic() + 10,
+                    identity_path=identity_path,
+                )
+                self.assertIsNone(result["id"])
+                self.assertEqual(base64.b64decode(result["stderr"]), stderr)
+                sandbox_lifecycle.publish_json(
+                    identity_path, {"version": 1, "instance_id": "a" * 32}
+                )
+                result = service._program(
+                    command,
+                    mcp.Job("published"),
+                    lambda value: None,
+                    None,
+                    (),
+                    time.monotonic() + 10,
+                    identity_path=identity_path,
+                )
+                self.assertEqual(result["id"], "a" * 32)
+                self.assertEqual(base64.b64decode(result["stderr"]), stderr)
+            finally:
+                service.close()
 
     def test_real_exec_stderr_cannot_replace_its_owned_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -273,6 +314,7 @@ class MCPTests(unittest.TestCase):
                     redactions: Any,
                     deadline: float,
                     identifier_hint: str | None = None,
+                    identity_path: Path | None = None,
                 ) -> dict[str, Any]:
                     return execute(
                         [
@@ -286,6 +328,7 @@ class MCPTests(unittest.TestCase):
                         redactions,
                         deadline,
                         identifier_hint=identifier_hint,
+                        identity_path=identity_path,
                     )
 
                 streamed: list[tuple[str, bytes]] = []

@@ -800,6 +800,10 @@ def _extend_network_arguments(command: list[str], args: argparse.Namespace) -> N
 
 
 def command_run(args: argparse.Namespace) -> None:
+    if getattr(args, "instance_id_file", None) is not None and (
+        args.image is None or args.pool is not None
+    ):
+        raise ScriptError("--instance-id-file requires a fresh --image run")
     arm = _arm_direct(_hypervisor(args.hypervisor))
     if args.pool is not None:
         from nvx_tools.pool import command_run as command_pool_run
@@ -1704,6 +1708,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="write a bounded local JSON outcome report",
     )
+    run.add_argument("--instance-id-file", type=Path, help=argparse.SUPPRESS)
     run.add_argument(
         "--receipt", type=Path, help="write a version-1 run receipt (image runs)"
     )
