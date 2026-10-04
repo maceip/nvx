@@ -95,6 +95,10 @@ jobs:
         if: always()
         working-directory: openvmm
         run: cargo test --release -p virtio_console broker_restore
+      - name: Native slow-copy clock regression
+        if: always()
+        working-directory: openvmm
+        run: cargo test --release -p openvmm_entry snapshot_restore_clock_includes_private_ram_materialization
       - name: Stop the owned converter
         if: always() && steps.converter.outcome != 'skipped'
         shell: pwsh
