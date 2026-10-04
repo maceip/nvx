@@ -70,6 +70,9 @@ inspection/disassembly; that work is not part of the completion commits.
 - The x86 guest enables user namespaces and packet sockets, matching ARM. Build
   validation requires them so unconfined seccomp controls can exercise the blocked
   operations instead of failing because the kernel lacks the feature.
+- Raw x86 one-shot and managed sandboxes receive the controlled portable adapter
+  by default, so their network-denial flags always have a matching device. Explicit
+  adapter/profile pairs retain their selected configuration.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

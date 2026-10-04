@@ -1,0 +1,33 @@
+name: Build matching guest artifacts
+description: Reuse source-keyed kernel and initramfs artifacts or build them in Docker
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v4
+      id: guest-cache
+      with:
+        path: |
+          build/vmlinux
+          build/Image
+          build/vmlinux.config
+          build/vmlinux.provenance.json
+          build/initramfs.cpio.gz
+          build/initramfs.cpio.gz.packages.json
+          build/initramfs.provenance.json
+        key: guest-${{ runner.arch }}-${{ hashFiles('.github/actions/build-guest/action.yml', '.dockerignore', 'docker/**', 'kernel/**', 'guest/**', 'scripts/nvx.py', 'scripts/nvx_tools/build.py', 'scripts/nvx_tools/build_config.py', 'scripts/nvx_tools/build_constants.py', 'scripts/nvx_tools/common.py', 'scripts/nvx_tools/guests.py', 'SOURCE-MANIFEST.json') }}
+    - shell: bash
+      id: build
+      if: steps.guest-cache.outputs.cache-hit != 'true'
+      run: python3 scripts/nvx.py build-guest
+    - uses: actions/cache/save@v4
+      if: steps.build.conclusion == 'success' && steps.guest-cache.outputs.cache-hit != 'true'
+      with:
+        path: |
+          build/vmlinux
+          build/Image
+          build/vmlinux.config
+          build/vmlinux.provenance.json
+          build/initramfs.cpio.gz
+          build/initramfs.cpio.gz.packages.json
+          build/initramfs.provenance.json
+        key: ${{ steps.guest-cache.outputs.cache-primary-key }}

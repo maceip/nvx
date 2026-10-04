@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/nvx-hosted-validation.yml'
       - '.github/actions/checkout-openvmm/**'
+      - '.github/actions/build-guest/**'
       - 'openvmm'
       - 'docker/**'
       - 'scripts/**'
@@ -106,7 +107,7 @@ jobs:
             openvmm/target/release/openvmm
             build/openvmm.provenance.json
           key: ${{ steps.core-cache.outputs.cache-primary-key }}
-      - run: python3 scripts/nvx.py build-guest
+      - uses: ./.github/actions/build-guest
       - name: Require real nested virtualization
         run: |
           sudo modprobe kvm || true

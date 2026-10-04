@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -5,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import nvx
 from nvx_tools.build import assert_required_kernel_config
 from nvx_tools.common import ScriptError
 from nvx_tools.policy import read_config, resolve
@@ -12,6 +15,72 @@ from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_raw_x86_sandboxes_have_a_controlled_default_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            layer = root / "layer.erofs"
+            scratch = root / "scratch.ext4"
+            layer.write_bytes(b"layer")
+            scratch.write_bytes(b"scratch")
+
+            def available(path: Path, _description: str) -> Path:
+                return path
+
+            for backend in ("hvf", "kvm", "mshv", "whp"):
+                with (
+                    self.subTest(backend=backend),
+                    patch("nvx.platform.machine", return_value="x86_64"),
+                    patch(
+                        "nvx.sys.platform", "darwin" if backend == "hvf" else "linux"
+                    ),
+                    patch("nvx.require_file", side_effect=available),
+                ):
+                    arguments = [
+                        "sandbox",
+                        "run",
+                        "--hypervisor",
+                        backend,
+                        "--layer",
+                        f"custom,{layer},900ba5a7-a33d-577b-a21c-d4ee7930be62",
+                        "--scratch",
+                        str(scratch),
+                        "--entrypoint",
+                        "/bin/sleep",
+                        "--arg",
+                        "2",
+                        "--dry-run",
+                    ]
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(nvx.main(arguments), 0)
+                    self.assertIn(
+                        "--net 192.168.127.2/24 --network-profile portable",
+                        output.getvalue(),
+                    )
+                    self.assertIn("--network-egress deny", output.getvalue())
+                    with patch("nvx.sandbox_lifecycle.provision") as provision:
+                        self.assertEqual(
+                            nvx.main(
+                                [
+                                    *arguments[:1],
+                                    "provision",
+                                    *arguments[2:-1],
+                                    "--state-dir",
+                                    str(root / "state"),
+                                ]
+                            ),
+                            0,
+                        )
+                    self.assertEqual(
+                        provision.call_args.kwargs["net"], "192.168.127.2/24"
+                    )
+                    self.assertEqual(
+                        provision.call_args.kwargs["network_profile"], "portable"
+                    )
+                    self.assertEqual(
+                        provision.call_args.kwargs["network_egress"], "deny"
+                    )
+
     def test_host_probe_timeout_preserves_partial_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

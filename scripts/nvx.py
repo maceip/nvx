@@ -1173,6 +1173,9 @@ def command_sandbox(args: argparse.Namespace) -> None:
         args.network_egress_allow = list(policy.allow)
         if (args.net is None) != (args.network_profile is None):
             raise ScriptError("--net and --network-profile must be specified together")
+        if args.net is None and not _arm_direct(_hypervisor(args.hypervisor)):
+            args.net = "192.168.127.2/24"
+            args.network_profile = "portable"
         if not args.layer or args.scratch is None:
             raise ScriptError(f"sandbox {operation} requires --layer and --scratch")
         launch = SandboxLaunch(

@@ -286,3 +286,6 @@ guest probes. A host probe timeout retains both partial streams and reports a
 redacted diagnostic tail. Linux and Intel hosted lanes also cache the pinned
 native binary after their architecture-specific core checks pass; cache hits
 reuse that checked artifact and still run the full guest acceptance battery.
+The hosted lanes share architecture-specific guest artifact caches keyed by the
+kernel, guest and builder inputs. Provenance checks still validate the restored
+kernel/initramfs before fixtures and release packaging consume them.
