@@ -60,11 +60,11 @@ inspection/disassembly; that work is not part of the completion commits.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
-  `build/completion-host-metadata-arm-evidence/NVX-ACCEPTANCE.json` records an independent
-  full acceptance run at NVX `2d7b0ee0d41b3c7b3fc61daf7d01ef98fcd4765a` and
-  core revision `46f86483f037f343458bc32c8c4f8062595309c5`. Its
-  20-request cold/warm benchmark measured first stdout **182.65 ms p50**,
-  completion **232.53 ms** and cold first stdout **7698.87 ms** on the nested
+  `build/completion-windows-bundle-arm-evidence/NVX-ACCEPTANCE.json` records an independent
+  full acceptance run at NVX `cac62c8dbc089604050163af242ad142bcf8bfca` and
+  core revision `32b120c1ac4aca1c264b30c69b83cc40d9e3d259`. Its
+  20-request cold/warm benchmark measured first stdout **184.07 ms p50**,
+  completion **234.01 ms** and cold first stdout **7673.97 ms** on the nested
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
   regressions against the earlier separately measured ARM baseline.
   An earlier failed run encountered host disk exhaustion.
@@ -113,6 +113,15 @@ inspection/disassembly; that work is not part of the completion commits.
   by the core while taking the saved address and identity from the snapshot. The
   persisted-configuration regression covers all four x86 backends; it continues to
   reject fresh address, workload identity and memory overrides during restore.
+- KVM and WHP then reached the first clone and found the core requiring the captured
+  control-listener pathname. Explicit same-kind listener replacements now preserve
+  every attachment field except the endpoint. Namespace validation still applies,
+  broker listeners still require caller approval and a fresh capability, and clients,
+  inherited providers and disconnected attachments keep exact matching. Tests cover
+  removed source directories, fresh boot/control endpoints, namespace escapes and
+  ten mutated attachment fields. Check, clippy, docs, **257 Rust tests** and final
+  repository formatting pass. The native Windows lane also executes its named-pipe
+  listener regression before saving a newly built core.
 - Intel HVF is admitted by the x86 microVM frontend, fixed network IRQ and snapshot
   contract. The three affected core crates pass check, all-target clippy, docs and
   **267 Rust tests**, plus Intel cross-compilation and final repository formatting.

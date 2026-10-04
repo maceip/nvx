@@ -101,8 +101,13 @@ jobs:
       - run: python scripts/nvx.py build-openvmm --backend whp
         id: build-core
         if: steps.core-cache.outputs.cache-hit != 'true'
+      - name: Native Windows listener restore regressions
+        if: steps.core-cache.outputs.cache-hit != 'true'
+        id: check-core
+        working-directory: openvmm
+        run: cargo test --release -p openvmm_entry -p openvmm_helpers listener
       - uses: actions/cache/save@v4
-        if: steps.build-core.conclusion == 'success' && steps.core-cache.outputs.cache-hit != 'true'
+        if: steps.build-core.conclusion == 'success' && steps.check-core.conclusion == 'success' && steps.core-cache.outputs.cache-hit != 'true'
         with:
           path: |
             openvmm/target/release/openvmm.exe
