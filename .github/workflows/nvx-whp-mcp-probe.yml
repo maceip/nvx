@@ -48,6 +48,8 @@ jobs:
           python -c "import hashlib,json,subprocess;from pathlib import Path;m=json.loads(Path('build/openvmm.provenance.json').read_text());assert m['source_revision']==subprocess.check_output(['git','-C','openvmm','rev-parse','HEAD'],text=True).strip();assert m['source_clean'] is True;assert m['executable_sha256']==hashlib.sha256(Path('openvmm/target/release/openvmm.exe').read_bytes()).hexdigest()"
       - name: Native snapshot deletion regressions
         run: python -m unittest discover -s scripts -p test_mcp.py -k snapshot_remove
+      - name: Native shared TCP and UDP port regressions
+        run: python -m unittest discover -s scripts -p test_policy.py -k shared_listener
       - name: Set up a Linux OCI converter in disposable WSL2
         id: converter
         shell: pwsh
@@ -72,6 +74,9 @@ jobs:
       - name: Exercise all six MCP tools against actual WHP guests
         if: github.event_name != 'workflow_dispatch' || !inputs.full_proof
         run: python scripts/nvx.py test-microvm --backend whp --scenario mcp-portable --output-dir build/mcp-probe
+      - name: Exercise real host-loopback policy with the shared-port fixture
+        if: github.event_name != 'workflow_dispatch' || !inputs.full_proof
+        run: python scripts/nvx.py test-microvm --backend whp --scenario host-loopback-policy --output-dir build/loopback-probe
       - name: Repeat the complete native WHP acceptance proof
         if: github.event_name == 'workflow_dispatch' && inputs.full_proof
         run: python scripts/release-proof.py --platform windows-whp --output-dir build/full-whp-proof
@@ -81,6 +86,7 @@ jobs:
           name: whp-mcp-snapshot-diagnostic
           path: |
             build/full-whp-proof
+            build/loopback-probe
             build/mcp-probe/mcp/result.json
             build/mcp-probe/**/*.stdout
             build/mcp-probe/**/*.stderr

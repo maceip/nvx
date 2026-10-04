@@ -1548,21 +1548,31 @@ def _bind_tcp_udp_listener_pair(
     tcp_timeout: float, udp_timeout: float
 ) -> tuple[socket.socket, socket.socket]:
     last_error: OSError | None = None
-    for _ in range(HOST_LOOPBACK_PORT_BIND_ATTEMPTS):
+    for attempt in range(HOST_LOOPBACK_PORT_BIND_ATTEMPTS):
         with ExitStack() as sockets:
-            udp_listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sockets.callback(udp_listener.close)
-            udp_listener.bind(("127.0.0.1", 0))
-            port = int(udp_listener.getsockname()[1])
-
-            tcp_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sockets.callback(tcp_listener.close)
+            # Windows can exclude a UDP ephemeral candidate from TCP binding.
+            # Alternate which protocol selects the candidate, retaining both
+            # sockets until both binds succeed and closing every failed pair.
+            tcp_first = attempt % 2 == 1
+            first_kind = socket.SOCK_STREAM if tcp_first else socket.SOCK_DGRAM
+            second_kind = socket.SOCK_DGRAM if tcp_first else socket.SOCK_STREAM
+            first_address = "0.0.0.0" if tcp_first else "127.0.0.1"
+            second_address = "127.0.0.1" if tcp_first else "0.0.0.0"
+            first = socket.socket(socket.AF_INET, first_kind)
+            sockets.callback(first.close)
+            second = socket.socket(socket.AF_INET, second_kind)
+            sockets.callback(second.close)
             try:
-                tcp_listener.bind(("0.0.0.0", port))
+                first.bind((first_address, 0))
+                port = int(first.getsockname()[1])
+                second.bind((second_address, port))
             except OSError as error:
                 last_error = error
                 continue
 
+            tcp_listener, udp_listener = (
+                (first, second) if tcp_first else (second, first)
+            )
             tcp_listener.listen(1)
             tcp_listener.settimeout(tcp_timeout)
             udp_listener.settimeout(udp_timeout)
@@ -1571,7 +1581,7 @@ def _bind_tcp_udp_listener_pair(
 
     raise RuntimeError(
         "failed to allocate a port available to both TCP and UDP "
-        f"after {HOST_LOOPBACK_PORT_BIND_ATTEMPTS} attempts"
+        f"after {HOST_LOOPBACK_PORT_BIND_ATTEMPTS} attempts; last bind error: {last_error}"
     ) from last_error
 
 

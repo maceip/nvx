@@ -1,20 +1,88 @@
 import contextlib
+import errno
 import io
 import json
+import socket
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import nvx
 from nvx_tools.build import assert_required_kernel_config
 from nvx_tools.common import ScriptError
+from nvx_tools.microvm_tests import (
+    _bind_tcp_udp_listener_pair,  # pyright: ignore[reportPrivateUsage]
+)
 from nvx_tools.policy import read_config, resolve
 from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_shared_listener_failure_keeps_bind_cause_and_closes_sockets(self) -> None:
+        sockets: list[MagicMock] = []
+
+        def endpoint(_family: int, _kind: int) -> MagicMock:
+            listener = MagicMock()
+
+            def bind(address: tuple[str, int]) -> None:
+                if address[1]:
+                    raise PermissionError(errno.EACCES, "excluded candidate")
+
+            listener.bind.side_effect = bind
+            listener.getsockname.return_value = ("127.0.0.1", 55000)
+            sockets.append(listener)
+            return listener
+
+        with (
+            patch("nvx_tools.microvm_tests.socket.socket", side_effect=endpoint),
+            self.assertRaisesRegex(
+                RuntimeError, "last bind error:.*excluded candidate"
+            ) as failure,
+        ):
+            _bind_tcp_udp_listener_pair(10, 0.5)
+        self.assertIsInstance(failure.exception.__cause__, PermissionError)
+        self.assertEqual(len(sockets), 32)
+        for listener in sockets:
+            listener.close.assert_called_once()
+
+    def test_shared_listener_avoids_tcp_excluded_udp_ephemeral_ports(self) -> None:
+        sockets: list[MagicMock] = []
+
+        def endpoint(_family: int, kind: int) -> MagicMock:
+            listener = MagicMock()
+            listener.type = kind
+            selected = [0]
+
+            def bind(address: tuple[str, int]) -> None:
+                port = address[1]
+                if kind == socket.SOCK_STREAM and port == 55000:
+                    raise PermissionError(errno.EACCES, "TCP excluded port")
+                selected[0] = port or (
+                    55000 if kind == socket.SOCK_DGRAM else 60001
+                )
+
+            listener.bind.side_effect = bind
+            listener.getsockname.side_effect = lambda: ("127.0.0.1", selected[0])
+            sockets.append(listener)
+            return listener
+
+        with patch("nvx_tools.microvm_tests.socket.socket", side_effect=endpoint):
+            tcp, udp = _bind_tcp_udp_listener_pair(10, 0.5)
+        self.assertEqual(tcp.type, socket.SOCK_STREAM)
+        self.assertEqual(udp.type, socket.SOCK_DGRAM)
+        self.assertEqual(tcp.getsockname()[1], 60001)
+        self.assertEqual(udp.getsockname()[1], 60001)
+        cast(MagicMock, tcp).settimeout.assert_called_once_with(10)
+        cast(MagicMock, udp).settimeout.assert_called_once_with(0.5)
+        self.assertEqual(len(sockets), 4)
+        for failed in sockets[:2]:
+            failed.close.assert_called_once()
+        for admitted in sockets[2:]:
+            admitted.close.assert_not_called()
+
     def test_raw_x86_sandboxes_have_a_controlled_default_network(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
