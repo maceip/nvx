@@ -50,6 +50,8 @@ jobs:
       run-tests: ${{ steps.changes.outputs.run-tests }}
       run-workloads: ${{ steps.changes.outputs.run-workloads }}
       self-hosted: ${{ github.repository == 'microsoft/nvx' || vars.NVX_SELF_HOSTED_CI == 'true' }}
+      performance-threshold: ${{ env.PERFORMANCE_REGRESSION_THRESHOLD }}
+      performance-absolute-tolerance-ms: ${{ env.PERFORMANCE_REGRESSION_ABSOLUTE_TOLERANCE_MS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -934,6 +936,9 @@ jobs:
         (needs.openvmm-changes.outputs.run-tests == 'true' || needs.openvmm-changes.outputs.run-workloads == 'true')
       }}
     uses: ./.github/workflows/nvx-hosted-validation.yml
+    with:
+      performance-threshold: ${{ fromJSON(needs.openvmm-changes.outputs.performance-threshold) }}
+      performance-absolute-tolerance-ms: ${{ fromJSON(needs.openvmm-changes.outputs.performance-absolute-tolerance-ms) }}
 
   hosted-windows:
     name: Hosted Windows validation
@@ -947,6 +952,9 @@ jobs:
         (needs.openvmm-changes.outputs.run-tests == 'true' || needs.openvmm-changes.outputs.run-workloads == 'true')
       }}
     uses: ./.github/workflows/nvx-hosted-windows.yml
+    with:
+      performance-threshold: ${{ fromJSON(needs.openvmm-changes.outputs.performance-threshold) }}
+      performance-absolute-tolerance-ms: ${{ fromJSON(needs.openvmm-changes.outputs.performance-absolute-tolerance-ms) }}
 
   release:
     name: Publish development release

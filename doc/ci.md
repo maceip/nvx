@@ -15,6 +15,12 @@ the jobs for the selected mode; a failed, cancelled or skipped required acceptan
 job fails CI. Development publishing and performance baseline updates continue to
 require all three fleet-backed platform lanes.
 
+Hosted acceptance uses the main CI performance policy (50% relative regression
+and 10 ms absolute tolerance), with twenty measurements and ten baseline points.
+The limits are passed from `ci.yml` to both hosted runtime workflows. Release
+acceptance keeps its 20% and 1 ms limits. Each acceptance record includes its
+policy, and the release matrix rejects CI-policy evidence for publication.
+
 The GitHub Actions workflow has two microVM test layers on Azure-hosted
 self-hosted KVM, MSHV, and WHP virtual machines. Each backend has a pool of
 three runners labeled by operating system, backend, and `virtual-machine`.

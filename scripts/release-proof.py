@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ from nvx_tools.common import (
 )
 from nvx_tools.containment import render, validate_document
 from nvx_tools.release_gate import (
+    acceptance_performance_policy,
     gate_failure,
     require_checked_performance,
     require_core_artifact,
@@ -40,7 +42,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", required=True, choices=PLATFORMS)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--acceptance-policy", choices=("release", "ci"), default="release"
+    )
     args = parser.parse_args()
+    performance_policy = acceptance_performance_policy(
+        args.acceptance_policy, os.environ
+    )
     root = BuildConstants.REPO_ROOT
 
     def source_state() -> tuple[str, str]:
@@ -180,15 +188,17 @@ def main() -> None:
         "10",
         "--require-history",
         "--threshold",
-        "20",
+        str(performance_policy["threshold"]),
         "--absolute-tolerance-ms",
-        "1",
+        str(performance_policy["absolute_tolerance_ms"]),
         "--summary",
         str(proof / "performance-gate.md"),
     )
     require_checked_performance(proof / "performance.log", args.platform)
     document = {
         "proof_version": 1,
+        "acceptance_policy": args.acceptance_policy,
+        "performance_policy": performance_policy,
         "platform": args.platform,
         "backend": backend,
         "architecture": PLATFORMS[args.platform],

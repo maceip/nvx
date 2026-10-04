@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import tarfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,6 +29,32 @@ REQUIRED_STEPS = frozenset(
         "performance",
     )
 )
+RELEASE_PERFORMANCE_POLICY = {"threshold": 20.0, "absolute_tolerance_ms": 1.0}
+
+
+def acceptance_performance_policy(
+    purpose: str, environment: Mapping[str, str]
+) -> dict[str, float]:
+    if purpose == "release":
+        return RELEASE_PERFORMANCE_POLICY.copy()
+    if purpose != "ci":
+        raise ScriptError("unknown acceptance policy")
+    try:
+        policy = {
+            "threshold": float(
+                environment.get("PERFORMANCE_REGRESSION_THRESHOLD", "50")
+            ),
+            "absolute_tolerance_ms": float(
+                environment.get("PERFORMANCE_REGRESSION_ABSOLUTE_TOLERANCE_MS", "10")
+            ),
+        }
+    except ValueError as error:
+        raise ScriptError(
+            "CI performance limits must be finite nonnegative numbers"
+        ) from error
+    if any(not math.isfinite(value) or value < 0 for value in policy.values()):
+        raise ScriptError("CI performance limits must be finite nonnegative numbers")
+    return policy
 
 
 def require_core_artifact(core: str, executable: Path, provenance: Path) -> str:
@@ -91,6 +119,14 @@ def verify_matrix(
         ):
             raise ScriptError(
                 f"{platform}: release evidence belongs to another source or platform"
+            )
+        if (
+            proof.get("acceptance_policy", "release") != "release"
+            or proof.get("performance_policy", RELEASE_PERFORMANCE_POLICY)
+            != RELEASE_PERFORMANCE_POLICY
+        ):
+            raise ScriptError(
+                f"{platform}: CI performance policy cannot authorize release publication"
             )
         steps = proof.get("steps", [])
         if len(steps) != len(REQUIRED_STEPS) or {

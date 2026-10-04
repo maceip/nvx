@@ -11,6 +11,7 @@ from nvx_tools.common import ScriptError, sha256_file
 from nvx_tools.containment import PROBES
 from nvx_tools.release_gate import (
     REQUIRED_STEPS,
+    acceptance_performance_policy,
     gate_failure,
     require_core_artifact,
     verify_matrix,
@@ -19,6 +20,31 @@ from nvx_tools.runtime_release import PLATFORMS
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_ci_limits_use_configuration_and_release_limits_stay_strict(self) -> None:
+        environment = {
+            "PERFORMANCE_REGRESSION_THRESHOLD": "50",
+            "PERFORMANCE_REGRESSION_ABSOLUTE_TOLERANCE_MS": "10",
+        }
+        self.assertEqual(
+            acceptance_performance_policy("ci", environment),
+            {"threshold": 50, "absolute_tolerance_ms": 10},
+        )
+        self.assertEqual(
+            acceptance_performance_policy("release", environment),
+            {"threshold": 20, "absolute_tolerance_ms": 1},
+        )
+        self.assertEqual(
+            acceptance_performance_policy("ci", {}),
+            {"threshold": 50, "absolute_tolerance_ms": 10},
+        )
+        for field in environment:
+            for value in ("nan", "inf", "-1", "invalid"):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ScriptError):
+                        acceptance_performance_policy(
+                            "ci", {**environment, field: value}
+                        )
+
     def test_failed_gate_reports_bounded_redacted_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "scenarios.log"
@@ -167,7 +193,16 @@ class ReleaseGateTests(unittest.TestCase):
             )
 
     def test_stale_failed_missing_and_warmup_proofs_cannot_publish(self) -> None:
-        for defect in ("revision", "missing", "log", "warmup", "control", "sources"):
+        for defect in (
+            "revision",
+            "missing",
+            "log",
+            "warmup",
+            "control",
+            "sources",
+            "ci-policy",
+            "loose-policy",
+        ):
             with (
                 self.subTest(defect=defect),
                 tempfile.TemporaryDirectory() as temporary,
@@ -179,6 +214,13 @@ class ReleaseGateTests(unittest.TestCase):
                 body = json.loads(proof.read_bytes())
                 if defect == "revision":
                     body["nvx_revision"] = "c" * 40
+                elif defect == "ci-policy":
+                    body["acceptance_policy"] = "ci"
+                elif defect == "loose-policy":
+                    body["performance_policy"] = {
+                        "threshold": 50,
+                        "absolute_tolerance_ms": 10,
+                    }
                 elif defect == "missing":
                     body["steps"].pop()
                 elif defect in ("log", "warmup"):

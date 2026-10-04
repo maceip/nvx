@@ -2,10 +2,32 @@ name: NVX hosted Windows runtime validation
 
 on:
   workflow_call:
+    inputs:
+      performance-threshold:
+        description: CI relative regression threshold in percent
+        type: number
+        default: 50
+      performance-absolute-tolerance-ms:
+        description: CI absolute latency tolerance in milliseconds
+        type: number
+        default: 10
   workflow_dispatch:
+    inputs:
+      performance-threshold:
+        description: CI relative regression threshold in percent
+        type: number
+        default: 50
+      performance-absolute-tolerance-ms:
+        description: CI absolute latency tolerance in milliseconds
+        type: number
+        default: 10
 
 permissions:
   contents: read
+
+env:
+  PERFORMANCE_REGRESSION_THRESHOLD: ${{ inputs.performance-threshold }}
+  PERFORMANCE_REGRESSION_ABSOLUTE_TOLERANCE_MS: ${{ inputs.performance-absolute-tolerance-ms }}
 
 jobs:
   guest:
@@ -104,7 +126,7 @@ jobs:
             openvmm/target/release/openvmm.exe
             build/openvmm.provenance.json
           key: ${{ steps.core-cache.outputs.cache-primary-key }}
-      - run: python scripts/release-proof.py --platform windows-whp --output-dir build/whp-proof
+      - run: python scripts/release-proof.py --acceptance-policy ci --platform windows-whp --output-dir build/whp-proof
       - uses: actions/upload-artifact@v7
         if: always()
         with:

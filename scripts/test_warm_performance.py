@@ -8,6 +8,51 @@ from nvx_tools.warm_benchmark import collect
 
 
 class WarmPerformanceTests(unittest.TestCase):
+    def test_ci_tolerance_keeps_a_large_regression_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "result.json"
+
+            def record(first_stdout: float, commit: str, destination: Path) -> None:
+                source.write_text(
+                    json.dumps(
+                        {
+                            "benchmark_version": 1,
+                            "platform": "fixture-kvm",
+                            "metrics": {
+                                name: {"samples_ms": [value] * 20, "p50_ms": value}
+                                for name, value in (
+                                    ("warm_pool_first_stdout", first_stdout),
+                                    ("warm_pool_completion", 20.0),
+                                    ("cold_image_first_stdout", 2000.0),
+                                )
+                            },
+                        }
+                    )
+                )
+                collect("fixture-kvm", commit, source, destination)
+
+            for index in range(10):
+                point = root / f"point-{index}"
+                record(15.39, f"baseline-{index}", point)
+                persist_results(point, root / "baseline")
+
+            def gate() -> int:
+                return gate_results(
+                    baseline_dir=root / "baseline",
+                    target_dir=root / "target",
+                    window=10,
+                    threshold=50,
+                    minimum_history=10,
+                    require_history=True,
+                    absolute_tolerance_ms=10,
+                )
+
+            record(19.71, "small-hosted-variation", root / "target")
+            self.assertEqual(gate(), 0)
+            record(30.78, "large-regression", root / "target")
+            self.assertEqual(gate(), 1)
+
     def test_measured_median_and_regression_gate_negative_control(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

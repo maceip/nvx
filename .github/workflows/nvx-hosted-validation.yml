@@ -3,12 +3,28 @@ name: NVX hosted Linux validation
 on:
   workflow_call:
     inputs:
+      performance-threshold:
+        description: CI relative regression threshold in percent
+        type: number
+        default: 50
+      performance-absolute-tolerance-ms:
+        description: CI absolute latency tolerance in milliseconds
+        type: number
+        default: 10
       require-arm-kvm:
         description: Require ARM KVM runtime on a host exposing /dev/kvm
         type: boolean
         default: false
   workflow_dispatch:
     inputs:
+      performance-threshold:
+        description: CI relative regression threshold in percent
+        type: number
+        default: 50
+      performance-absolute-tolerance-ms:
+        description: CI absolute latency tolerance in milliseconds
+        type: number
+        default: 10
       require-arm-kvm:
         description: Require ARM KVM runtime on a host exposing /dev/kvm
         type: boolean
@@ -16,6 +32,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  PERFORMANCE_REGRESSION_THRESHOLD: ${{ inputs.performance-threshold }}
+  PERFORMANCE_REGRESSION_ABSOLUTE_TOLERANCE_MS: ${{ inputs.performance-absolute-tolerance-ms }}
 
 jobs:
   kvm-admission:
@@ -123,7 +143,7 @@ jobs:
             echo '::error::This hosted runner has no usable /dev/kvm. It cannot provide KVM runtime evidence.'
             exit 1
           }
-      - run: python3 scripts/release-proof.py --platform "$PLATFORM" --output-dir build/hosted-proof
+      - run: python3 scripts/release-proof.py --acceptance-policy ci --platform "$PLATFORM" --output-dir build/hosted-proof
         if: matrix.arch == 'x86_64' || inputs.require-arm-kvm
       - name: Record ARM64 coverage
         if: matrix.arch == 'aarch64' && !inputs.require-arm-kvm
