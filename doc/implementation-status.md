@@ -53,7 +53,7 @@ inspection/disassembly; that work is not part of the completion commits.
   fix fixture ordering, owned Windows snapshot
   deletion and shared-port allocation, and retain native diagnostics; the full
   acceptance proof above remains bound to its exact source.
-- The current-core full Mac repeat at NVX `423b838` / core `4b20f45f1`
+- The core-4b20 full Mac repeat at NVX `423b838` / core `4b20f45f1`
   passes all nine acceptance gates, including the complete scenario battery,
   opposite controls, MCP, determinism, twenty repaired clones and twenty
   cold/warm requests. Its strict ten-point comparison checks all three metrics
@@ -62,6 +62,17 @@ inspection/disassembly; that work is not part of the completion commits.
   digest and raw sample medians are independently verified in
   `build/completion-core4b20-full-macos-proof/NVX-ACCEPTANCE.json` in the
   diagnostic checkout.
+- The fixed-source Mac repeat at NVX `7c7f723` / core `f1f6019b7`
+  passes all nine acceptance gates, including all supported scenarios, opposite
+  controls, MCP, image determinism, twenty repaired clones and twenty cold/warm
+  requests. Its strict ten-point comparison checks all three metrics with zero
+  regressions. First stdout is **2.78 ms p50**, completion **4.23 ms**, cold first
+  stdout **975.45 ms**. Source and executable remain unchanged throughout; all
+  gate-log hashes, the containment digest and raw sample medians are independently
+  verified in
+  `../nvx-mac-proof-repeat/build/completion-immutable-full-macos-proof/NVX-ACCEPTANCE.json`.
+  The preceding diagnostic-checkout run passed its gates but correctly withheld
+  a proof after a workflow edit changed HEAD; its rejection and logs are retained.
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
   records NVX `b7e3058` / core `94d8908b0` on the owned
   four-CPU, 6 GiB nested ARM/KVM host.
@@ -312,7 +323,7 @@ inspection/disassembly; that work is not part of the completion commits.
   stdout **2210.35 ms**, with zero regressions across the three metrics. The
   accepted proof is
   `build/completion-strict-native-windows-repeat-evidence/measured-history-full-proof/NVX-ACCEPTANCE.json`
-  in the diagnostic checkout. Current-core native Windows repeat `37186695373`
+  in the diagnostic checkout. Core-4b20 native Windows repeat `37186695373`
   at `fd63923` / core `4b20f45f1` passes all eight runtime gates but fails the
   strict performance comparison. First stdout is **57.96 ms p50** against a
   **43.72 ms** historical median; completion is **73.79 ms** against **58.27 ms**.
@@ -328,6 +339,10 @@ inspection/disassembly; that work is not part of the completion commits.
   on one native runner, twice each in reversed order, with identical NVX runtime
   sources, twenty cold/warm requests and source/executable checks before and after.
   It cannot contribute acceptance or baseline history.
+  The corrected diagnostic is run
+  [37190956734](https://github.com/maceip/nvx/actions/runs/37190956734) at
+  `981b974`. Earlier handoff and Python 3.10 hashing failures occurred before any
+  guest ran, retain their original logs and supply no runtime measurements.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks
