@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import platform
 import re
 import threading
 from pathlib import Path
@@ -62,8 +63,13 @@ print(json.dumps(result))
                 extra=(
                     "--network-egress-allow",
                     f"192.168.127.1:tcp:{port}",
-                    "--host-loopback",
-                    "allow",
+                )
+                + (
+                    ("--host-loopback", "allow")
+                    if platform.machine().lower() in ("aarch64", "arm64")
+                    else ()
+                )
+                + (
                     "--outcome-report",
                     str(outcome),
                 ),

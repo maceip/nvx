@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import threading
 import time
 from pathlib import Path
@@ -104,7 +105,11 @@ print(json.dumps(dict(origin=builtins.__nvx_warm_start__,initialized='http.clien
                 timeout=timeout,
                 repair=repair,
                 runtime="python",
-                host_loopback="allow",
+                host_loopback=(
+                    "allow"
+                    if platform.machine().lower() in ("aarch64", "arm64")
+                    else None
+                ),
             )
             metadata = warm.admit(template)
             for index in range(count):

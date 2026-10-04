@@ -65,7 +65,7 @@ def capture(
     repair: bool = True,
     secret_args: argparse.Namespace | None = None,
     runtime: str = "auto",
-    host_loopback: str = "deny",
+    host_loopback: str | None = "deny",
     cancel: threading.Event | None = None,
 ) -> Path:
     if output.exists() or output.is_symlink():

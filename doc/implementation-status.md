@@ -31,13 +31,13 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-prepared-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `6974b017a604f13cb6407cc04e86c5a60383a33a` and core
+- `build/completion-direct-network-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `585c9abed43e9030955656ff0fb8c8d0486e0a08` and core
   `5c1f378cb94de28eba919c786d0a50e76f2d76f9`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.79 ms p50**, completion **4.26 ms**, cold first stdout **991.44 ms**.
+  **2.79 ms p50**, completion **4.08 ms**, cold first stdout **936.52 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
 - `build/completion-direct-network-offline.log`: **124 offline tests**, ruff clean.
@@ -46,7 +46,7 @@ inspection/disassembly; that work is not part of the completion commits.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-raw-network-offline.log` in the main checkout: **131 tests**
+- `build/completion-root-direct-network-offline.log` in the main checkout: **132 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
   and its rebuilt guest printed `NVX-REBUILT-ROOT-GUEST-OK`.
 - The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
@@ -54,7 +54,8 @@ inspection/disassembly; that work is not part of the completion commits.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
   `build/completion-prepared-arm-evidence/NVX-ACCEPTANCE.json` records an independent
-  full acceptance run at the same NVX/core revisions as the Mac run above. Its
+  full acceptance run at NVX `6974b017a604f13cb6407cc04e86c5a60383a33a` and the same
+  pinned core revision as the Mac run above. Its
   20-request cold/warm benchmark measured first stdout **184.98 ms p50**,
   completion **233.92 ms** and cold first stdout **7620.74 ms** on the nested
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
@@ -80,6 +81,10 @@ inspection/disassembly; that work is not part of the completion commits.
   regression covers all four x86 backends. The protected network probe and its
   opposite control now pass on native KVM and WHP; their latest full repeats reached
   tenant isolation and identified this separate provisioning entry point.
+- Receipt and warm-clone collector fixtures use the x86 portable gateway mapping
+  with their egress policy, while ARM retains its explicit host-loopback adapter.
+  The native x86 KVM repeat passed tenant isolation and reached the receipt probe;
+  its old fixture requested the unsupported generic loopback option.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after
