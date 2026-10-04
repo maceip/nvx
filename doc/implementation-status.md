@@ -31,13 +31,13 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-capture-namespace-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `426ddf6e09b445a9e25e415abecb26595b1175c8` and core
-  `46f86483f037f343458bc32c8c4f8062595309c5`: all 18 scenarios, eight containment
+- `build/completion-inherited-console-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `5d0433f41c6f4e582457ba18004de8faee579f46` and core
+  `32b120c1ac4aca1c264b30c69b83cc40d9e3d259`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.67 ms p50**, completion **3.97 ms**, cold first stdout **972.44 ms**.
+  **2.65 ms p50**, completion **3.88 ms**, cold first stdout **913.53 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
 - `build/completion-capture-namespace-offline.log`: **130 offline tests**, ruff clean.
@@ -119,6 +119,11 @@ inspection/disassembly; that work is not part of the completion commits.
 - Windows receipt and image probes accept the CLI's CRLF instance-ID line. The
   latest native WHP repeat passed all eight containment families, simulants and
   receipts before identifying the separate image probe's old LF-only parser.
+- The corrected Windows image probe passed in the next real WHP repeat. That
+  repeat found bundle staging cleanup attempted while its file was still open.
+  Bundles now close and fsync staging before atomic no-overwrite publication and
+  cleanup. The Windows lane runs offline host tests and strict types before its
+  native build, so this platform's filesystem behavior is checked directly.
 - MCP obtains each new instance ID from bounded, atomically published private
   host metadata. Workload stderr and image-conversion diagnostics cannot supply
   or replace an instance ID. Exec retains its known owned ID. A live TypeScript

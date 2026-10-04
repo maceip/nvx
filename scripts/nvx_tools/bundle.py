@@ -62,11 +62,12 @@ def create(state: Path, destination: Path, *, public_key: Path | None = None) ->
         )
         + b"\n"
     )
-    with tempfile.NamedTemporaryFile(
-        prefix=".nvx-bundle-", dir=destination.absolute().parent, delete=False
-    ) as output:
-        stage = Path(output.name)
-        try:
+    descriptor, name = tempfile.mkstemp(
+        prefix=".nvx-bundle-", dir=destination.absolute().parent
+    )
+    stage = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
             with (
                 gzip.GzipFile(
                     fileobj=output, mode="wb", mtime=0, filename=""
@@ -84,12 +85,14 @@ def create(state: Path, destination: Path, *, public_key: Path | None = None) ->
                     archive.addfile(member, io.BytesIO(raw))
             output.flush()
             os.fsync(output.fileno())
-            try:
-                os.link(stage, destination)
-            except FileExistsError as error:
-                raise ScriptError("bundle destination already exists") from error
-        finally:
-            stage.unlink(missing_ok=True)
+        # Windows denies unlinking an open staging file. Close before the
+        # atomic, no-overwrite publication and the subsequent cleanup.
+        try:
+            os.link(stage, destination)
+        except FileExistsError as error:
+            raise ScriptError("bundle destination already exists") from error
+    finally:
+        stage.unlink(missing_ok=True)
 
 
 def verify(path: Path, *, public_key: Path | None = None) -> dict[str, Any]:
