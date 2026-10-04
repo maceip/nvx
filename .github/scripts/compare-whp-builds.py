@@ -30,8 +30,11 @@ BUILDS = {
 
 
 def digest(path: Path) -> str:
+    value = hashlib.sha256()
     with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+        while chunk := source.read(1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
 
 
 def git(root: Path, *args: str) -> str:
