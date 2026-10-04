@@ -13,14 +13,14 @@ are recorded separately from that result.
 | # | Implemented behavior | Acceptance evidence and remaining gates |
 | --- | --- | --- |
 | 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF. KVM, Intel HVF, WHP and MSHV full runs are tracked below. |
-| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF and Linux ARM full acceptance passes. Native x86 KVM/WHP policy probes also pass; their full batteries remain under test. All backend controls must pass. |
-| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF passes a strict ten-commit trend gate against independently measured source-bound runs. Fourteen Mac, ten ARM and ten base-branch native x86 Linux points are recorded with source, sample and log verification. ARM now passes its full strict ten-point repeat. The additional real Linux and Windows diagnostic-branch measurements are retained with their actual identities and excluded from base-branch comparisons. A fresh strict x86 Linux repeat is being staged. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
+| 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF, Linux ARM and native x86 KVM full acceptance passes. Native WHP passes its complete runtime battery; its strict performance gate is being repeated. Intel HVF and MSHV controls remain required. |
+| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF passes a strict ten-commit trend gate against independently measured source-bound runs. Fourteen Mac, ten ARM and eleven base-branch native x86 Linux points are recorded with source, sample and log verification. ARM now passes its full strict ten-point repeat. The additional real Linux and Windows diagnostic-branch measurements are retained with their actual identities and excluded from base-branch comparisons. The fresh strict x86 Linux repeat passes all nine acceptance gates. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF and Linux ARM real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Other backend results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF and Linux ARM real credential isolation tests pass, including the leaking legacy-env control. Other backend results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF and Linux ARM receipt/flow scenarios pass. Host signature/tamper tests pass. Other backend results remain required. |
 | 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Native HVF acceptance passes on Apple Silicon; Linux ARM builds/boots/restores. Native Windows and Intel hosted runs are being exercised. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
 | 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
-| 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF and Linux ARM. KVM x86, WHP, Intel HVF and MSHV full matrices and the configured scheduled adversarial campaign remain required. |
+| 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF and Linux ARM. Native x86 KVM also passes its full strict matrix. WHP passes its runtime matrix and awaits the repeated performance gate; Intel HVF, MSHV and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
 
 [Image formats](image-formats.md) explains the OCI import boundary and the existing
@@ -45,9 +45,12 @@ inspection/disassembly; that work is not part of the completion commits.
   The full run enforced the strict ten-commit comparison, checked all three metrics
   and found zero regressions (`build/completion-restore-copy-clock-macos-proof/performance-gate.md`).
   All nine step-log hashes were independently verified. The main checkout at
-  `2131a1e` has the same tested core, passes 143 Python tests and lint, and preserves
-  all eleven pre-existing user edits byte for byte. The actual core also passes
-  all 11 doctor checks. Later changes fix fixture ordering, owned Windows snapshot
+  `8c7963a` now pins the separately tested default-HVF discovery fix in core
+  `4b20f45f1`, passes 143 Python tests and lint, and preserves all eleven
+  pre-existing user edits byte for byte. Its actual clean-built Mac executable
+  passes all 11 doctor checks and a real protected/opposite-control seccomp
+  retest. That focused result is not a new full acceptance run. Later changes
+  fix fixture ordering, owned Windows snapshot
   deletion and shared-port allocation, and retain native diagnostics; the full
   acceptance proof above remains bound to its exact source.
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
@@ -158,7 +161,16 @@ inspection/disassembly; that work is not part of the completion commits.
   guest. Its retained VMM log records memory finalization without explaining the
   exit. Diagnostic `37183911824` therefore reuses that exact newer executable and
   source, captures converter progress, enables debug/profile logging and retains
-  the actual VM cache; its result remains pending.
+  the actual VM cache. It reproduces the failure before guest control readiness:
+  `microVM virtio-net requires an explicit KVM, MSHV, WHP, or HVF hypervisor`.
+  The default macOS network IRQ branch used `guest_arch`, which this generic
+  definitions crate never sets. Core `4b20f45f1` selects the same fixed IRQ for
+  default macOS HVF as for explicit HVF. The discovery regression fails before
+  the fix and passes afterward; compile, all-target clippy, docs, all fourteen
+  definitions tests and final repository formatting pass. Native Mac build and
+  protected/control execution pass at `8c7963a`; a fresh native Intel build and
+  complete runtime repeat are running in `37185577628`. The previous executable
+  is not relabeled as the new core.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
@@ -226,16 +238,39 @@ inspection/disassembly; that work is not part of the completion commits.
   twenty-cold/twenty-warm measurement passes, then collector cleanup encounters
   the same readonly scratch attribute. The collector now reuses the already
   verified owned-payload cleanup; the workload subprocesses still run each
-  selected checkout unchanged. History jobs and final strict repeats remain
-  pending; no ten-point platform acceptance is inferred from starting them.
+  selected checkout unchanged. History collection is now complete on native Linux and Windows; platform acceptance is established only by their actual full strict repeats.
   The Linux job in `37184111713` now completes all ten requested real source
   measurements. Nine current-branch points and the previously verified `81233b9`
   point provide ten base-branch points after excluding the separate diagnostic
   branch. All sixty raw samples per revision, source/executable invariants,
   collected medians and log hashes are verified. A later independent Linux
   attempt at `0244ae5` fails pool refill readiness and is excluded entirely.
-  Its cause remains under diagnosis; the separate 100-request diagnostic retains
-  worker exception stacks and never contributes instrumented timings to history.
+  Its cause remains undetermined. The separate diagnostic in `37184966918`
+  passes one hundred cold and one hundred warm requests with unchanged exact
+  source/executable and verified logs and raw samples. It retains worker
+  exception stacks if a failure occurs and never contributes instrumented
+  timings to history. A passing diagnostic establishes no fix for the earlier
+  intermittent failure.
+- Fresh native x86 KVM strict repeat `37185241156` at `84964ed` / core
+  `75b656015` passes all nine acceptance gates, including all runtime scenarios,
+  containment/opposite controls, MCP, determinism, repaired clones, cold/warm
+  requests and the required ten-point performance comparison. All nine gate-log
+  hashes and the containment digest are independently verified. Its twenty
+  cold/warm samples measure **12.00 ms p50** first stdout, **14.52 ms** completion
+  and **1994.77 ms** cold first stdout; all three metrics pass with zero
+  regressions. The accepted source and executable are bound in
+  `build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/NVX-ACCEPTANCE.json`
+  in the diagnostic checkout.
+- Native WHP full repeat `37184286867` at `2131a1e` / core `75b656015`
+  passes all eight runtime acceptance steps, including complete scenarios,
+  containment, image determinism and twenty cold/warm requests. All nine gate
+  logs and the actual native executable provenance are verified. Its ninth gate
+  rejects absent performance history, publishing no complete acceptance proof.
+  A separate canonical twenty-cold/twenty-warm measurement of the same ancestor
+  source in `37185576621` checks unchanged clean source/executable before and
+  afterward; all raw samples, collected medians and four log hashes are verified.
+  First stdout is **40.29 ms p50**, completion **59.09 ms**, cold first stdout
+  **2381.57 ms**. The Windows job in `37184454453` completes all ten requested source measurements. Its nine base-branch points plus the separately verified `2131a1e` point provide ten admitted measurements; the diagnostic-branch point retains its actual identity and is excluded. All samples, source/executable invariants, collected medians and logs are verified. A fresh strict full WHP repeat is being launched.
 - Hosted ARM runners expose no usable `/dev/kvm`; their runtime lane fails
   explicitly. Actual ARM runtime evidence comes from the owned nested host above.
 
@@ -366,7 +401,8 @@ inspection/disassembly; that work is not part of the completion commits.
    signed/notarized six-platform release and clean-host public download smoke.
 3. An SDK/MCP integration built and exercised by another person.
 
-Native Windows, Intel HVF and KVM runs are still being followed and repaired.
+Native Windows and Intel HVF repeats are still being followed and repaired.
+Native ARM and x86 KVM strict repeats now pass their nine acceptance gates.
 No missing runtime result, notarization, public publication or external integration
 is inferred from checked-in source or CI wiring. Snapshots remain architecture and
 backend bound. Credential snapshots exclude host proxy state and require a fresh

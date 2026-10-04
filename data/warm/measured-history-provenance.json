@@ -4010,6 +4010,1335 @@
       "source_branch": "completion/windows-listener-assertion",
       "admitted_to_performance_baseline": false,
       "baseline_exclusion_reason": "actual diagnostic branch measurement; not a current base-branch ancestor"
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "2131a1ea94b2e29ad56e5c193181feef06e708dd",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-windows-ancestor-213-history-evidence/measured-history/2131a1ea94b2/source-provenance.json",
+      "proof_sha256": "9775587e20fa18fecd0769e362613abaf73575c766b47a214bf0eb1fc7d2cb42",
+      "benchmark_sha256": "2fdf190817e968e3823120112b46712deb267fb7130b60366ec50d564f9dcd7a",
+      "collected_csv_sha256": "bb7b24c5d1bd351dfc0b0539ab9cf8e4de33825267f8e75e765583970afb41f0",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              47.0289,
+              48.59,
+              48.3191,
+              44.6949,
+              47.55,
+              48.3497,
+              34.4054,
+              45.8038,
+              34.7866,
+              48.4342,
+              34.5187,
+              48.2258,
+              34.3054,
+              35.5927,
+              49.2606,
+              35.3153,
+              35.892,
+              34.6598,
+              35.1197,
+              34.9506
+            ],
+            "p50_ms": 40.29345
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              61.2276,
+              63.076,
+              62.0583,
+              58.7573,
+              61.2331,
+              61.7947,
+              48.7484,
+              60.1664,
+              48.6833,
+              63.101,
+              59.4321,
+              61.5397,
+              47.9804,
+              48.8904,
+              63.2161,
+              48.9637,
+              49.9516,
+              48.0869,
+              49.4917,
+              48.3789
+            ],
+            "p50_ms": 59.0947
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2423.6742,
+              2421.9343,
+              2651.4541,
+              2727.8628,
+              2432.3118,
+              2391.8724,
+              2390.7955,
+              2393.821,
+              2331.4999,
+              2344.5098,
+              2329.9021,
+              2350.0076,
+              2368.2617,
+              2345.5363,
+              2358.9712,
+              2281.2157,
+              2394.4667,
+              2401.0478,
+              2372.3377,
+              2343.6467
+            ],
+            "p50_ms": 2381.5666
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-windows-ancestor-213-history-evidence/measured-history/2131a1ea94b2/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-windows-ancestor-213-history-evidence/measured-history/2131a1ea94b2/warm.log",
+          "sha256": "0581afb50f46a2d35fac0d50a4fe3add0478cf26eafb694d1e7236f1ff81d00f"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-windows-ancestor-213-history-evidence/measured-history/2131a1ea94b2/benchmark.log",
+          "sha256": "e0c7336eadf6f1c7d92b58d328b7773d7adb4e7e82f66897e13d3d6c9c107c84"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-windows-ancestor-213-history-evidence/measured-history/2131a1ea94b2/collect.log",
+          "sha256": "8003ed9d9191e51aedb8719c92e24e3a4e4b44bd03fa651dc84e317dcb0cf2ed"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37185576621",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "linux-x86_64",
+      "nvx_revision": "84964ede141bb273d6a77f8f216e603f21b8995a",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "f74a5299e9c0f6558a99f05ea1f36c9748f6eaf9b1bf5de03ca4fd810ece7451",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "b48068938d5948cbf195901eb166e218e46ce4e3a56a7cf3966bbf133724354e",
+      "benchmark_sha256": "6816045b8aacc81425199ab638b1dca073737ec068669dee5680d7588c5dd8ac",
+      "collected_csv_sha256": "09a44598ae1d1ead495f37885247ecbb65db755f305e3e50c8c1f9a4786c7e23",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              12.118554,
+              12.257442,
+              12.202191,
+              12.711146,
+              11.908558,
+              12.203848,
+              12.094199,
+              11.886535,
+              11.34568,
+              11.703361,
+              11.229019,
+              12.130913,
+              17.200193,
+              11.826257,
+              11.731817,
+              11.710036,
+              11.700568,
+              12.119663,
+              12.407267,
+              11.392958
+            ],
+            "p50_ms": 12.0013785
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              14.523122,
+              15.524735,
+              15.307104,
+              15.875407,
+              15.399786,
+              15.162754,
+              14.630924,
+              14.518016,
+              13.970117,
+              14.008313,
+              13.554666,
+              14.494009,
+              20.064717,
+              14.133595,
+              14.197793,
+              14.195535,
+              14.342701,
+              14.605335,
+              15.16092,
+              13.70771
+            ],
+            "p50_ms": 14.520569
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2031.450075,
+              2044.030528,
+              2015.110036,
+              1998.544245,
+              1995.880598,
+              2018.961135,
+              1970.628342,
+              1993.652806,
+              1958.238525,
+              2000.095479,
+              2033.194969,
+              1979.743023,
+              1963.21874,
+              1978.4289,
+              1973.4284,
+              1985.439338,
+              2011.168464,
+              1955.232083,
+              2005.155291,
+              1962.833932
+            ],
+            "p50_ms": 1994.766702
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/doctor.log",
+          "sha256": "1336d3194d6ac3b3fb1c6cdc3410c30c0a0e1dad15d40908fc28f849b325ef87"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/prepare-alpine.log",
+          "sha256": "5a994a0eda1cfaf78c34a6fa5767c0cbe8a762a19785c1b9db6ee2375479a617"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/prepare-python.log",
+          "sha256": "1ced3d7d14cc4a803ac17d6e465b60fceed831dcc1c0e93ec041d08b2c011d1d"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/scenarios.log",
+          "sha256": "12bd1fe68e4e1e0ff92200d571b1d6acc67fbe743ae38949a9d6b871490d7bc4"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/warm.log",
+          "sha256": "1eccacd36431205a6df42b3d9d76c813a187d8c33e0330783166b86618ffe71c"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/benchmark.log",
+          "sha256": "608d4229f1a0f637333396872dccb1ceb08091397ddbc9d2af24780f8572b893"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/collect.log",
+          "sha256": "3804b6404a7af25f529e25c904b706829c599b3749119fbfc442b24ef5099fc7"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-strict-native-linux-repeat-evidence/measured-history-full-proof/performance.log",
+          "sha256": "dd813b7e1b0f1e590e57f72a70fdca05eb076aa3247dac92450af1af40eea939"
+        }
+      ],
+      "acceptance_scope": "Complete strict nine-gate native platform acceptance; release-proof verifies unchanged clean source/executable before and afterward",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37185241156",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "4385058610c8138f336e919308c22b189307c769",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/4385058610c8/source-provenance.json",
+      "proof_sha256": "a6272f7d44345de9d386093cc4a31f52ef5c8356bd5e3fe337b11828a1a558f0",
+      "benchmark_sha256": "ad3203ec5627d66be8537b1a3c3abd2d1c8805ef287408c71d09d5c821e82e6b",
+      "collected_csv_sha256": "84d7a945c83780f38e2103d90895f9e7507ae2975d1e62f0a82be5f093e6dc02",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.3112,
+              44.7604,
+              34.0612,
+              48.6992,
+              34.4718,
+              33.8974,
+              48.4482,
+              47.8742,
+              47.731,
+              33.8415,
+              33.6985,
+              34.0382,
+              48.2483,
+              33.9429,
+              42.8677,
+              52.4047,
+              47.7851,
+              44.1268,
+              55.4643,
+              33.8371
+            ],
+            "p50_ms": 43.49725
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              48.0795,
+              58.0431,
+              47.2132,
+              61.7754,
+              47.458,
+              47.1283,
+              61.2183,
+              60.7209,
+              60.6456,
+              46.4852,
+              46.5637,
+              46.8149,
+              61.1077,
+              46.9458,
+              56.5707,
+              65.698,
+              60.4732,
+              57.0759,
+              68.0408,
+              46.6044
+            ],
+            "p50_ms": 56.8233
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2672.5066,
+              2652.2383,
+              2577.7025,
+              2612.454,
+              2601.6012,
+              2644.834,
+              2635.9912,
+              2633.7269,
+              2566.9148,
+              2651.0351,
+              2654.777,
+              2638.8696,
+              2634.2425,
+              2652.9963,
+              2651.8232,
+              2639.5672,
+              2600.2012,
+              2493.868,
+              2417.3368,
+              2666.5483
+            ],
+            "p50_ms": 2637.4304
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/4385058610c8/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/4385058610c8/warm.log",
+          "sha256": "da4edc5232cc9d1cd3a752b1aa08114ec5c54d52c0e53e645e00890baba3e90b"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/4385058610c8/benchmark.log",
+          "sha256": "b19909b9e703050f435faeba7b1042d679bdce03b7f8970822657425078498d8"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/4385058610c8/collect.log",
+          "sha256": "60475756bbbf3b7df3f5cad834213ab4aa46c961f0d3c8990fcc0f913c84e545"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "5854598dd1cd238005b2e4cb61e1d74c1bc5d8a1",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/5854598dd1cd/source-provenance.json",
+      "proof_sha256": "451285f90bc4e591595de4f47da99d009b54317ba8bd809907c461c5b7f9b960",
+      "benchmark_sha256": "1074301ed6a2bb7c66d1f1f9457d553a547f91ba3a4322766851fb4afa9e5f93",
+      "collected_csv_sha256": "bf4a84b12d95d9b1bdfb4a530edc29624becbf3c2aa93c1ca145b60cd19d6054",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.85,
+              50.2316,
+              48.3957,
+              43.9774,
+              34.1901,
+              44.5472,
+              33.8861,
+              53.2273,
+              43.9253,
+              33.9166,
+              48.4748,
+              47.8443,
+              33.9623,
+              33.4022,
+              47.751,
+              34.3773,
+              46.9619,
+              58.1642,
+              34.3327,
+              34.1044
+            ],
+            "p50_ms": 43.951350000000005
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              47.5047,
+              63.2566,
+              61.3007,
+              57.1596,
+              47.1386,
+              58.262,
+              47.1025,
+              65.7602,
+              56.7913,
+              46.6891,
+              61.4779,
+              70.5583,
+              46.9698,
+              46.1073,
+              60.6715,
+              47.1195,
+              59.7563,
+              70.5872,
+              47.0825,
+              47.3291
+            ],
+            "p50_ms": 56.975449999999995
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2703.7297,
+              2640.5238,
+              2679.2976,
+              2651.7463,
+              2385.8123,
+              2677.6433,
+              2672.9244,
+              2653.8354,
+              2718.9949,
+              2709.5515,
+              2670.994,
+              2697.8204,
+              2671.3649,
+              2719.7073,
+              2626.9112,
+              2655.4053,
+              2590.0398,
+              2626.0349,
+              2339.6009,
+              2678.5351
+            ],
+            "p50_ms": 2671.17945
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/5854598dd1cd/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/5854598dd1cd/warm.log",
+          "sha256": "66e2217122f79f65a4945773eca5d2952987397967bb5e9ca5591e6b2678f86f"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/5854598dd1cd/benchmark.log",
+          "sha256": "dddd9c5d59a277cd181969df19f3fcd4ab43df0b37593abbdcaac61e4622e523"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/5854598dd1cd/collect.log",
+          "sha256": "b8906595cfa0aa62dc59e0398c543d446313123ce86165365afe4314a740778f"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "598ca08b987c186fbde8a5757dd66dc379e70860",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/598ca08b987c/source-provenance.json",
+      "proof_sha256": "e908ae2f8da96c0c7caf374d651492b50989a6506e4421e75854229f8c7ce115",
+      "benchmark_sha256": "1f46f8657d7e18de5e2cd47d6000b582f6a0f54b8ce2925dcf583c3c47ff8657",
+      "collected_csv_sha256": "9bc6cfff0cdf71fccb8bdc5fe366a1fa25839c03c6a7958ef66022154dcd1e0c",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.6291,
+              49.8594,
+              34.0728,
+              47.3536,
+              33.5636,
+              52.0934,
+              44.0987,
+              47.4959,
+              47.488,
+              33.9032,
+              48.6719,
+              34.1514,
+              33.7797,
+              47.4717,
+              34.3644,
+              44.142,
+              57.1991,
+              47.7238,
+              49.1309,
+              33.6916
+            ],
+            "p50_ms": 45.7478
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              47.5553,
+              64.3944,
+              46.8374,
+              60.2435,
+              46.3929,
+              64.8792,
+              67.0512,
+              60.3273,
+              60.1128,
+              47.1219,
+              61.5309,
+              46.8394,
+              46.8348,
+              70.2542,
+              47.2251,
+              56.6199,
+              70.0128,
+              60.404,
+              61.7626,
+              46.7115
+            ],
+            "p50_ms": 60.17815
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2401.1847,
+              2665.7421,
+              2645.2161,
+              2641.8379,
+              2618.9249,
+              2643.4112,
+              2485.2259,
+              2619.6676,
+              2611.8794,
+              2696.2518,
+              2674.4913,
+              2650.6679,
+              2657.8307,
+              2673.628,
+              2698.2864,
+              2672.1552,
+              2639.2484,
+              2638.5209,
+              2643.3822,
+              2281.9302
+            ],
+            "p50_ms": 2643.3967000000002
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/598ca08b987c/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/598ca08b987c/warm.log",
+          "sha256": "9bf92d0167c54da49e23f58c355ca158888c720c3d94f3fbc4c04258509299f9"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/598ca08b987c/benchmark.log",
+          "sha256": "21ec08506e2690f3a2fbeafa677ac104f1101404e4325d1cf3d6169bdfac2a2e"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/598ca08b987c/collect.log",
+          "sha256": "e66f363a4445233fced2a065c48c26c10cc00a459a703cfc3527ff203c2aed03"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "75c513f58d6f183fbea14fb8588360b7e6cf2a07",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/75c513f58d6f/source-provenance.json",
+      "proof_sha256": "59207ce248f0b7909ee9e0beac06269c03e1c1776f5bc32c4e86ee5f3e336c49",
+      "benchmark_sha256": "dd49267c67bd2c93cca1873f2629801a8195b44a94c709bd8b302f8bcffae204",
+      "collected_csv_sha256": "b4a443efa3743d47ef25862dfa8e0d31140dad87e0b7937129db2c66d7919f9c",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.8022,
+              36.4341,
+              47.9755,
+              43.2408,
+              49.0675,
+              47.8419,
+              47.1794,
+              44.9117,
+              47.5553,
+              47.6997,
+              33.9987,
+              35.2404,
+              35.1607,
+              47.2731,
+              33.8868,
+              48.6415,
+              47.883,
+              47.3678,
+              35.3837,
+              47.949
+            ],
+            "p50_ms": 47.22625
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              47.3492,
+              49.2404,
+              60.9012,
+              56.3189,
+              61.9799,
+              60.7637,
+              59.9605,
+              60.3704,
+              60.4527,
+              60.4498,
+              47.0477,
+              48.0592,
+              48.2476,
+              59.6406,
+              47.0024,
+              61.5837,
+              60.4137,
+              60.0451,
+              48.0818,
+              60.4718
+            ],
+            "p50_ms": 60.0028
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2602.6015,
+              2547.978,
+              2635.2923,
+              2639.1771,
+              2685.1255,
+              2651.0627,
+              2651.3347,
+              2658.7093,
+              2526.7305,
+              2214.3316,
+              2646.4419,
+              2655.3312,
+              2694.8584,
+              2646.774,
+              2673.8814,
+              2675.3776,
+              2697.4831,
+              2695.7115,
+              2706.4674,
+              2660.8484
+            ],
+            "p50_ms": 2653.33295
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/75c513f58d6f/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/75c513f58d6f/warm.log",
+          "sha256": "cd3f74c7c28b0708bcdd7380b4438fee561fe8ab901fa300c1ac9b08cd6c3f4a"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/75c513f58d6f/benchmark.log",
+          "sha256": "1295a193a42199c6ff59d0debc7de60e2296c3cfcf1cfbad704c38f7b10561c2"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/75c513f58d6f/collect.log",
+          "sha256": "e1ffb42f50facd67a346c208a98ac7445b7eba7c35880c5ae430006d50577554"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "8a0f6474a72414a10d9c0ce8976de76750016053",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/8a0f6474a724/source-provenance.json",
+      "proof_sha256": "7815a6e61733b4022eda3f660ae7d107ec2305a2f07d3fcbc47b389e4fcc301c",
+      "benchmark_sha256": "ec384d1dfa3e1331208353623d4851f343eddeff6beb3d68e9397731239fb01f",
+      "collected_csv_sha256": "347e7bb3a5eb1492556b63d2562f4e2c867c2d5690753ee6228604f8ba03f147",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              44.8143,
+              47.6441,
+              48.3033,
+              33.9276,
+              47.597,
+              44.3606,
+              44.2833,
+              58.0955,
+              58.24,
+              61.6343,
+              48.4963,
+              34.2484,
+              33.2395,
+              43.9335,
+              34.2792,
+              44.172,
+              48.4327,
+              57.4846,
+              43.2182,
+              63.8928
+            ],
+            "p50_ms": 46.205650000000006
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              57.4413,
+              60.4861,
+              61.0411,
+              47.1198,
+              60.0127,
+              57.2973,
+              57.336,
+              70.9972,
+              71.2941,
+              75.9151,
+              61.633,
+              47.4664,
+              45.9363,
+              56.5394,
+              47.0972,
+              56.7426,
+              61.3454,
+              70.4135,
+              56.1076,
+              76.8832
+            ],
+            "p50_ms": 58.727000000000004
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2515.9305,
+              2650.3089,
+              2644.3762,
+              2658.6351,
+              2642.5638,
+              2656.0536,
+              2526.1822,
+              2491.0696,
+              2614.7093,
+              2654.2916,
+              2752.7627,
+              2695.4567,
+              2655.4608,
+              2666.8962,
+              2655.5949,
+              2660.2693,
+              2692.8629,
+              2574.1394,
+              2462.6496,
+              2673.1052
+            ],
+            "p50_ms": 2654.8761999999997
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/8a0f6474a724/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/8a0f6474a724/warm.log",
+          "sha256": "29a4e194f71cfd3d7a5fad1809f7628f587c7a375ceff8d1f7731ae71dd6ec3a"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/8a0f6474a724/benchmark.log",
+          "sha256": "c81ad54f31fa63fd57fd72584f34b8698ea78ac68b652f0cf15f1d0851c2e571"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/8a0f6474a724/collect.log",
+          "sha256": "f8e30ee6f35840dd36339cfa58352233c41c6e1d74c7f85012d896ca565ff2e4"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "911764666548aa8982d04940932281a83631fcec",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/911764666548/source-provenance.json",
+      "proof_sha256": "7a6b8604a4af571754527970be921db79d533e496b2efe78058f66874bd1eb16",
+      "benchmark_sha256": "cf709a4cff49fbbec94406016941ab50de0cac5c20a33bbdc1173a0cc426be2f",
+      "collected_csv_sha256": "bd72f2cf5d8cdeef08982956c70b61714ae726993eab5cd77bc5dc3df76d3c98",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.9492,
+              34.6467,
+              47.9532,
+              33.6137,
+              34.3961,
+              51.6687,
+              48.7548,
+              48.4622,
+              33.5979,
+              47.6293,
+              48.3128,
+              34.0594,
+              34.6276,
+              34.4073,
+              48.2318,
+              34.3509,
+              48.0026,
+              48.7214,
+              47.6736,
+              34.3715
+            ],
+            "p50_ms": 41.289249999999996
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              47.5106,
+              47.7109,
+              60.9079,
+              46.737,
+              46.9571,
+              64.6305,
+              61.5906,
+              61.4511,
+              46.3543,
+              60.5342,
+              61.2386,
+              46.9723,
+              49.241,
+              49.0007,
+              61.2405,
+              47.6943,
+              60.898,
+              62.1505,
+              60.857,
+              47.1438
+            ],
+            "p50_ms": 54.8876
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2706.9243,
+              2769.6544,
+              2765.5295,
+              2752.0541,
+              2659.5234,
+              2628.4332,
+              2682.6056,
+              2676.2077,
+              2651.9925,
+              2818.2847,
+              2720.8445,
+              2614.3407,
+              2453.3206,
+              2480.3688,
+              2787.5004,
+              2741.522,
+              2709.2565,
+              2718.0619,
+              2661.7572,
+              2700.1996
+            ],
+            "p50_ms": 2703.5619500000003
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/911764666548/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/911764666548/warm.log",
+          "sha256": "0071c43b5148dcc5076613956720ba10899ed5effb0f5e65b36b8e09fdcea7c1"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/911764666548/benchmark.log",
+          "sha256": "d5d8386a79e299296567fe6fdd9b9fb8a050c54153d37ea4dbf9e7d375adc83b"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/911764666548/collect.log",
+          "sha256": "767b8e52191aa56ab6dd7daaec0468a77b30fc95b5e691f6c20ec954117fabae"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "9b5420c4c3b82ebc329082712743986407da4254",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/9b5420c4c3b8/source-provenance.json",
+      "proof_sha256": "275c0b1763d9a90fa7d44e73ee00563ba962c061cac99b66627f03cd8958407d",
+      "benchmark_sha256": "866de7530a7ac26de094ca88871e3a7a39b2ca4bea8554c6f84a9b1e633983f1",
+      "collected_csv_sha256": "497190b534e6690971c865a61ce3e1f99ffb1d220dae3b6ba569a49fec2bad52",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              44.5648,
+              57.1305,
+              48.8477,
+              43.9517,
+              34.4432,
+              59.1634,
+              33.6135,
+              33.6967,
+              33.697,
+              47.9523,
+              33.5056,
+              33.4941,
+              48.1734,
+              44.0032,
+              48.1731,
+              44.3953,
+              33.6658,
+              48.9068,
+              34.1756,
+              33.7422
+            ],
+            "p50_ms": 43.977450000000005
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              57.359,
+              70.7355,
+              72.8691,
+              57.7908,
+              332.0059,
+              72.6301,
+              46.459,
+              49.073,
+              46.3604,
+              60.7584,
+              126.4693,
+              56.8432,
+              60.7037,
+              56.6489,
+              61.061,
+              64.9687,
+              46.4644,
+              66.0158,
+              46.8838,
+              46.6132
+            ],
+            "p50_ms": 59.247249999999994
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2632.5249,
+              2655.8405,
+              2638.1398,
+              2348.3647,
+              2655.8399,
+              2666.4676,
+              2677.3397,
+              2682.6816,
+              2714.9146,
+              2696.1432,
+              2680.4508,
+              2679.0244,
+              2671.6222,
+              2827.8891,
+              2659.345,
+              2852.1892,
+              2851.2478,
+              2605.0975,
+              2502.3777,
+              2723.8935
+            ],
+            "p50_ms": 2674.48095
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/9b5420c4c3b8/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/9b5420c4c3b8/warm.log",
+          "sha256": "a21ba73848b5debb29e3a29940251ff014a3449f6e449a12b697b12c548762c1"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/9b5420c4c3b8/benchmark.log",
+          "sha256": "6103bf915c064820d922e05b315d30ff14638c5b35a3156414a0bd039e511779"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/9b5420c4c3b8/collect.log",
+          "sha256": "7143433af777a5a4a65ff3a75c036bc36c2e8f5dc6aad699b53f7f28c8addda7"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "b49531628e340b2c3e03766c6beeaae4cfec0ab4",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b49531628e34/source-provenance.json",
+      "proof_sha256": "91f389b8be84f010c33f5cb6a9b78529c131ac403e4a33f371473eed2d7bc872",
+      "benchmark_sha256": "38bc4ec61038eb509a6e4501f90a4ed4f43e3dc14052e5f0b2a0431f90aa48ed",
+      "collected_csv_sha256": "0a9550a4bdf62372b6c46c21f5ee10463186c5677344da79943853f6d9aac312",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              44.0958,
+              33.5833,
+              34.0917,
+              47.6326,
+              43.8805,
+              23.2403,
+              33.4847,
+              33.8344,
+              58.2033,
+              33.4188,
+              51.2892,
+              33.1346,
+              33.8163,
+              33.466,
+              33.8079,
+              48.2773,
+              48.0419,
+              48.3344,
+              48.1372,
+              33.6155
+            ],
+            "p50_ms": 33.96305
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              56.6247,
+              47.091,
+              46.7449,
+              60.7792,
+              57.2455,
+              36.0172,
+              46.1543,
+              46.973,
+              71.2982,
+              46.3881,
+              64.3222,
+              46.1201,
+              56.5177,
+              46.1821,
+              47.0451,
+              60.8304,
+              72.3163,
+              61.1266,
+              76.4191,
+              46.4007
+            ],
+            "p50_ms": 51.80435
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2641.7465,
+              2679.3121,
+              2663.8163,
+              2659.5159,
+              2672.6243,
+              2655.8768,
+              2659.3753,
+              2663.5152,
+              2651.0254,
+              2651.7443,
+              2680.0962,
+              2655.0782,
+              2664.3943,
+              2672.9091,
+              2651.75,
+              2397.8691,
+              2602.617,
+              2601.701,
+              2678.9677,
+              2667.8317
+            ],
+            "p50_ms": 2659.4456
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b49531628e34/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b49531628e34/warm.log",
+          "sha256": "77a7eb98943d594ba211bb0058bc654c14e4f4810679a67293befcdec5cdf79e"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b49531628e34/benchmark.log",
+          "sha256": "6d8782d3df9400ddd46b2f5fad6f75f4097bceea6fa01ddc135f0fdceb589abc"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b49531628e34/collect.log",
+          "sha256": "4f7916f1aff2697233d49394b4519db3c135fb3b46f50923dcad4f05ed2af710"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
+    },
+    {
+      "platform": "windows-whp",
+      "nvx_revision": "b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "c5a88eff5222cb66f5b656953ba0b9acb258088eb2d39860e5bf5792bb7af2ed",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b977e3dbb2dd/source-provenance.json",
+      "proof_sha256": "142c2ad078d220eaaa48fd015e8f3bccee3edabd9c264cf0e9e66edc73f1e5f2",
+      "benchmark_sha256": "90342f281214b5cadbd132ba5d2184a6f5888bbc25ada35739bb55962aa7acee",
+      "collected_csv_sha256": "d52f7940e68f0d7602676b9ea61ac4411df0772bab966ec861bb338afc0c5598",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "windows-whp",
+        "backend": "whp",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              34.4845,
+              33.9283,
+              34.3298,
+              58.5798,
+              52.1915,
+              34.3765,
+              33.7219,
+              42.5769,
+              33.8539,
+              48.0559,
+              48.5172,
+              33.978,
+              48.0069,
+              51.4409,
+              33.5025,
+              47.8308,
+              33.3718,
+              33.9768,
+              48.039,
+              57.9111
+            ],
+            "p50_ms": 38.530699999999996
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              47.0958,
+              46.6632,
+              47.2482,
+              71.2259,
+              65.0466,
+              47.147,
+              46.4981,
+              55.1958,
+              46.5747,
+              60.8146,
+              61.0296,
+              46.84,
+              60.5853,
+              64.2005,
+              46.4343,
+              60.4274,
+              46.4323,
+              64.2578,
+              60.9287,
+              70.5339
+            ],
+            "p50_ms": 57.8116
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2589.1197,
+              2642.6682,
+              2671.2141,
+              2686.4343,
+              2676.6212,
+              2666.0061,
+              2636.1061,
+              2667.3376,
+              2677.3887,
+              2683.3383,
+              2696.0063,
+              2674.2872,
+              2675.8985,
+              2695.1123,
+              2641.8118,
+              2575.7288,
+              2526.7104,
+              2674.6642,
+              2696.0281,
+              2711.8672
+            ],
+            "p50_ms": 2674.4757
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b977e3dbb2dd/doctor.log",
+          "sha256": "55b01e8d22d2123f0632853728f8bb78a6a1c3d7bb72968127b69792e33981db"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b977e3dbb2dd/warm.log",
+          "sha256": "4cd1384d0fa157d2b4c2012de5437250d46211e62ea68ffeed5b24829a0f3d21"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b977e3dbb2dd/benchmark.log",
+          "sha256": "e50f2585ae23ea9d6ca1e48da2d8d57fba075f73151bf034b5271d809f8e3afc"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-native-windows-ten-history-evidence/measured-history/b977e3dbb2dd/collect.log",
+          "sha256": "44a5cf859e1f819f44f6dc452cbebf274f0bf14fccd1865ef1717b62cb41d0e2"
+        }
+      ],
+      "acceptance_scope": "Four native doctor/capture/20-cold/20-warm/collection steps passed; clean source and exact executable unchanged; not full runtime acceptance",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37184454453",
+      "source_is_current_branch_ancestor": true,
+      "admitted_to_performance_baseline": true
     }
   ]
 }

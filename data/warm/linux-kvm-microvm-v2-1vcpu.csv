@@ -29,3 +29,6 @@ linux-kvm,2,1,b49531628e340b2c3e03766c6beeaae4cfec0ab4,cold_image_first_stdout,m
 linux-kvm,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,warm_pool_first_stdout,ms,lower,15.530612
 linux-kvm,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,warm_pool_completion,ms,lower,22.3340005
 linux-kvm,2,1,b977e3dbb2dd8cd1d0cf3a3bc1f91353f9916bee,cold_image_first_stdout,ms,lower,2127.8939195
+linux-kvm,2,1,84964ede141bb273d6a77f8f216e603f21b8995a,warm_pool_first_stdout,ms,lower,12.0013785
+linux-kvm,2,1,84964ede141bb273d6a77f8f216e603f21b8995a,warm_pool_completion,ms,lower,14.520569
+linux-kvm,2,1,84964ede141bb273d6a77f8f216e603f21b8995a,cold_image_first_stdout,ms,lower,1994.766702
