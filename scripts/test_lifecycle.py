@@ -22,7 +22,7 @@ class LifecycleTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    "import os; data=os.read(0,32); os.set_blocking(0,False); "
+                    "import os; data=os.read(0,32); "
                     "assert data==bytes(range(32)); assert os.read(0,1)==b''",
                 ],
                 stdin=reader,

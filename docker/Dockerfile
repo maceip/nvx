@@ -44,6 +44,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY guest/common/nvx-image-smoke /repo/guest/common/nvx-image-smoke
 
+# Scenario fixtures reuse the verified guest archive instead of rebuilding its
+# compiler toolchain and root filesystem inside another container.
+FROM converter AS fixture
+RUN apt-get update && apt-get install -y --no-install-recommends cpio \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM base AS kernel
 RUN python3 scripts/nvx.py build-kernel
 

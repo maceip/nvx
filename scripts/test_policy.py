@@ -1,13 +1,40 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from nvx_tools.common import ScriptError
 from nvx_tools.policy import read_config, resolve
+from nvx_tools.policy_tests import execute
 
 
 class PolicyTests(unittest.TestCase):
+    def test_wall_deadline_can_expire_before_output_but_requires_timeout_status(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with patch(
+                "nvx_tools.policy_tests.subprocess.run",
+                return_value=subprocess.CompletedProcess([], 124, b"", b""),
+            ):
+                self.assertEqual(
+                    execute("kvm", "probe", output, "deadline", 5, expected_status=124),
+                    {"phase": "timed-out-before-output"},
+                )
+            with patch(
+                "nvx_tools.policy_tests.subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, b"", b""),
+            ):
+                with self.assertRaisesRegex(
+                    ScriptError, "did not return a probe record"
+                ):
+                    execute("kvm", "probe", output, "empty", 5)
+                with self.assertRaisesRegex(ScriptError, "failed with status 0"):
+                    execute("kvm", "probe", output, "control", 5, expected_status=124)
+
     def test_precedence_and_deterministic_render(self) -> None:
         self.assertEqual(resolve().pids_max, 128)
         config = {"profile": "ci", "pids_max": 32, "allow": ["192.0.2.1:443"]}

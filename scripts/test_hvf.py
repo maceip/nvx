@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,12 +6,49 @@ from unittest.mock import patch
 
 from nvx_tools.build import detect_openvmm_platform
 from nvx_tools.build_config import OpenVmmBuildConfig
-from nvx_tools.common import ScriptError
+from nvx_tools.common import ScriptError, sha256_file
 from nvx_tools.hvf import boot_tokens, network_arguments
+from nvx_tools.hvf_tests import _fixture  # pyright: ignore[reportPrivateUsage]
 from nvx_tools.sandbox import SandboxLaunch, SandboxLayer
 
 
 class HvfTests(unittest.TestCase):
+    def test_fixture_rejects_stale_source_or_archive_before_running_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "initramfs.cpio.gz"
+            archive.write_bytes(b"fixture archive")
+            metadata = root / "initramfs.provenance.json"
+            inputs = {"fixture": "current inputs"}
+
+            def artifact(name: str) -> Path:
+                return root / name
+
+            with (
+                patch(
+                    "nvx_tools.hvf_tests.artifact_path",
+                    side_effect=artifact,
+                ),
+                patch(
+                    "nvx_tools.build.initramfs_provenance_inputs", return_value=inputs
+                ),
+                patch("nvx_tools.hvf_tests.subprocess.run") as run,
+            ):
+                for claimed_hash, claimed_inputs in (
+                    ("invalid", inputs),
+                    (sha256_file(archive), {"fixture": "old inputs"}),
+                ):
+                    metadata.write_text(
+                        json.dumps(
+                            {"initramfs_sha256": claimed_hash, "inputs": claimed_inputs}
+                        )
+                    )
+                    with self.assertRaisesRegex(
+                        ScriptError, "current verified initramfs"
+                    ):
+                        _fixture(root)
+                run.assert_not_called()
+
     def test_native_mac_target_and_device_transport_follow_guest_architecture(
         self,
     ) -> None:

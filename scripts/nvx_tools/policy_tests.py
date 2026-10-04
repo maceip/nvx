@@ -194,6 +194,10 @@ def execute(
         raise ScriptError(
             f"{label} failed with status {result.returncode}; see {output}"
         )
+    # A real execution deadline can expire during interpreter startup.
+    # Status 124 is required above; the uncapped control must finish below.
+    if expected_status == 124 and not result.stdout.strip():
+        return {"phase": "timed-out-before-output"}
     try:
         value: object = json.loads(result.stdout.splitlines()[-1])
     except (ValueError, IndexError) as error:
@@ -425,7 +429,7 @@ def run(backend: str, scenarios: tuple[str, ...], output: Path, timeout: float) 
             if (
                 memory_protected["signal"] != 9
                 or memory_control["exit"] != 0
-                or wall_protected["phase"] != "started"
+                or wall_protected["phase"] not in ("started", "timed-out-before-output")
                 or wall_control["phase"] != "completed"
             ):
                 raise ScriptError(

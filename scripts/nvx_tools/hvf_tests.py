@@ -17,7 +17,13 @@ from pathlib import Path
 
 from . import sandbox_lifecycle
 from .build_constants import BuildConstants
-from .common import ScriptError, artifact_path, openvmm_binary_path
+from .common import (
+    ScriptError,
+    artifact_path,
+    openvmm_binary_path,
+    require_tool,
+    sha256_file,
+)
 from .openvmm_process import OpenvmmProcess
 from .sandbox import SandboxLaunch, SandboxLayer
 
@@ -211,15 +217,32 @@ def _restore_clock(
 
 
 def _fixture(output_dir: Path) -> tuple[Path, Path]:
+    from .build import initramfs_provenance_inputs
+
+    archive = artifact_path("initramfs.cpio.gz")
+    try:
+        provenance = json.loads(artifact_path("initramfs.provenance.json").read_bytes())
+        if (
+            provenance["initramfs_sha256"] != sha256_file(archive)
+            or provenance["inputs"] != initramfs_provenance_inputs()
+        ):
+            raise ScriptError("scenario fixture requires a current verified initramfs")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ScriptError(
+            "scenario fixture requires a current verified initramfs"
+        ) from error
+    docker = require_tool(
+        "docker", "scenario fixture conversion requires a Linux Docker engine"
+    )
     layer = output_dir / "distro.erofs"
     scratch = output_dir / "scratch-template.ext4"
     with (output_dir / "fixture-build.log").open("wb") as log:
         subprocess.run(
             [
-                "docker",
+                docker,
                 "build",
                 "--target",
-                "initramfs",
+                "fixture",
                 "-t",
                 "nvx-hvf-test-fixture",
                 "-f",
@@ -232,25 +255,41 @@ def _fixture(output_dir: Path) -> tuple[Path, Path]:
         )
         subprocess.run(
             [
-                "docker",
+                docker,
                 "run",
                 "--rm",
                 "--network",
                 "none",
                 "-v",
                 f"{output_dir.resolve()}:/out",
+                "-v",
+                f"{archive.resolve()}:/in/initramfs.cpio.gz:ro",
                 "nvx-hvf-test-fixture",
                 "sh",
                 "-ec",
+                "gzip -dc /in/initramfs.cpio.gz > /tmp/fixture.cpio; "
+                "mkdir /tmp/fixture-root; "
+                "cd /tmp/fixture-root; cpio -idm --no-absolute-filenames < /tmp/fixture.cpio; "
                 "mkfs.erofs -x-1 -T0 -U "
                 + FIXTURE_UUID
-                + " /out/distro.erofs /repo/build/initramfs-alpine-work/root; "
+                + " /out/distro.erofs /tmp/fixture-root; "
                 "truncate -s 128M /out/scratch-template.ext4; mke2fs -q -t ext4 -F /out/scratch-template.ext4",
             ],
             check=True,
             stdout=log,
             stderr=subprocess.STDOUT,
         )
+    (output_dir / "fixture-provenance.json").write_text(
+        json.dumps(
+            {
+                "initramfs_sha256": provenance["initramfs_sha256"],
+                "distro_erofs_sha256": sha256_file(layer),
+                "scratch_template_sha256": sha256_file(scratch),
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     return layer, scratch
 
 
