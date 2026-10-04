@@ -352,6 +352,19 @@ inspection/disassembly; that work is not part of the completion commits.
   failed gates remain unresolved; the diagnostic supplies neither acceptance nor
   baseline history. Earlier handoff and Python 3.10 hashing failures occurred before any
   guest ran, retain their original logs and supply no runtime measurements.
+- Fresh core-`f1f6019b7` Windows repeat
+  [37190492819](https://github.com/maceip/nvx/actions/runs/37190492819) at
+  NVX `6521f01` passes all eight runtime gates, including the complete scenarios,
+  opposite controls, MCP, determinism, twenty repaired clones and twenty
+  cold/warm requests. Its strict ten-point comparison fails completion:
+  **75.02 ms p50** against **58.27 ms**, a **28.7%** increase. First output
+  **46.41 ms** and cold first output **2028.14 ms** pass. The actual newly compiled
+  executable, all nine recorded gate-log hashes and raw sample medians are
+  independently verified. Reapplying the unchanged gate to the saved measurements
+  reproduces the same single failure. The failed measurement remains excluded
+  from history. A native synthetic transport diagnostic measures the existing
+  polling reader against an immediate pipe-read reference; it supplies no guest
+  acceptance or replacement timeout implementation.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks

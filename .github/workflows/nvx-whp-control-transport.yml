@@ -1,0 +1,28 @@
+name: NVX native Windows control transport diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - name: Measure the existing polling transport and blocking lower bound
+        timeout-minutes: 2
+        run: python .github/scripts/probe-whp-control-transport.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: whp-control-transport
+          path: build/whp-control-transport
+          if-no-files-found: warn
