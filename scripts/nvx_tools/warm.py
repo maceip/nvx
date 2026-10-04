@@ -96,6 +96,7 @@ def capture(
     scratch = cache.acquire(owner, value)
     state = output / "source"
     process: subprocess.Popen[bytes] | None = None
+    running: dict[str, Any] | None = None
     retained = False
     proxy_process: subprocess.Popen[bytes] | None = None
     proxy_environment: tuple[str, ...] = ()
@@ -186,6 +187,7 @@ def capture(
             keep_stdin=True,
             snapshot_destination=snapshot if microvm_snapshot else None,
         )
+        running = cast(dict[str, Any], json.loads((state / "runtime.json").read_bytes()))
         command = workload_argv(manifest, prelude or ("/bin/true",), proxy_environment)
         result = lifecycle.exec_workload(
             state, command, timeout_ms=60_000, response_timeout=timeout
@@ -194,7 +196,6 @@ def capture(
             raise ScriptError("warm runtime initialization failed")
         (state / "prelude.stdout").write_bytes(result.stdout)
         (state / "prelude.stderr").write_bytes(result.stderr)
-        running = json.loads((state / "runtime.json").read_bytes())
         capability = (state / "control.capability").read_bytes()
         with ControlSession.connect(
             Path(running["control_endpoint"]), capability, timeout
@@ -211,6 +212,11 @@ def capture(
                 raise lifecycle.startup_failure(
                     state / "openvmm.log", process.returncode
                 )
+            captured = Path(running["snapshot_destination"])
+            if captured != snapshot:
+                # Long Unix paths capture alongside their short private control
+                # socket. Publish only after the source VM has finished capture.
+                shutil.move(captured, snapshot)
         else:
             _repl(
                 process,
@@ -229,7 +235,6 @@ def capture(
             process.stdin.write(b"quit\n")
             process.stdin.flush()
             process.wait(timeout=timeout)
-        lifecycle.cleanup_endpoint(running)
         for name in ("runtime.json", "control.capability", "control.sock"):
             (state / name).unlink(missing_ok=True)
         if proxy_process is not None:
@@ -290,6 +295,8 @@ def capture(
         if proxy_process is not None and proxy_process.poll() is None:
             proxy_process.terminate()
             proxy_process.wait(timeout=10)
+        if running is not None:
+            lifecycle.cleanup_endpoint(running)
         (state / "proxy.capability").unlink(missing_ok=True)
         if not retained:
             (output / "source-ram.bin").unlink(missing_ok=True)

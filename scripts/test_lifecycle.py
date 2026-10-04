@@ -14,6 +14,7 @@ from nvx_tools import control_session
 from nvx_tools.common import ScriptError
 from nvx_tools.sandbox import SandboxLaunch, SandboxLayer
 from nvx_tools.sandbox_lifecycle import (
+    cleanup_endpoint,
     connect_when_ready,
     deprovision,
     microvm_network_endpoint,
@@ -25,6 +26,89 @@ from nvx_tools.sandbox_lifecycle import (
 
 
 class LifecycleTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Unix snapshot namespace regression")
+    def test_capture_socket_shares_the_snapshot_parent_for_short_and_long_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="nvx-capture-", dir="/tmp"
+        ) as directory:
+            root = Path(directory)
+            layer = root / "layer"
+            scratch = root / "scratch"
+            layer.write_bytes(b"layer")
+            scratch.write_bytes(b"scratch")
+            launch = SandboxLaunch(
+                (
+                    SandboxLayer(
+                        "custom", layer, "900ba5a7-a33d-577b-a21c-d4ee7930be62"
+                    ),
+                ),
+                scratch,
+            )
+
+            def artifact_file(path: Path, _label: str) -> Path:
+                return path
+
+            for long_path in (False, True):
+                with self.subTest(long_path=long_path):
+                    parent = root / ("nested-" + "x" * 100 if long_path else "short")
+                    state = parent / "source"
+                    provision(
+                        state,
+                        launch,
+                        hypervisor="kvm",
+                        memory_mib=512,
+                        net=None,
+                        network_profile=None,
+                        network_egress="deny",
+                        network_ingress="deny",
+                        network_egress_allow=(),
+                        network_egress_deny=(),
+                        host_loopback=None,
+                        network_proxy=None,
+                        host_loopback_forward=(),
+                        cmdline="",
+                    )
+                    process = MagicMock(spec=subprocess.Popen)
+                    process.pid = 201
+                    process.poll.return_value = None
+                    with (
+                        patch(
+                            "nvx_tools.sandbox_lifecycle.platform.machine",
+                            return_value="x86_64",
+                        ),
+                        patch(
+                            "nvx_tools.sandbox_lifecycle.require_file",
+                            side_effect=artifact_file,
+                        ),
+                        patch(
+                            "nvx_tools.sandbox_lifecycle.subprocess.Popen",
+                            return_value=process,
+                        ) as spawn,
+                        patch("nvx_tools.sandbox_lifecycle.connect_when_ready"),
+                    ):
+                        start(state, 5, snapshot_destination=parent / "snapshot")
+                    args = spawn.call_args.args[0]
+                    endpoint = Path(
+                        args[args.index("--microvm-control-console") + 1].removeprefix(
+                            "listen="
+                        )
+                    )
+                    captured = Path(args[args.index("--snapshot-destination") + 1])
+                    self.assertEqual(
+                        endpoint.parent.resolve(), captured.parent.resolve()
+                    )
+                    self.assertLess(len(os.fsencode(endpoint)), 100)
+                    runtime = json.loads((state / "runtime.json").read_text())
+                    self.assertEqual(Path(runtime["snapshot_destination"]), captured)
+                    if long_path:
+                        self.assertNotEqual(captured, parent / "snapshot")
+                        (captured.parent / "partial-capture").write_bytes(b"fixture")
+                    cleanup_endpoint(runtime)
+                    if long_path:
+                        self.assertFalse(captured.parent.exists())
+
     def test_direct_policy_provisioning_supplies_a_matching_x86_adapter(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

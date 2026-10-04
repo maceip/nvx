@@ -542,9 +542,16 @@ def start(
     if capability == bytes(32):
         raise AssertionError("secrets.token_bytes returned an all-zero capability")
     control_directory: Path | None = None
-    control_path = (
-        (restore.parent / ("control-" + uuid.uuid4().hex[:16] + ".sock"))
+    control_parent = (
+        restore.parent
         if restore is not None
+        else snapshot_destination.parent
+        if snapshot_destination is not None
+        else None
+    )
+    control_path = (
+        (control_parent / ("control-" + uuid.uuid4().hex[:16] + ".sock"))
+        if control_parent is not None
         else state_dir / CONTROL_SOCKET_NAME
     )
     if os.name != "nt" and len(os.fsencode(control_path)) >= 100:
@@ -557,6 +564,8 @@ def start(
                     continue
                 os.link(restore / name, pinned / name)
             restore = pinned
+        elif snapshot_destination is not None:
+            snapshot_destination = control_directory / "snapshot"
         control_path = control_directory / CONTROL_SOCKET_NAME
     endpoint_value = (
         f"//./pipe/openvmm-microvm-{uuid.uuid4().hex}"
@@ -722,6 +731,9 @@ def start(
                 "started_epoch": time.time(),
                 "control_directory": str(control_directory)
                 if control_directory
+                else None,
+                "snapshot_destination": str(snapshot_destination)
+                if snapshot_destination is not None
                 else None,
             },
         )
