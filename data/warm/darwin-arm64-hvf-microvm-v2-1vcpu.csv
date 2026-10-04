@@ -35,3 +35,12 @@ darwin-arm64-hvf,2,1,f7da06e387d715c51d4a13413258857b17a51047,cold_image_first_s
 darwin-arm64-hvf,2,1,b7e30586722ff0228b071d49c129de53acb9df52,warm_pool_first_stdout,ms,lower,2.6761665
 darwin-arm64-hvf,2,1,b7e30586722ff0228b071d49c129de53acb9df52,warm_pool_completion,ms,lower,3.7818125
 darwin-arm64-hvf,2,1,b7e30586722ff0228b071d49c129de53acb9df52,cold_image_first_stdout,ms,lower,915.085375
+darwin-arm64-hvf,2,1,81233b9ae75431f2d56795d64b5d94f938dd3067,warm_pool_first_stdout,ms,lower,2.516854
+darwin-arm64-hvf,2,1,81233b9ae75431f2d56795d64b5d94f938dd3067,warm_pool_completion,ms,lower,3.851938
+darwin-arm64-hvf,2,1,81233b9ae75431f2d56795d64b5d94f938dd3067,cold_image_first_stdout,ms,lower,950.4163125
+darwin-arm64-hvf,2,1,3d88ba15dab3bca6c23c51504b38d96f5ff125f6,warm_pool_first_stdout,ms,lower,2.666813
+darwin-arm64-hvf,2,1,3d88ba15dab3bca6c23c51504b38d96f5ff125f6,warm_pool_completion,ms,lower,3.779729
+darwin-arm64-hvf,2,1,3d88ba15dab3bca6c23c51504b38d96f5ff125f6,cold_image_first_stdout,ms,lower,920.826958
+darwin-arm64-hvf,2,1,4385058610c8138f336e919308c22b189307c769,warm_pool_first_stdout,ms,lower,2.8302915
+darwin-arm64-hvf,2,1,4385058610c8138f336e919308c22b189307c769,warm_pool_completion,ms,lower,4.2428955
+darwin-arm64-hvf,2,1,4385058610c8138f336e919308c22b189307c769,cold_image_first_stdout,ms,lower,1001.6811875

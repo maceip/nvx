@@ -14,7 +14,7 @@ are recorded separately from that result.
 | --- | --- | --- |
 | 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF. KVM, Intel HVF, WHP and MSHV full runs are tracked below. |
 | 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF and Linux ARM full acceptance passes. Native x86 KVM/WHP policy probes also pass; their full batteries remain under test. All backend controls must pass. |
-| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF now passes a strict ten-commit trend gate against independently measured source-bound runs. Eleven historical Mac and five ARM full runs were imported with sample and log verification. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
+| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF passes a strict ten-commit trend gate against independently measured source-bound runs. Fourteen Mac, ten ARM and two native x86 Linux measurements are recorded with source, sample and log verification. The latest ten ARM points all have independent provenance; the older unverified legacy point falls outside that window. A fresh strict ARM repeat is required. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF and Linux ARM real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Other backend results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF and Linux ARM real credential isolation tests pass, including the leaking legacy-env control. Other backend results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF and Linux ARM receipt/flow scenarios pass. Host signature/tamper tests pass. Other backend results remain required. |
@@ -32,18 +32,23 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-fresh-restore-host-macos-proof/NVX-ACCEPTANCE.json`
+- `build/completion-restore-copy-clock-macos-proof/NVX-ACCEPTANCE.json`
   binds the latest full accepted HVF repeat to NVX
-  `3d88ba15dab3bca6c23c51504b38d96f5ff125f6` and core
-  `464978e47aae15f33f5fd548e9df141f4fa92d22`: all 18 supported scenarios,
+  `4385058610c8138f336e919308c22b189307c769` and core
+  `75b6560159c4ba903025ffd99dc3c95909002f49`: all 18 supported scenarios,
   eight containment families and opposite controls, four simulants, workspace/copy,
   credentials/RAM/snapshots, 20 repaired clones with disabled controls, MCP,
   determinism and teardown. All nine acceptance steps passed.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.67 ms p50**, completion **3.78 ms**, cold first stdout **920.83 ms**.
+  **2.83 ms p50**, completion **4.24 ms**, cold first stdout **1001.68 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The full run enforced the strict ten-commit comparison, checked all three metrics
-  and found zero regressions (`build/completion-fresh-restore-host-macos-proof/performance-gate.md`).
+  and found zero regressions (`build/completion-restore-copy-clock-macos-proof/performance-gate.md`).
+  All nine step-log hashes were independently verified. The main checkout at
+  `75c513f` has the same tested core, passes 139 Python tests, lint and all 11
+  doctor checks, and preserves all eleven pre-existing user edits. Its additional
+  change fixes a test fixture's cleanup-publication ordering and retains Intel
+  diagnostics; the full acceptance proof above remains bound to its exact source.
 - `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
   records NVX `b7e3058` / core `94d8908b0` on the owned
   four-CPU, 6 GiB nested ARM/KVM host.
@@ -61,6 +66,17 @@ inspection/disassembly; that work is not part of the completion commits.
   historical points and fails explicitly for insufficient history. Results and
   clean-source provenance are exported in
   `build/completion-arm-host/fresh-restore-host-arm-warm-evidence/`.
+- Core `75b656015` at NVX `4385058` also passes twenty repaired ARM clones and
+  both disabled controls. The source revisions, actual executable hash and result
+  digest are recorded in
+  `build/completion-arm-host/restore-copy-clock-arm-warm-evidence/REPEAT-RESULT.json`.
+  Its repeated twenty-cold/twenty-warm pool measurement also passes refill and
+  teardown: first stdout **126.90 ms p50**, completion **197.67 ms**, cold first
+  stdout **8326.89 ms**. Source, executable and all four exported logs are
+  hash-verified. The strict gate still fails for six of ten historical points;
+  five imported points are independently source-bound and one legacy point has
+  not been independently source-verified. This nested host does not demonstrate
+  the plan's under-50-ms warm-start target.
 - Fresh installed packages at NVX `3d88ba1` / core `464978e47` passed doctor, empty-cache
   first-use guest execution and all six real TypeScript SDK tools on both hosts.
   Results are `build/completion-fresh-restore-host-typescript-live/result.json`
@@ -98,10 +114,45 @@ inspection/disassembly; that work is not part of the completion commits.
   the admission-time downtime calculation. Core `75b656015` refreshes that value
   after the private copy and generation checks; its regression fails before the
   fix and passes afterward, and check, clippy, docs, 168 entry tests and final
-  formatting pass. The native twenty-clone repeat is being rebuilt.
+  formatting pass. Native Windows run `37180767156` at NVX `0244ae5` / core
+  `75b656015` now succeeds: all twenty repaired clones, both disabled controls,
+  both broker regressions and the slow-copy clock regression pass. The downloaded
+  per-clone results and batch invariants were independently revalidated. Its
+  receipt is `build/completion-restore-copy-clock-whp-result.json`; the full
+  WHP run `37180859116` subsequently passes containment, simulants, receipts,
+  image execution, workspace, credentials and twenty-clone repair, then fails
+  MCP snapshot removal on Windows' readonly scratch attribute. The fix removes
+  only validated, owned readonly payloads and retains the image pin and quota
+  until deletion succeeds. Both regression tests fail before the fix; all 133
+  offline tests, lint and strict Darwin/Linux/Windows typing pass afterward.
+  Native run `37182933521` at NVX `b495316` / the exact same core `75b656015`
+  now passes both regressions and all six real Python SDK MCP tools, including
+  snapshot deletion, separate streams, status 37, byte-exact 1 MiB transfer,
+  idempotence, quota denial and cancellation. Its result is
+  `build/completion-whp-snapshot-remove-native-result.json` in the diagnostic
+  checkout. The complete cached-core WHP repeat is tracked separately.
 - Intel's native probe rejects POSIX shared-memory RAM and admits regular-file
-  RAM. The corrected core `94d8908b0` native build and full HVF lane remain in
-  progress. VM admission alone is not full guest acceptance.
+  RAM. At NVX `b7e3058` / core `94d8908b0`, native build, clippy, docs and memory
+  tests pass, but run `37176187450` fails the first seccomp policy guest with a
+  closed control endpoint. Its artifact omitted the causal VMM log. Diagnostic
+  run `37181265965` therefore reuses that exact source and native executable,
+  enables debug logging and retains the actual instance cache. The newer full
+  lane at NVX `4385058` stopped earlier on a test fixture's publication-order
+  race, corrected in `75c513f`; it supplies no new Intel runtime acceptance.
+  VM admission alone is not full guest acceptance.
+  The first exact-build diagnostic timed out during OCI preparation before any
+  VM instance was created. Run `37182061676` separates image preparation from
+  the unchanged 180-second policy guest probe, matching the full release runner.
+- ARM history collection at the already existing revisions `75c513f` and
+  `598ca08` completed twenty cold and twenty warm requests per revision on the
+  same owned host. Both runs preserve clean source/executable provenance and
+  verified logs and samples. The first attempt at `75c513f` failed refill
+  readiness with two connection resets and contributes no measurement. Its
+  original template and failure logs remain retained. Paired startup/teardown
+  trials and two twenty-request pool diagnostics then passed, including a run
+  without debug profiling, and the unmodified canonical measurement completed
+  after task-owned storage reclamation. The reset's cause is undetermined;
+  neither the passing diagnostics nor the history import establish a code fix.
 - Native x86 KVM at NVX `b7e3058` / core `94d8908b0` passed the portable controls,
   credentials, 20 repaired clones, MCP, scratch and SMP restore. Its next failure
   was a missing real VP-binding profile record, corrected in core `219537904`.
@@ -120,6 +171,14 @@ inspection/disassembly; that work is not part of the completion commits.
   twenty-clone repair, MCP and twenty cold/warm benchmark requests. Its ninth
   gate fails explicitly because the required ten-commit `linux-kvm` history is
   absent. No complete release-acceptance proof is published for that run.
+- The newest full x86 KVM run `37180859127` at NVX `4385058` / core `75b656015`
+  also passes all eight runtime steps and all twenty cold/warm pool requests.
+  First stdout is **15.76 ms p50**, completion **19.41 ms**, cold first stdout
+  **2139.42 ms**. All nine step-log hashes and the actual native executables
+  were independently verified. Its final gate fails solely for absent history;
+  those two real x86 runs are now retained as the first source-bound trend points.
+  The result is `build/completion-restore-copy-clock-full-kvm-result.json` in the
+  diagnostic checkout, and a complete release-acceptance proof remains unpublished.
 - Hosted ARM runners expose no usable `/dev/kvm`; their runtime lane fails
   explicitly. Actual ARM runtime evidence comes from the owned nested host above.
 

@@ -1553,6 +1553,1269 @@
           }
         }
       }
+    },
+    {
+      "platform": "darwin-arm64",
+      "nvx_revision": "81233b9ae75431f2d56795d64b5d94f938dd3067",
+      "core_revision": "e1cd86c1880066227ca10f564a2056cf06d0f637",
+      "core_executable_sha256": "dc94cc7b213380d16d2829db0295d907de43d6791320a24f058c11a7555a7900",
+      "proof_artifact": "build/completion-independent-capture-macos-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "16e3550016382a1409b97b93d8580bd3bd9a2bff2c9183cc3c293fb3e1936594",
+      "benchmark_sha256": "445a38f101b63a0b9d53d5fca1ef666b1855b07c5374c607832e59493c0a0476",
+      "collected_csv_sha256": "02f2c51b26deec7b8a16583acae77eab3cf2db03866c52e827e6ef129f511803",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "darwin-arm64-hvf",
+        "backend": "hvf",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              2.687917,
+              2.848125,
+              2.967166,
+              2.876958,
+              2.484208,
+              2.720416,
+              2.392375,
+              2.334625,
+              2.699041,
+              2.542375,
+              2.491333,
+              2.46325,
+              2.422542,
+              2.475583,
+              2.686,
+              2.6535,
+              2.467666,
+              2.643042,
+              2.458875,
+              2.46375
+            ],
+            "p50_ms": 2.516854
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              3.880167,
+              5.982667,
+              4.650541,
+              4.460625,
+              3.706042,
+              3.968375,
+              3.524042,
+              3.508459,
+              3.9175,
+              3.73875,
+              3.759542,
+              3.798792,
+              3.823709,
+              3.792833,
+              3.994917,
+              3.921167,
+              4.066333,
+              4.040875,
+              3.662834,
+              3.731458
+            ],
+            "p50_ms": 3.851938
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              926.5925,
+              960.373209,
+              938.119958,
+              948.367208,
+              952.465417,
+              980.517959,
+              953.721542,
+              965.0465,
+              969.83,
+              931.824667,
+              953.767958,
+              945.129583,
+              962.23425,
+              936.728208,
+              947.559625,
+              999.308125,
+              926.253625,
+              943.601167,
+              975.125167,
+              923.988625
+            ],
+            "p50_ms": 950.4163125
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/doctor.log",
+          "sha256": "399c2a7f3ed207ea9fe68aa17399b2cb8d5f9c8bdbff69e098df5900a09bb648"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/prepare-alpine.log",
+          "sha256": "ec45aec0785ec326ee227b075acfb15b10e888339501559d84dc3f58067428cc"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/warm.log",
+          "sha256": "70eacfe7883a82f4b014376e4833ebb129270eee9eadf77b51a6a079fac4cd48"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/benchmark.log",
+          "sha256": "edefdbc9b137137289ce9f9006077aa7641740b4169fc4aa7f65ed7c628c40ff"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/collect.log",
+          "sha256": "a9e8d8f1eeced5ed246064fe96f2e7c28d12d60abbc955719451a53cf66be1ca"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-independent-capture-macos-proof/performance.log",
+          "sha256": "58a43014de432a0ffd5ba10435e276beab35fcac029851bf4667addaf9d010d5"
+        }
+      ],
+      "acceptance_scope": "all nine full runtime acceptance steps; historical bootstrap versus strict history as recorded in original proof"
+    },
+    {
+      "platform": "darwin-arm64",
+      "nvx_revision": "3d88ba15dab3bca6c23c51504b38d96f5ff125f6",
+      "core_revision": "464978e47aae15f33f5fd548e9df141f4fa92d22",
+      "core_executable_sha256": "e25ec1bc45d860702ec6f8395a3c55b81072aeb5fcf50dfa88ddb3f819c2d899",
+      "proof_artifact": "build/completion-fresh-restore-host-macos-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "fff2d8f20663b973e593d47da2cad36433f9fb729eaa06ee9e002bf140686003",
+      "benchmark_sha256": "16c7e2e70f9f68bc4b77ed78337c80003d9f18f4a669f6dd9076ed79cec82d6b",
+      "collected_csv_sha256": "84460503d578de1454e79786653d21e99b2ef7cb9510b18098762b581fa91809",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "darwin-arm64-hvf",
+        "backend": "hvf",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              2.788667,
+              2.532584,
+              2.5175,
+              3.1325,
+              2.563459,
+              2.545916,
+              2.759958,
+              2.567708,
+              4.466833,
+              2.653417,
+              2.82025,
+              2.517416,
+              2.842042,
+              2.577167,
+              2.832459,
+              2.496417,
+              2.680209,
+              2.703541,
+              2.735333,
+              2.631458
+            ],
+            "p50_ms": 2.6668130000000003
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              3.796417,
+              7.411167,
+              3.514959,
+              5.565958,
+              3.577667,
+              3.618166,
+              3.815167,
+              3.593875,
+              5.523667,
+              3.908917,
+              3.881334,
+              3.563208,
+              4.092167,
+              3.567583,
+              3.908542,
+              3.554917,
+              3.754209,
+              3.763041,
+              3.819208,
+              3.69525
+            ],
+            "p50_ms": 3.7797289999999997
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              922.371916,
+              905.950167,
+              937.681583,
+              922.992791,
+              929.08925,
+              918.432375,
+              926.0435,
+              926.568667,
+              919.282,
+              916.204166,
+              923.497167,
+              910.791375,
+              911.637,
+              910.393542,
+              908.620875,
+              916.307917,
+              928.430167,
+              911.571541,
+              923.742833,
+              941.070958
+            ],
+            "p50_ms": 920.8269580000001
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/doctor.log",
+          "sha256": "dead0eb10b466f9063b015fda7fc02320cac521386bc6c52225ea10008b95b67"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/prepare-alpine.log",
+          "sha256": "ec45aec0785ec326ee227b075acfb15b10e888339501559d84dc3f58067428cc"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/warm.log",
+          "sha256": "4e2922c39b1cf633807a3749e896e64b682d374ac8ba256f7bf0f63318c1caa1"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/benchmark.log",
+          "sha256": "0e6e664d167f727238eeb94d508f4269ff211bb56e28f8aaace26f885c994005"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/collect.log",
+          "sha256": "87840cfd79696f17db9a757007e779b4d2a7d379e7ba43ac4df1a4d6bc7d8190"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-fresh-restore-host-macos-proof/performance.log",
+          "sha256": "8b1214ac44004d1228a274a16a200ee60b3dfe2e1c2ccf78faa350bb8323b610"
+        }
+      ],
+      "acceptance_scope": "all nine full runtime acceptance steps; historical bootstrap versus strict history as recorded in original proof"
+    },
+    {
+      "platform": "darwin-arm64",
+      "nvx_revision": "4385058610c8138f336e919308c22b189307c769",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "dc05448faebcef9e51f22d80700b48b3956ee10e02a85bcadd2ad288863aedd6",
+      "proof_artifact": "build/completion-restore-copy-clock-macos-proof/NVX-ACCEPTANCE.json",
+      "proof_sha256": "524614cdd4175573aab47059d384cb9d4736bfb4f79fa6fcce37f9315d0afd99",
+      "benchmark_sha256": "2b02df1ef3648ed77913666352b19b6943cca61b0a27fd285a2fe8761b8148b7",
+      "collected_csv_sha256": "5ee3d2190931f05ebf148ce0839c63476c413e01e78ed8f77da2d236077c0acc",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "darwin-arm64-hvf",
+        "backend": "hvf",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              2.978833,
+              2.647083,
+              2.799667,
+              2.807875,
+              2.890625,
+              2.773708,
+              2.89775,
+              3.134875,
+              2.754416,
+              2.852708,
+              2.945875,
+              2.738292,
+              3.369667,
+              3.173542,
+              2.667291,
+              2.549542,
+              4.674583,
+              2.707208,
+              2.658541,
+              2.857
+            ],
+            "p50_ms": 2.8302915
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              4.24725,
+              6.500917,
+              5.395583,
+              5.233292,
+              4.083542,
+              4.053,
+              4.238541,
+              4.411542,
+              3.971458,
+              4.124042,
+              4.374667,
+              4.029583,
+              4.84925,
+              4.670125,
+              3.733958,
+              3.769042,
+              6.023375,
+              4.134583,
+              3.909375,
+              4.402375
+            ],
+            "p50_ms": 4.2428954999999995
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              992.711292,
+              998.647625,
+              1001.904875,
+              1001.4575,
+              1003.211667,
+              998.514375,
+              992.660334,
+              1061.122708,
+              1002.052166,
+              998.68275,
+              1010.204291,
+              999.416709,
+              1030.131334,
+              1018.658292,
+              1027.272708,
+              990.102583,
+              1025.379625,
+              998.798708,
+              999.831958,
+              1010.801209
+            ],
+            "p50_ms": 1001.6811875
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/doctor.log",
+          "sha256": "3b8a1e70756d999880068ca397e149465655c8db1c61c6baf0efc74043e3f058"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/prepare-alpine.log",
+          "sha256": "ec45aec0785ec326ee227b075acfb15b10e888339501559d84dc3f58067428cc"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/warm.log",
+          "sha256": "789330efd9142aa4eb549adb594971a73dcaf77684fc4d64fde81a299337540a"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/benchmark.log",
+          "sha256": "58ce3ece0252c4f4724f3a69cd70b9e18aaf681b135394b3c9c3c08ed0de8a2f"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/collect.log",
+          "sha256": "0efd2f1180adb66487ca7a19b547ab8daad727f36e9b20f3cfa8384e942135e1"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-restore-copy-clock-macos-proof/performance.log",
+          "sha256": "a59cd863ef9a3267c683db05f805b3553d0a8e8f930f126cd95a62bfd811003f"
+        }
+      ],
+      "acceptance_scope": "all nine full runtime acceptance steps; historical bootstrap versus strict history as recorded in original proof"
+    },
+    {
+      "platform": "linux-arm64",
+      "nvx_revision": "b7e30586722ff0228b071d49c129de53acb9df52",
+      "core_revision": "94d8908b05547be28425ba7c2d70dc91b51753ea",
+      "core_executable_sha256": "6fde2a661ff499509aebaf6bb15de7cf984a36c4d8d9f89101cbb07aa4e8dfd9",
+      "proof_artifact": "build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json",
+      "proof_sha256": "1b53834dc06abb8d61bf7c45b846ace14923ac2acfb2efbdde7e842defb2339d",
+      "benchmark_sha256": "8890ad248b4448d0f8ab348e25ba1b1d87f2a535f84fc4f99fd12e5e815d72bc",
+      "collected_csv_sha256": "ee841339a931e0490ebc626da65c4fc3a7c32d62603279c8703e5ba783f952f1",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              118.786608,
+              183.693447,
+              141.580581,
+              179.39266,
+              173.897751,
+              180.838283,
+              182.275031,
+              120.418106,
+              160.059475,
+              115.835112,
+              239.52488,
+              121.711938,
+              773.582657,
+              164.927927,
+              182.214699,
+              162.803972,
+              179.404993,
+              129.528053,
+              166.531384,
+              119.28469
+            ],
+            "p50_ms": 165.7296555
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              157.373645,
+              238.508882,
+              176.234123,
+              235.512176,
+              211.115539,
+              232.992304,
+              229.210517,
+              169.269673,
+              209.075,
+              169.171298,
+              287.610823,
+              168.302423,
+              878.325865,
+              208.265292,
+              230.706891,
+              200.066719,
+              230.248307,
+              171.773752,
+              212.55812,
+              171.663794
+            ],
+            "p50_ms": 210.0952695
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              7854.4836,
+              7420.12812,
+              7457.542742,
+              7534.114692,
+              7451.65004,
+              7554.261126,
+              7461.994445,
+              7523.009664,
+              7450.928167,
+              7462.982236,
+              7440.065929,
+              7451.609832,
+              7424.970698,
+              7451.040124,
+              7447.499337,
+              7496.735528,
+              7562.265033,
+              7542.851973,
+              7560.067036,
+              7562.991616
+            ],
+            "p50_ms": 7462.4883405
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/doctor.log",
+          "sha256": "7bbe9fd23def45aa2ffedc59daa29aa6de522c758bb470969df3b39f9b7b3fe1"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/prepare-alpine.log",
+          "sha256": "99632f78a4b6e2bf61daf120a5a899c49b8d7fad971ed98679818540a1977edd"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/prepare-python.log",
+          "sha256": "8d2dc2c22a152a87febb3d34e944a8fbe5af9fa20d2131d99c4f589bf823002c"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/scenarios.log",
+          "sha256": "63e40bfec63ebc931583d54cba0f4759f3a0cd72e918bcdb7b2ddc65472fa893"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/warm.log",
+          "sha256": "d849bc4614c90bbe8f1b2bf078b40fbe299fd13e280736d2190bab1dba015324"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/benchmark.log",
+          "sha256": "dbe2bc9258529406c45294faaea1f400a430b7f884ae6dc2ba9181ce29753126"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/collect.log",
+          "sha256": "e97440bc32f8c9530f6aa6cf5e4ae14ca3cc3c5116dafdaf44781778555683ef"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-intel-shared-memory-arm-evidence/performance.log",
+          "sha256": "bb80fd9e49d74c2936bf2b4993b16ab56c26683ef5e2b8882ae1156c1b12243c"
+        }
+      ],
+      "acceptance_scope": "all nine full runtime acceptance steps; historical bootstrap versus strict history as recorded in original proof"
+    },
+    {
+      "platform": "linux-arm64",
+      "nvx_revision": "3d88ba15dab3bca6c23c51504b38d96f5ff125f6",
+      "core_revision": "464978e47aae15f33f5fd548e9df141f4fa92d22",
+      "core_executable_sha256": "a6eb4d6aa71bda5fad7e4218848cfe792b764a40a61bf0a48ded3711f400a63b",
+      "proof_artifact": "build/completion-arm-host/fresh-restore-host-arm-warm-evidence/source-provenance.json",
+      "proof_sha256": "73ca30a166f6159a87a2e4fddcb46152292ca680e8a0989f0c16cbc2d01c2e2c",
+      "benchmark_sha256": "2c2c54634f47b373541ed4858d69c5fcc36095b27b45753f7c83b28157a3586b",
+      "collected_csv_sha256": "f6cb5b8d241a0a3568dbe5c6540c697c08257d7e5c735c0a6dc19a3e109bdf92",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              115.709266,
+              204.231888,
+              184.803633,
+              193.918402,
+              203.693184,
+              194.979169,
+              181.888186,
+              192.7347,
+              166.818607,
+              258.910461,
+              142.636835,
+              173.17704,
+              147.449965,
+              176.474162,
+              197.547894,
+              181.11941,
+              171.312675,
+              179.768725,
+              183.227949,
+              186.270024
+            ],
+            "p50_ms": 182.5580675
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              156.259449,
+              256.394444,
+              229.084949,
+              253.343988,
+              246.222537,
+              266.042401,
+              217.367397,
+              243.414643,
+              209.79353,
+              333.552857,
+              175.850267,
+              223.626348,
+              180.071225,
+              237.053179,
+              247.179684,
+              231.632386,
+              220.53497,
+              227.383415,
+              231.584764,
+              227.735769
+            ],
+            "p50_ms": 230.3348565
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              7306.828474,
+              7697.84881,
+              7483.510549,
+              7364.292758,
+              7376.366124,
+              8933.887569,
+              7478.120378,
+              7211.232523,
+              7238.541482,
+              7445.770682,
+              7312.923826,
+              7569.278377,
+              7340.886834,
+              7183.926355,
+              7339.811608,
+              7540.741004,
+              7690.000305,
+              7504.420873,
+              7236.168217,
+              7270.190415
+            ],
+            "p50_ms": 7370.329441
+          }
+        }
+      },
+      "logs_verified": [],
+      "acceptance_scope": "twenty repaired restores, two disabled controls and twenty cold/twenty warm pool requests passed; strict comparison originally failed for insufficient history"
+    },
+    {
+      "platform": "linux-arm64",
+      "nvx_revision": "4385058610c8138f336e919308c22b189307c769",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "5c1935a92f25ee8fdd9487463d921a221bb67e6700b9c98979170abe2b78eedf",
+      "proof_artifact": "build/completion-arm-host/restore-copy-clock-arm-warm-evidence/source-provenance.json",
+      "proof_sha256": "9aeba96d90cc53415ad61c53b94799f2e5851b8670995a6a491d72da82574de8",
+      "benchmark_sha256": "3b17dd75a609ac5a1319bd2b53b0f38aa4b5ba425cced42f40e59e09e9381500",
+      "collected_csv_sha256": "e1c5b712bdc828c8e5d3680cb7ce99467baba86d3d61b01d46fb3fcbac6920f1",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              134.895006,
+              244.72569,
+              513.51901,
+              122.911016,
+              128.602991,
+              119.144986,
+              363.490288,
+              125.397368,
+              122.338567,
+              121.483287,
+              132.4146,
+              119.73473,
+              134.093762,
+              124.388937,
+              125.688728,
+              128.119381,
+              129.869274,
+              120.85998,
+              488.58978,
+              121.756355
+            ],
+            "p50_ms": 126.9040545
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              175.86243,
+              367.531526,
+              574.434095,
+              189.642529,
+              365.804641,
+              206.492122,
+              724.133788,
+              197.275488,
+              165.796775,
+              162.517209,
+              777.630334,
+              198.067582,
+              181.144796,
+              194.760994,
+              171.485313,
+              166.782376,
+              736.044152,
+              174.844117,
+              539.239856,
+              201.491817
+            ],
+            "p50_ms": 197.671535
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              8134.937296,
+              8566.889409,
+              8108.440522,
+              8694.525902,
+              8567.199758,
+              8001.720488,
+              7943.780664,
+              8304.145736,
+              7636.142244,
+              8386.137939,
+              8349.640134,
+              7963.284843,
+              7565.846593,
+              7734.347685,
+              7819.885455,
+              8574.314303,
+              8670.141509,
+              8835.740102,
+              8772.562574,
+              9193.346512
+            ],
+            "p50_ms": 8326.892935
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/restore-copy-clock-arm-warm-evidence/warm.log",
+          "sha256": "7884eb0c9622c08c954525e1cbbce7098a9221ab5277f8bf361c4f1c5c635d94"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/restore-copy-clock-arm-warm-evidence/benchmark.log",
+          "sha256": "9f4087ab71e8020a10e529c3501a20786efa676ac0dfa736e58afc7d83498fa3"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/restore-copy-clock-arm-warm-evidence/collect.log",
+          "sha256": "4b75707a970371e62d3eb2ff54f2186907240103566fb0a3ef6b03a9922b6e55"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/restore-copy-clock-arm-warm-evidence/performance.log",
+          "sha256": "b3149c1128bce88e340f9d56f0b0f2dd39511eb3910c3ad3c8182ba1fc13d71f"
+        }
+      ],
+      "acceptance_scope": "twenty repaired restores, two disabled controls and twenty cold/twenty warm pool requests passed; strict comparison originally failed for insufficient history"
+    },
+    {
+      "platform": "linux-x86_64",
+      "nvx_revision": "81233b9ae75431f2d56795d64b5d94f938dd3067",
+      "core_revision": "e1cd86c1880066227ca10f564a2056cf06d0f637",
+      "core_executable_sha256": "cd9ff07c0afc050f901be11df7f4fc48fa52c143cd410bbc3f7eb453ff1ebd03",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/progress.json",
+      "proof_sha256": "d419be3f10e65ba6d6f802095852ae3dedee1b3efe64349bdbea0572b6c6e944",
+      "benchmark_sha256": "524df3b78a6d557a6dc2dd5a01027983628364eebe974abc093c875854eab5fe",
+      "collected_csv_sha256": "fddefe66c3e4f0603ae384e776104d044440d7dbe6adea039150793d5ec84924",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              17.852001,
+              24.691733,
+              21.100357,
+              18.63183,
+              18.680672,
+              22.60429,
+              22.175447,
+              17.748106,
+              17.621663,
+              23.753754,
+              19.277962,
+              21.449992,
+              18.774175,
+              24.485647,
+              17.703093,
+              18.268206,
+              32.151994,
+              25.085763,
+              24.10019,
+              23.121166
+            ],
+            "p50_ms": 21.2751745
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              21.587624,
+              28.342248,
+              25.403934,
+              22.927881,
+              21.74944,
+              26.540715,
+              25.388797,
+              21.737031,
+              21.635036,
+              28.27926,
+              22.613041,
+              25.324806,
+              22.984825,
+              27.7358,
+              22.660746,
+              22.803643,
+              37.076379,
+              28.421248,
+              27.358631,
+              27.476307
+            ],
+            "p50_ms": 25.3568015
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              1911.626323,
+              1987.048114,
+              1899.3828,
+              1972.524633,
+              2001.040689,
+              1910.341164,
+              1970.307374,
+              1997.119102,
+              1900.92234,
+              1933.509509,
+              1996.237307,
+              1981.993857,
+              1997.698471,
+              1994.020284,
+              1989.645588,
+              2004.444381,
+              1901.445349,
+              1917.030862,
+              1985.792814,
+              1904.504291
+            ],
+            "p50_ms": 1977.259245
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/doctor.log",
+          "sha256": "68241a82f6c61bebb0fa17907c6d0999ccb20708f25a0e60142a313770131200"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/prepare-alpine.log",
+          "sha256": "5a994a0eda1cfaf78c34a6fa5767c0cbe8a762a19785c1b9db6ee2375479a617"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/prepare-python.log",
+          "sha256": "71069b774fc0bbf08d498959f1760d5b64caf44aef3fc0b41422769ad564419f"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/scenarios.log",
+          "sha256": "329726e921862cbfe1225e2a39489749e158edf5771d8e34e2d2d1751b00a404"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/warm.log",
+          "sha256": "0256fc500b6bbc16fa9b687124272791dab1fe6395d6c77aa9cb21698c208332"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/benchmark.log",
+          "sha256": "870daefa9f0e7cc33908f264bd07f54493ba4e2099796cfa449d1e83820d52f0"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/collect.log",
+          "sha256": "8d11d35dc5fe411fdc61c46e24060fc00c7f610fb392907e85b0047a3249f933"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-independent-capture-full-kvm-proof/work/nvx/nvx/build/hosted-proof/performance.log",
+          "sha256": "8b7a106a68619c23473711abb0049f8cea5a9e446ab536efbc34dd114ae05e8a"
+        }
+      ],
+      "acceptance_scope": "all eight native runtime acceptance steps passed; ninth strict performance gate failed solely for absent history; native build and doctor verified pinned core executable",
+      "native_executable_independently_hash_verified": true,
+      "native_archive_sha256": "b71f222f042bf3429086ca392af2257cf5643cb0f31ff8dbc826ea59794a3fac",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37178540996"
+    },
+    {
+      "platform": "linux-x86_64",
+      "nvx_revision": "4385058610c8138f336e919308c22b189307c769",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "f74a5299e9c0f6558a99f05ea1f36c9748f6eaf9b1bf5de03ca4fd810ece7451",
+      "proof_artifact": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/progress.json",
+      "proof_sha256": "44af6965aa4f1f98f57d45f450683c58da4ff5f710ee107c8240d1e9618c4e81",
+      "benchmark_sha256": "b91258c96c6da006e20c3a6ef34da4bad83146267d9dc003e27313b73a9a28c8",
+      "collected_csv_sha256": "0687eb2f06b07595df004e8ed7afc3e026ebd32e5da9462ef62771ab1c8144bd",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              15.443235,
+              15.452358,
+              164.831274,
+              15.163853,
+              14.546549,
+              17.018642,
+              195.422075,
+              14.708964,
+              21.592209,
+              14.511179,
+              15.951693,
+              14.955312,
+              14.932112,
+              19.525837,
+              15.57251,
+              16.753853,
+              54.919611,
+              17.816138,
+              15.234779,
+              16.546158
+            ],
+            "p50_ms": 15.7621015
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              18.085934,
+              17.330858,
+              192.417066,
+              17.92073,
+              17.132474,
+              90.504948,
+              218.392296,
+              17.679165,
+              24.862876,
+              17.573024,
+              19.186388,
+              18.094922,
+              17.636021,
+              22.221414,
+              176.04691,
+              19.345206,
+              57.713377,
+              20.484174,
+              27.686943,
+              19.470381
+            ],
+            "p50_ms": 19.4077935
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              2112.949777,
+              2164.616171,
+              2139.920951,
+              2085.295424,
+              2341.328903,
+              2112.071308,
+              2109.8849,
+              2075.172155,
+              2073.109222,
+              2070.267245,
+              2152.38874,
+              2139.676855,
+              2152.35412,
+              2139.62185,
+              2225.783349,
+              2137.673815,
+              2136.557317,
+              2148.014791,
+              2141.764438,
+              2139.221351
+            ],
+            "p50_ms": 2139.4216005
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/doctor.log",
+          "sha256": "d7e59d5ee3f6f7f2117604b683723a1ca5efa0e379347aa40e3aa7f9355e57fd"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/prepare-alpine.log",
+          "sha256": "018c1556ab1f4219b33c669125fabdb5d8aef66008199f612719ab5869918134"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/prepare-python.log",
+          "sha256": "c0733f05a917b4f468bc805dcfe38167c216225f58f0da91f574a77ee0794ab0"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/scenarios.log",
+          "sha256": "329726e921862cbfe1225e2a39489749e158edf5771d8e34e2d2d1751b00a404"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/determinism.log",
+          "sha256": "aef3216bfcb41327ae65cc1e7ad531a57109b071bfdb5612d7e277af8fe50a03"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/warm.log",
+          "sha256": "3716d85ae353ae2fb918c0ec67378d4fcdc9aaa008610f8316ca5429bade36fe"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/benchmark.log",
+          "sha256": "46e3523890648d670c10b4828ddf5f5ab02d461b3c8fb514656b21c84f8523b8"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/collect.log",
+          "sha256": "8d11d35dc5fe411fdc61c46e24060fc00c7f610fb392907e85b0047a3249f933"
+        },
+        {
+          "path": "/Users/mac/nvx-stream-fix/build/completion-restore-copy-clock-full-kvm-proof/work/nvx/nvx/build/hosted-proof/performance.log",
+          "sha256": "8b7a106a68619c23473711abb0049f8cea5a9e446ab536efbc34dd114ae05e8a"
+        }
+      ],
+      "acceptance_scope": "all eight native runtime acceptance steps passed; ninth strict performance gate failed solely for absent history; native build and doctor verified pinned core executable",
+      "native_executable_independently_hash_verified": true,
+      "native_archive_sha256": "84bdd1c660717940d630a6812236e353a2d121e84f1621a5b41ab9e7d07f9691",
+      "source_run_url": "https://github.com/maceip/nvx/actions/runs/37180859127"
+    },
+    {
+      "platform": "linux-arm64",
+      "nvx_revision": "75c513f58d6f183fbea14fb8588360b7e6cf2a07",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "5c1935a92f25ee8fdd9487463d921a221bb67e6700b9c98979170abe2b78eedf",
+      "proof_artifact": "build/completion-arm-host/existing-repaired-arm-history/75c513f58d6f/source-provenance.json",
+      "proof_sha256": "ed8badbec725f07f84f4da6080daef4899025851dee2564a31274ff485f7b4bb",
+      "benchmark_sha256": "d8f6cfa0f7e06701aef216fa2b087fc90c63467cd0eff3165d1e748ac3b6c4b6",
+      "collected_csv_sha256": "9b6e0b03114fa1657a8a4b5d1abddc14cd719735f7cbec410bee2f553b308d61",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              113.072484,
+              193.302412,
+              139.783116,
+              179.581123,
+              116.721551,
+              210.24081,
+              124.438191,
+              205.687003,
+              136.513013,
+              189.037052,
+              138.298049,
+              202.000929,
+              109.409197,
+              185.922147,
+              109.9508,
+              178.731045,
+              174.49856,
+              185.496604,
+              113.332199,
+              180.84553
+            ],
+            "p50_ms": 176.6148025
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              148.229854,
+              271.332193,
+              175.399287,
+              234.862213,
+              152.992068,
+              279.676934,
+              163.119031,
+              259.595886,
+              169.153583,
+              243.948661,
+              175.011543,
+              268.081503,
+              147.897216,
+              238.591118,
+              145.949296,
+              236.10116,
+              211.053358,
+              244.085281,
+              147.467765,
+              238.22395
+            ],
+            "p50_ms": 222.9577855
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              8044.711963,
+              7995.880273,
+              8338.657499,
+              8226.723062,
+              8390.148373,
+              8257.716941,
+              7886.539072,
+              8191.692329,
+              8194.720312,
+              8364.814246,
+              7820.694877,
+              7874.909299,
+              8081.715079,
+              7942.723222,
+              8004.985293,
+              8014.647665,
+              8017.764737,
+              8144.70918,
+              7968.811217,
+              8580.054974
+            ],
+            "p50_ms": 8063.213521
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/existing-repaired-arm-history/75c513f58d6f/benchmark.log",
+          "sha256": "51dc1f3d68b725466e62aef436cf7fb463db0376f395b69b56893321d54bac7b"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/existing-repaired-arm-history/75c513f58d6f/collect.log",
+          "sha256": "8abc2d1525705da5933e994cd84d394a236d7538a980cab166974a735294675c"
+        }
+      ],
+      "acceptance_scope": "complete uninstrumented twenty-cold/twenty-warm measurements on two already existing source revisions; first revision had an earlier failed refill attempt preserved separately and excluded from measurements",
+      "preceding_failed_attempt": {
+        "evidence": "build/completion-existing-repaired-arm-failure-evidence.log",
+        "failure": "pool refill readiness timed out; two connection resets",
+        "admitted_measurement": false,
+        "cause": "undetermined; canonical unmodified retry completed after task-owned storage reclamation"
+      }
+    },
+    {
+      "platform": "linux-arm64",
+      "nvx_revision": "598ca08b987c186fbde8a5757dd66dc379e70860",
+      "core_revision": "75b6560159c4ba903025ffd99dc3c95909002f49",
+      "core_executable_sha256": "5c1935a92f25ee8fdd9487463d921a221bb67e6700b9c98979170abe2b78eedf",
+      "proof_artifact": "build/completion-arm-host/existing-repaired-arm-history/598ca08b987c/source-provenance.json",
+      "proof_sha256": "5953292d2be60ed434d9187836ab9dfe529c5f0ca22be780e3638bb5b613237e",
+      "benchmark_sha256": "858872fa04e2fa23e5c56dced182b8136fdc05fa22cf4d8701d1ac46d42cfd54",
+      "collected_csv_sha256": "4679e41a752d09d29bd4becf34197ce62fc9f575dbb3dd0b191e8d29d66ca9fc",
+      "benchmark": {
+        "benchmark_version": 1,
+        "platform": "linux-arm64-kvm",
+        "backend": "kvm",
+        "runtime": "python",
+        "memory_mib": 512,
+        "runs": 20,
+        "pool_size": 2,
+        "timing": "client request to first workload stdout; completion includes metrics; preparation and refill excluded",
+        "metrics": {
+          "warm_pool_first_stdout": {
+            "samples_ms": [
+              110.466708,
+              188.328368,
+              108.083799,
+              189.6952,
+              160.998733,
+              199.141305,
+              155.754942,
+              176.547698,
+              111.793102,
+              183.987807,
+              157.938132,
+              187.554222,
+              115.827362,
+              189.916744,
+              133.489996,
+              190.719941,
+              111.387258,
+              193.975642,
+              114.181278,
+              109.88066
+            ],
+            "p50_ms": 159.4684325
+          },
+          "warm_pool_completion": {
+            "samples_ms": [
+              144.665828,
+              247.885655,
+              142.084459,
+              243.292508,
+              195.993206,
+              252.341527,
+              188.227413,
+              232.219719,
+              145.111549,
+              233.282049,
+              191.999304,
+              243.058335,
+              145.88163,
+              245.787493,
+              166.819785,
+              240.205366,
+              143.777824,
+              253.683554,
+              144.757896,
+              142.936119
+            ],
+            "p50_ms": 193.996255
+          },
+          "cold_image_first_stdout": {
+            "samples_ms": [
+              8271.816772,
+              8206.07155,
+              8553.020201,
+              8134.772795,
+              7935.177426,
+              8195.540712,
+              8170.909989,
+              8383.577867,
+              7997.638436,
+              8231.834668,
+              8220.087967,
+              7996.907293,
+              7931.564278,
+              8684.136272,
+              8198.12615,
+              8220.905397,
+              8104.223262,
+              8091.429904,
+              7998.095081,
+              8617.706202
+            ],
+            "p50_ms": 8196.833431
+          }
+        }
+      },
+      "logs_verified": [
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/existing-repaired-arm-history/598ca08b987c/warm.log",
+          "sha256": "7ac99f80aa2e415f4f4fe29eb6ac36722f47f4d8327fd726ac57913e5fe000c8"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/existing-repaired-arm-history/598ca08b987c/benchmark.log",
+          "sha256": "f5bf22a08fb4a0afe8d3d3eeb46298d3929e0f934f0e022204699e792010eacd"
+        },
+        {
+          "path": "/Users/mac/nvx-completion/build/completion-arm-host/existing-repaired-arm-history/598ca08b987c/collect.log",
+          "sha256": "fc27ea86d1d51b4c9a22454243a063a24b78bcd9a88c1d977e508f601237ecfe"
+        }
+      ],
+      "acceptance_scope": "complete uninstrumented twenty-cold/twenty-warm measurements on two already existing source revisions; first revision had an earlier failed refill attempt preserved separately and excluded from measurements"
     }
   ]
 }
