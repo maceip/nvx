@@ -5,9 +5,9 @@ each platform; a passing row includes its opposite control.
 
 ## Apple Silicon macOS / HVF
 
-NVX `4385058610c8138f336e919308c22b189307c769`; core `75b6560159c4ba903025ffd99dc3c95909002f49`.
+NVX `423b8387fe1839184921c3e7fc76f00898b50676`; core `4b20f45f173bd4d971ec71a710fe9045c801da79`.
 
-Containment SHA-256: `66febdeaf8903ca7d57e23a2591b1a94c3381d6ff34a8e264a09b83a6f4668be`.
+Containment SHA-256: `6ab709e961a9677e1edf482dbe042185552c50eabe3215bd92ad11b7ff9c306e`.
 
 | Probe family | Backend | Protected | Negative control | Scope |
 | --- | --- | --- | --- | --- |

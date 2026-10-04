@@ -199,7 +199,11 @@ inspection/disassembly; that work is not part of the completion commits.
   local tests pass afterward, including invalid PAT writes, capture/restore and
   EFER write rules. Native ARM and cross-Intel check, all-target clippy and docs,
   plus final repository formatting pass. A new native Intel build and full
-  runtime run are required; no runtime acceptance is inferred from these checks.
+  runtime run, [37190449136](https://github.com/maceip/nvx/actions/runs/37190449136),
+  is executing at NVX `6521f01` / core `f1f6019b7`. The matching new Mac executable
+  passes all eleven doctor checks and real protected/opposite seccomp execution.
+  All eleven pre-existing user edits remain byte-identical after integration.
+  No Intel runtime acceptance is inferred from these checks.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
@@ -320,6 +324,10 @@ inspection/disassembly; that work is not part of the completion commits.
   cold first stdout **2254.91 ms**. All eight runtime gates pass again. Every
   recorded gate-log hash and the twenty-cold/twenty-warm medians are verified.
   The failing measurements remain retained and are not imported into the baseline.
+  A separate manual diagnostic compares the retained passing and failing builds
+  on one native runner, twice each in reversed order, with identical NVX runtime
+  sources, twenty cold/warm requests and source/executable checks before and after.
+  It cannot contribute acceptance or baseline history.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
   newly compiled, source-bound executable. The strict ten-point comparison checks
