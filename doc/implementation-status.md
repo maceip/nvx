@@ -31,31 +31,33 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-direct-network-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `585c9abed43e9030955656ff0fb8c8d0486e0a08` and core
-  `5c1f378cb94de28eba919c786d0a50e76f2d76f9`: all 18 scenarios, eight containment
+- `build/completion-warm-boundary-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `1f8b9be157d5adb25dda12c1c7fb788ad8ba2876` and core
+  `5cb6890a39744321baa57d788f7f791dfad81c3d`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.79 ms p50**, completion **4.08 ms**, cold first stdout **936.52 ms**.
+  **2.74 ms p50**, completion **4.04 ms**, cold first stdout **958.21 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-x86-warm-offline.log`: **126 offline tests**, ruff clean.
+- `build/completion-mcp-identity-offline.log`: **128 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-root-direct-network-offline.log` in the main checkout: **132 tests**
+- `build/completion-root-x86-warm-offline.log` in the completion checkout: **134 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
-  and its rebuilt guest printed `NVX-REBUILT-ROOT-GUEST-OK`.
+  and its rebuilt guest printed `NVX-CURRENT-ROOT-GUEST-OK`. The separately installed
+  current development archive also passed all 11 doctor checks and a real first-use
+  OCI guest with an empty image cache.
 - The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
   Native VP, GIC and register state compiled and real clock/TLS restore passed.
   Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
   clones, disabled controls, MCP and teardown; image determinism also passed.
   `build/completion-prepared-arm-evidence/NVX-ACCEPTANCE.json` records an independent
   full acceptance run at NVX `6974b017a604f13cb6407cc04e86c5a60383a33a` and the same
-  pinned core revision as the Mac run above. Its
+  core revision `5c1f378cb94de28eba919c786d0a50e76f2d76f9`. Its
   20-request cold/warm benchmark measured first stdout **184.98 ms p50**,
   completion **233.92 ms** and cold first stdout **7620.74 ms** on the nested
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
@@ -96,6 +98,10 @@ inspection/disassembly; that work is not part of the completion commits.
   **267 Rust tests**, plus Intel cross-compilation and final repository formatting.
   Their native runtime acceptance is being repeated.
 - Windows receipt probes accept the CLI's CRLF instance-ID line.
+- MCP consumes the first host instance-ID line separately from workload stderr,
+  including split frames and Windows CRLF. An exec's known instance ID cannot be
+  replaced by a marker printed by the workload. A live TypeScript check found the
+  leaked marker; stream and identity regressions cover the correction.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

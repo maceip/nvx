@@ -1,4 +1,5 @@
 # pyright: reportPrivateUsage=false
+import base64
 import json
 import os
 import sys
@@ -172,6 +173,64 @@ class MCPTests(unittest.TestCase):
             + scrubber.feed(b"", final=True)
         )
         self.assertEqual(output, b"prefix [redacted] suffix")
+
+    def test_host_identity_marker_handles_every_split_and_preserves_guest_markers(
+        self,
+    ) -> None:
+        identifier = "a" * 32
+        guest = b"error\nNVX-ID: " + b"b" * 32 + b"\n"
+        for ending in (b"\n", b"\r\n"):
+            line = b"NVX-ID: " + identifier.encode() + ending
+            for split in range(len(line) + 1):
+                with self.subTest(ending=ending, split=split):
+                    marker = mcp.InstanceMarker()
+                    output = (
+                        marker.feed(b"Preparing image\n" + line[:split])
+                        + marker.feed(line[split:] + guest)
+                        + marker.feed(b"", final=True)
+                    )
+                    self.assertEqual(marker.identifier, identifier)
+                    self.assertEqual(output, b"Preparing image\n" + guest)
+        marker = mcp.InstanceMarker()
+        self.assertEqual(
+            marker.feed(b"prefix NVX-ID: " + b"a" * 32 + b"\n"),
+            b"prefix NVX-ID: " + b"a" * 32 + b"\n",
+        )
+        self.assertIsNone(marker.identifier)
+        self.assertEqual(marker.feed(b"NVX-ID: invalid\n"), b"NVX-ID: invalid\n")
+        self.assertEqual(marker.feed(b"NVX-I"), b"")
+        self.assertEqual(marker.feed(b"", final=True), b"NVX-I")
+
+    def test_real_exec_stderr_cannot_replace_its_owned_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = mcp.Service("hvf", Path(directory))
+            frames: list[dict[str, Any]] = []
+            owned = "a" * 32
+            stderr = b"NVX-ID: " + b"b" * 32 + b"\nerror"
+            try:
+                result = service._program(
+                    [
+                        sys.executable,
+                        "-c",
+                        f"import os;os.write(2,{stderr!r});raise SystemExit(37)",
+                    ],
+                    mcp.Job("test"),
+                    frames.append,
+                    "progress",
+                    (),
+                    time.monotonic() + 10,
+                    identifier_hint=owned,
+                )
+                self.assertEqual(result["id"], owned)
+                self.assertEqual(result["returncode"], 37)
+                self.assertEqual(base64.b64decode(result["stderr"]), stderr)
+                streamed = b"".join(
+                    base64.b64decode(json.loads(frame["params"]["message"])["data"])
+                    for frame in frames
+                )
+                self.assertEqual(streamed, stderr)
+            finally:
+                service.close()
 
     def test_authenticated_http_and_python_sdk(self) -> None:
         from nvx_sdk import Client

@@ -120,6 +120,50 @@ class Scrubber:
         return raw[:-keep] if keep else raw
 
 
+class InstanceMarker:
+    """Consume one host CLI identity line without interpreting workload stderr."""
+
+    def __init__(self, identifier: str | None = None):
+        self.identifier = identifier
+        self.pending = b""
+        self.line_start = True
+
+    def feed(self, data: bytes, *, final: bool = False) -> bytes:
+        if self.identifier is not None:
+            return data
+        self.pending += data
+        output = bytearray()
+        while self.pending:
+            end = self.pending.find(b"\n")
+            if end >= 0:
+                line, self.pending = self.pending[: end + 1], self.pending[end + 1 :]
+                match = (
+                    re.fullmatch(rb"NVX-ID: ([0-9a-f]{32})\r?\n", line)
+                    if self.line_start
+                    else None
+                )
+                self.line_start = True
+                if match is not None:
+                    self.identifier = match[1].decode()
+                    output.extend(self.pending)
+                    self.pending = b""
+                    break
+                output.extend(line)
+            else:
+                prefix = b"NVX-ID: "
+                possible = prefix.startswith(self.pending) or (
+                    self.pending.startswith(prefix)
+                    and re.fullmatch(rb"[0-9a-f]{0,32}\r?", self.pending[len(prefix) :])
+                    is not None
+                )
+                if self.line_start and possible and not final:
+                    break
+                output.extend(self.pending)
+                self.pending = b""
+                self.line_start = False
+        return bytes(output)
+
+
 @dataclass
 class Job:
     fingerprint: str
@@ -252,6 +296,7 @@ class Service:
         buffers = {stream: bytearray() for stream in scrubbers}
         closed: set[str] = set()
         identifier: str | None = identifier_hint
+        marker = InstanceMarker(identifier_hint)
         completed = False
         progress_count = 0
         cancelled = False
@@ -269,12 +314,12 @@ class Service:
                 if not data:
                     closed.add(stream)
                 safe = scrubbers[stream].feed(data, final=not data)
+                if stream == "stderr":
+                    safe = marker.feed(safe, final=not data)
+                    identifier = marker.identifier
                 buffers[stream].extend(safe)
                 if len(buffers[stream]) > (2 << 20):
                     raise ScriptError("MCP operation exceeded its output bound")
-                match = re.search(rb"NVX-ID: ([0-9a-f]{32})", buffers["stderr"])
-                if match:
-                    identifier = match[1].decode()
                 if safe and progress is not None:
                     progress_count += 1
                     emit(

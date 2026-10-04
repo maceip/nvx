@@ -38,8 +38,12 @@ def run(backend: str, output: Path, timeout: float) -> None:
             handle="keepalive",
             keep_alive=True,
         )
-        if result["returncode"] != 37 or base64.b64decode(result["stdout"]) != b"first":
-            raise ScriptError("MCP run lost stdout or exit 37")
+        if (
+            result["returncode"] != 37
+            or base64.b64decode(result["stdout"]) != b"first"
+            or base64.b64decode(result["stderr"]) != b"error"
+        ):
+            raise ScriptError("MCP run lost its workload streams or exit 37")
         identifier = result["id"]
         repeated = client.run(
             "alpine:3.20",
