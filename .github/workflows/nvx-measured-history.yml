@@ -12,6 +12,10 @@ on:
         description: Run the full acceptance proof against the committed measured history
         type: boolean
         default: false
+      revision:
+        description: Measure one existing ancestor revision instead of the ten-point batch
+        type: string
+        default: ''
       linux_diagnostic:
         description: Diagnose pool refill on the exact failing source; timings are not history
         type: boolean
@@ -55,12 +59,15 @@ jobs:
         env:
           FULL_PROOF: ${{ github.event_name == 'workflow_dispatch' && inputs.full_proof }}
           DIAGNOSTIC: ${{ inputs.linux_diagnostic }}
+          REVISION: ${{ inputs.revision }}
         run: |
           cp .github/scripts/measure-history.py build/measure-history.py
           if [ "$DIAGNOSTIC" = true ]; then
             python3 -u build/measure-history.py --platform linux-kvm --diagnostic
           elif [ "$FULL_PROOF" = true ]; then
             python3 -u build/measure-history.py --platform linux-kvm --full-proof
+          elif [ -n "$REVISION" ]; then
+            python3 -u build/measure-history.py --platform linux-kvm --revision "$REVISION"
           else
             python3 -u build/measure-history.py --platform linux-kvm
           fi
@@ -130,10 +137,13 @@ jobs:
         shell: pwsh
         env:
           FULL_PROOF: ${{ github.event_name == 'workflow_dispatch' && inputs.full_proof }}
+          REVISION: ${{ inputs.revision }}
         run: |
           Copy-Item .github/scripts/measure-history.py build/measure-history.py
           if ($env:FULL_PROOF -eq 'true') {
             python -u build/measure-history.py --platform windows-whp --full-proof
+          } elseif ($env:REVISION) {
+            python -u build/measure-history.py --platform windows-whp --revision $env:REVISION
           } else {
             python -u build/measure-history.py --platform windows-whp
           }

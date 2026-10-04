@@ -13,8 +13,9 @@ import time
 from pathlib import Path
 
 CORE = "75b6560159c4ba903025ffd99dc3c95909002f49"
+DIAGNOSTIC_REVISION = "0244ae555630f309929a46af666d5d11e3a08d54"
 REVISIONS = [
-    "0244ae555630f309929a46af666d5d11e3a08d54",
+    "2131a1ea94b2e29ad56e5c193181feef06e708dd",
     "4385058610c8138f336e919308c22b189307c769",
     "75c513f58d6f183fbea14fb8588360b7e6cf2a07",
     "598ca08b987c186fbde8a5757dd66dc379e70860",
@@ -68,7 +69,10 @@ def main() -> None:
     parser.add_argument("--platform", choices=("linux-kvm", "windows-whp"), required=True)
     parser.add_argument("--full-proof", action="store_true")
     parser.add_argument("--diagnostic", action="store_true")
+    parser.add_argument("--revision", help="Measure one existing ancestor revision")
     args = parser.parse_args()
+    if args.revision and (args.full_proof or args.diagnostic):
+        parser.error("a single revision cannot be combined with a different proof mode")
     if args.diagnostic:
         # Diagnostics retain causal worker stacks without editing the selected
         # source. Their instrumented timings are never collected as history.
@@ -104,17 +108,24 @@ def main() -> None:
             check=True,
         )
         return
-    revisions = REVISIONS[:1] if args.diagnostic else [*REVISIONS, head]
+    if args.revision:
+        revision = git("rev-parse", "--verify", args.revision + "^{commit}")
+        subprocess.run(["git", "merge-base", "--is-ancestor", revision, head], check=True)
+        revisions = [revision]
+    else:
+        revisions = [DIAGNOSTIC_REVISION] if args.diagnostic else [*REVISIONS, head]
     runs = 100 if args.diagnostic else 20
-    if not args.diagnostic and len(set(revisions)) != 10:
+    if not args.diagnostic and not args.revision and len(set(revisions)) != 10:
         raise RuntimeError("history needs ten distinct existing source revisions")
     out = Path("build/pool-refill-diagnostic" if args.diagnostic else "build/measured-history").resolve()
     out.mkdir()
-    # The first exact-core Windows diagnostic is on its own existing branch.
-    # Preserve its real revision rather than relabeling it as a main-branch run.
-    subprocess.run(["git", "fetch", "https://github.com/maceip/nvx.git", REVISIONS[0]], check=True)
+    if args.diagnostic:
+        # This source is on a separate diagnostic branch and is never a baseline.
+        subprocess.run(["git", "fetch", "https://github.com/maceip/nvx.git", DIAGNOSTIC_REVISION], check=True)
     for revision in revisions:
         subprocess.run(["git", "cat-file", "-e", revision + "^{commit}"], check=True)
+        if not args.diagnostic:
+            subprocess.run(["git", "merge-base", "--is-ancestor", revision, head], check=True)
         subprocess.run(["git", "checkout", "--detach", revision], check=True)
         before = state(executable)
         trial = out / revision[:12]
