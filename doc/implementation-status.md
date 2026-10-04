@@ -215,6 +215,21 @@ inspection/disassembly; that work is not part of the completion commits.
   passes all eleven doctor checks and real protected/opposite seccomp execution.
   All eleven pre-existing user edits remain byte-identical after integration.
   No Intel runtime acceptance is inferred from these checks.
+  The first core-f1 attempt completes its native build and checks, then GitHub
+  reports that the hosted runner lost communication with the server during the
+  acceptance step. Neither its job log nor a runtime proof was preserved; the
+  job-log API returns 404 and the completed-run fallback reports no log. The
+  underlying cause and guest results remain undetermined. The failed job is
+  being repeated at the exact same NVX and core revisions. Independent export
+  [37195655106](https://github.com/maceip/nvx/actions/runs/37195655106) retains
+  the cached executable: its actual bytes, clean core-f1 provenance and x86-64
+  Mach-O architecture are verified in
+  `build/completion-f1-native-intel-build-result.json` in the diagnostic checkout.
+  The separate history collector
+  [37195251612](https://github.com/maceip/nvx/actions/runs/37195251612) is exercising
+  ten distinct existing ancestor revisions, each pinning core-f1, with twenty
+  cold and twenty warm requests per revision. No history points or guest
+  acceptance are inferred before its results and raw samples are audited.
 - ARM history collection at the already existing revisions `75c513f` and
   `598ca08` completed twenty cold and twenty warm requests per revision on the
   same owned host. Both runs preserve clean source/executable provenance and
