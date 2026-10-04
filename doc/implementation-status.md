@@ -339,9 +339,18 @@ inspection/disassembly; that work is not part of the completion commits.
   on one native runner, twice each in reversed order, with identical NVX runtime
   sources, twenty cold/warm requests and source/executable checks before and after.
   It cannot contribute acceptance or baseline history.
-  The corrected diagnostic is run
+  The corrected diagnostic completes in run
   [37190956734](https://github.com/maceip/nvx/actions/runs/37190956734) at
-  `981b974`. Earlier handoff and Python 3.10 hashing failures occurred before any
+  `981b974`. Both retained builds pass all four diagnostic trials, totaling
+  eighty cold and eighty warm requests. In baseline/candidate/candidate/baseline
+  order, first-output medians are **39.06 / 31.27 / 44.81 / 31.37 ms**.
+  The candidate's median of trial medians is **8.03%** slower for first output,
+  **3.47%** faster for completion and **1.86%** slower for cold first output.
+  Source, actual executable, every step log and all raw sample medians are
+  independently verified. Variation between repeats of the same binary prevents
+  attributing the earlier failed gates to a consistent binary slowdown. Those
+  failed gates remain unresolved; the diagnostic supplies neither acceptance nor
+  baseline history. Earlier handoff and Python 3.10 hashing failures occurred before any
   guest ran, retain their original logs and supply no runtime measurements.
 - Native x86 KVM job [111390011962](https://github.com/maceip/nvx/actions/runs/37186695364/job/111390011962)
   at NVX `fd63923` / core `4b20f45f1` passes all nine acceptance gates with a
@@ -353,6 +362,19 @@ inspection/disassembly; that work is not part of the completion commits.
   `build/completion-core4b20-native-kvm-proof-evidence/work/nvx/nvx/build/hosted-proof/NVX-ACCEPTANCE.json`.
   The overall workflow fails on its separate hosted ARM job because that host
   exposes no usable KVM device; the successful x86 result is independent.
+- The fresh core-`f1f6019b7` native x86 KVM repeat
+  [37190492890](https://github.com/maceip/nvx/actions/runs/37190492890) at
+  NVX `6521f01` passes all eight runtime gates, including the complete scenarios,
+  opposite controls, MCP, determinism, twenty repaired clones and twenty
+  cold/warm requests. Its unchanged strict ten-point comparison fails first
+  output: **18.61 ms p50** against **15.39 ms**, a **20.9%** increase exceeding
+  both the 20% threshold and 1 ms tolerance. Completion **22.12 ms** and cold
+  first output **1985.94 ms** pass. All nine recorded log hashes, raw sample
+  medians and the actual clean-built native executable are independently verified.
+  Reapplying the gate to the saved measurements reproduces the same failure.
+  No complete acceptance proof is published, and this failed measurement is not
+  imported into history. The separate hosted ARM jobs compile the new core but
+  reject absent `/dev/kvm`; they supply no new ARM guest runtime evidence.
 - The newly compiled native ARM executable from `37186695364` passes doctor and
   a real seccomp protected/opposite control on the owned nested ARM/KVM VM at
   NVX `1afbb56` / core `4b20f45f1`. Clean source, executable digest and both logs
