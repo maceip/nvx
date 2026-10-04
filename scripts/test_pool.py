@@ -1,15 +1,57 @@
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from nvx_tools.common import ScriptError
-from nvx_tools.pool import Accounting, start
+from nvx_tools.pool import Accounting, start, stop
 from nvx_tools.quota import Limits, Quota
 
 
 class PoolTests(unittest.TestCase):
+    def test_stop_waits_for_refill_and_vm_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "pools" / ("a" * 32) / "runtime.json"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_text("{}")
+            completed = threading.Event()
+
+            def finish() -> None:
+                time.sleep(0.15)
+                runtime.unlink()
+                completed.set()
+
+            worker = threading.Thread(target=finish)
+            with (
+                patch("nvx_tools.pool.ImageCache") as cache,
+                patch("nvx_tools.pool.request", return_value={"stopping": True}),
+            ):
+                cache.return_value.root = root
+                worker.start()
+                try:
+                    self.assertEqual(stop("a" * 32), {"stopping": True})
+                    self.assertTrue(completed.is_set())
+                finally:
+                    worker.join(timeout=5)
+
+    def test_stop_reports_incomplete_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "pools" / ("a" * 32) / "runtime.json"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_text("{}")
+            with (
+                patch("nvx_tools.pool.ImageCache") as cache,
+                patch("nvx_tools.pool.request", return_value={"stopping": True}),
+            ):
+                cache.return_value.root = root
+                with self.assertRaisesRegex(ScriptError, "cleanup timed out"):
+                    stop("a" * 32, timeout=0.03)
+                self.assertTrue(runtime.exists())
+
     def test_duplicate_identity_and_double_retire_are_rejected(self) -> None:
         with self.assertRaisesRegex(ScriptError, "duplicate"):
             Accounting([Path("left/a"), Path("right/a")])

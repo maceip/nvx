@@ -387,6 +387,17 @@ def start(template: Path, size: int, memory_budget_mib: int = 4096) -> str:
     return identifier
 
 
+def stop(identifier: str, timeout: float = 180) -> dict[str, Any]:
+    result = request(identifier, "stop")
+    state = ImageCache().root / "pools" / identifier
+    deadline = time.monotonic() + timeout
+    while (state / "runtime.json").exists():
+        if time.monotonic() >= deadline:
+            raise ScriptError("pool cleanup timed out; inspect worker.log")
+        time.sleep(0.02)
+    return result
+
+
 def command(args: argparse.Namespace) -> None:
     if args.pool_operation == "start":
         template = args.template
@@ -403,15 +414,11 @@ def command(args: argparse.Namespace) -> None:
             )
         print(start(template, args.size, args.memory_budget_mib))
     else:
-        result = request(args.id, args.pool_operation)
         if args.pool_operation == "stop":
-            state = ImageCache().root / "pools" / args.id
-            deadline = time.monotonic() + 180
-            while (state / "runtime.json").exists():
-                if time.monotonic() >= deadline:
-                    raise ScriptError("pool cleanup timed out; inspect worker.log")
-                time.sleep(0.02)
+            stop(args.id)
             result = {"stopped": True}
+        else:
+            result = request(args.id, args.pool_operation)
         print(json.dumps(result, sort_keys=True))
 
 

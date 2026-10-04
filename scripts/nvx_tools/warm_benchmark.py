@@ -164,7 +164,7 @@ def run(args: argparse.Namespace) -> int:
             metrics["warm_pool_first_stdout"].append(first_output[0])
             metrics["warm_pool_completion"].append(elapsed)
     finally:
-        pool.request(identifier, "stop")
+        pool.stop(identifier)
     document: dict[str, Any] = {
         "benchmark_version": 1,
         "platform": platform,

@@ -133,6 +133,8 @@ def main() -> None:
             str(template),
             "--runs",
             "20",
+            "--timeout",
+            "120",
             "--platform",
             series,
             "--output",
