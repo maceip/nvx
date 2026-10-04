@@ -1,8 +1,8 @@
 # Implementation plan
 
 Companion to [roadmap-best-in-class-sandbox.md](roadmap-best-in-class-sandbox.md). Same ten
-features, regrouped into six dependency-coherent phases. **Original acceptance contract;
-all phases now have implementation.** See [current status](implementation-status.md#the-ten-changes)
+features, regrouped into six dependency-coherent phases. **Original acceptance contract.**
+See [current evidence](implementation-status.md#the-ten-changes)
 for the evidence and gates still outstanding. The requirements below remain the contract.
 
 The one rule that shapes everything below: **a feature is not done until a test would fail

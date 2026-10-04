@@ -1,7 +1,7 @@
 # Roadmap: from a working fork to a best-in-class, generic microVM sandbox
 
-Status: **Original proposal; implementation has since started for all ten changes.** See
-[current item-by-item status](implementation-status.md#the-ten-changes) for implemented
+Status: **Canonical proposal and acceptance contract.** See
+[current item-by-item evidence](implementation-status.md#the-ten-changes) for implemented
 behavior, verification and remaining gates. Every original "today" statement below was
 read out of this tree (fork of `microsoft/nvx`,
 branch `dev`, HEAD `9ad9af9`) and cites the file that carries the evidence.
