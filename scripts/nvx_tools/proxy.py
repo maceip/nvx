@@ -397,7 +397,9 @@ class CredentialProxy:
                     self.slots.release()
 
         self.server = Server(("127.0.0.1", 0), Handler)
-        self.server.daemon_threads = True
+        # server_close() must join handlers before the instance's audit log can
+        # be read or removed. A response can arrive before its event is written.
+        self.server.daemon_threads = False
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     @property

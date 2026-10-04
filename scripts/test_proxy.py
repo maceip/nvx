@@ -17,6 +17,66 @@ VECTORS = Path(__file__).parent / "testdata/proxy-v1.json"
 
 
 class ProxyTests(unittest.TestCase):
+    def test_shutdown_waits_for_request_audit_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "proxy.jsonl"
+            proxy = CredentialProxy(frozenset(), (), "fixture", log, "shutdown")
+            auditing = threading.Event()
+            release_audit = threading.Event()
+            closing = threading.Event()
+            stopped = threading.Event()
+            errors: list[BaseException] = []
+            emit = proxy.events.emit
+            close = proxy.server.server_close
+
+            def delayed_emit(kind: str, **fields: object) -> dict[str, object]:
+                auditing.set()
+                if not release_audit.wait(timeout=5):
+                    raise RuntimeError("audit event was not released")
+                return emit(kind, **fields)
+
+            def close_server() -> None:
+                closing.set()
+                close()
+
+            def stop() -> None:
+                try:
+                    proxy.stop()
+                except BaseException as error:
+                    errors.append(error)
+                finally:
+                    stopped.set()
+
+            with (
+                patch.object(proxy.events, "emit", side_effect=delayed_emit),
+                patch.object(proxy.server, "server_close", side_effect=close_server),
+            ):
+                proxy.start()
+                stopping = threading.Thread(target=stop)
+                client = http.client.HTTPConnection("127.0.0.1", proxy.port, timeout=5)
+                try:
+                    client.request("GET", "/http/denied.example.test:80/")
+                    response = client.getresponse()
+                    self.assertEqual(
+                        (response.status, response.read()),
+                        (403, b"Proxy capability rejected"),
+                    )
+                    self.assertTrue(auditing.wait(timeout=5))
+                    stopping.start()
+                    self.assertTrue(closing.wait(timeout=5))
+                    self.assertFalse(stopped.wait(timeout=0.1))
+                finally:
+                    release_audit.set()
+                    client.close()
+                    if stopping.ident is None:
+                        stopping.start()
+                    stopping.join(timeout=5)
+                self.assertTrue(stopped.is_set())
+                self.assertEqual(errors, [])
+            rows = read_events(log)
+            self.assertEqual([row["sequence"] for row in rows], [1])
+            self.assertEqual(rows[0]["kind"], "proxy.request")
+
     def test_redirect_is_not_followed_and_instance_capability_replay_is_refused(
         self,
     ) -> None:
