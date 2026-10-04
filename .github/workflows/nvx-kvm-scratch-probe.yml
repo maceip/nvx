@@ -47,6 +47,20 @@ jobs:
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
       - run: python3 scripts/nvx.py verify
+      - name: Retain the actual pinned native build for subsequent reproductions
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-linux-x86_64-build
+          path: |
+            build/openvmm.provenance.json
+            build/vmlinux.provenance.json
+            build/initramfs.provenance.json
+            build/vmlinux
+            build/vmlinux.config
+            build/initramfs.cpio.gz
+            build/initramfs.cpio.gz.packages.json
+            openvmm/target/release/openvmm
+          if-no-files-found: error
       - name: Repeat scratch snapshots ten times with capture integrity and retained failures
         env:
           OPENVMM_STARTUP_PROFILE: '1'
@@ -54,6 +68,8 @@ jobs:
           for trial in $(seq 1 10); do
             python3 scripts/nvx.py test-microvm --backend kvm --scenario scratch-snapshot --output-dir "build/scratch-probe/repeat-$trial"
           done
+      - name: Exercise actual processor binding profiles during restore
+        run: python3 scripts/nvx.py test-microvm --backend kvm --scenario restore-processors --output-dir build/scratch-probe/restore-processors
       - uses: actions/upload-artifact@v7
         if: always()
         with:

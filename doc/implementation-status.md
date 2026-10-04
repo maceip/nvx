@@ -1,6 +1,7 @@
 # Implementation and acceptance evidence
 
-The ten requested mechanisms are implemented in NVX and its pinned OpenVMM core.
+NVX and its pinned OpenVMM core contain the implementations for the ten changes.
+Full acceptance remains incomplete on the platforms and release gates listed below.
 The original acceptance requirements in [the roadmap](roadmap-best-in-class-sandbox.md)
 and [implementation plan](implementation-plan.md) remain the completion contract.
 A platform is accepted only after its real runtime scenarios, negative controls,
@@ -13,12 +14,12 @@ are recorded separately from that result.
 | --- | --- | --- |
 | 1 | OCI pull/convert/cache/verify/GC, exact-prefix curated EROFS layers, OCI whiteouts and private prepared ext4 scratch | Real Alpine/Python execution and repeated image conversion pass on Apple Silicon/HVF. KVM, Intel HVF, WHP and MSHV full runs are tracked below. |
 | 2 | Default/ci/risky profiles, UID/capabilities/NNP, seccomp namespace and socket rules, devices, masked paths, PID/memory/wall caps and fast egress refusal | HVF and Linux ARM full acceptance passes. Native x86 KVM/WHP policy probes also pass; their full batteries remain under test. All backend controls must pass. |
-| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Three matching-platform bootstrap performance metrics are checked. Ten independent historical points have not accumulated; the trend gate remains Warmup. Other runtime shims require separate proof. |
+| 3 | Retained Python runtime, clock/CRNG/generation/net/block repair, 20 single-use clones, bounded pool admission/refill/teardown and cold/warm benchmark | HVF 20-clone repair plus disabled controls and 20 cold/warm requests pass. Apple Silicon/HVF now passes a strict ten-commit trend gate against independently measured source-bound runs. Eleven historical Mac and five ARM full runs were imported with sample and log verification. Release acceptance rejects insufficient history; other platforms still need their ten measured points. Other runtime shims require separate proof. |
 | 4 | Read-only/default or explicit rw workspace, escape denial, successful-only bounded output, exec/cp/logs/ps/stop and verified reproducible bundles | HVF and Linux ARM real workspace/lifecycle tests pass, including separate streams, status 37 and byte-exact 1 MiB copy. Other backend results remain required. |
 | 5 | Host-held scoped TLS credentials, header sanitization/injection and proxy capability binding; no host secret in guest/RAM/snapshot/evidence | HVF and Linux ARM real credential isolation tests pass, including the leaking legacy-env control. Other backend results remain required. |
 | 6 | Versioned host receipts, image/policy/versions, flow tuples and cgroup peaks; optional pinned-key signing/verification | HVF and Linux ARM receipt/flow scenarios pass. Host signature/tamper tests pass. Other backend results remain required. |
 | 7 | Native ARM/x86 macOS HVF, native ARM/x86 Linux KVM state, WHP/MSHV snapshot state, six-platform packaging and trusted installation | Native HVF acceptance passes on Apple Silicon; Linux ARM builds/boots/restores. Native Windows and Intel hosted runs are being exercised. Developer ID/notarization, MSHV runtime proof and published clean-host installation remain prerequisites for the requested release matrix. |
-| 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Offline SDK checks and the real HVF portable MCP scenario pass. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
+| 8 | Six MCP tools, HTTP/stdio, Python/TypeScript SDKs, streaming/cancellation/timeouts, idempotent handles and aggregate quotas | Fresh installed Mac/HVF and ARM/KVM packages pass all six tools through the real TypeScript SDK, including streaming, copy, cancellation and quotas. The plan explicitly requires an integration built and exercised by another person; that result is still required. |
 | 9 | Eight containment families with UNCONTAINED opposite controls, generated backend-bound matrix, four simulants and scheduled adversarial workflow | All eight families and simulants pass on HVF and Linux ARM. KVM x86, WHP, Intel HVF and MSHV full matrices and the configured scheduled adversarial campaign remain required. |
 | 10 | Doctor, explainable failures, bounded ordered events, evidence bundles and runnable cookbook | HVF doctor passes 11/11 and the installed development CLI has booted a real guest with an empty image cache. A clean public download/doctor/run smoke remains part of release acceptance. |
 
@@ -31,15 +32,32 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-listener-rebind-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `f7da06e387d715c51d4a13413258857b17a51047` and core
-  `834dd05dc0b97fb307e408b5f983eab55afb46de`: all 18 scenarios, eight containment
-  families and opposite controls, four simulants, workspace/copy, credentials/RAM/
-  snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
+- `build/completion-intel-shared-memory-macos-docker-recovery-proof/NVX-ACCEPTANCE.json`
+  binds the latest full accepted HVF repeat to NVX
+  `b7e30586722ff0228b071d49c129de53acb9df52` and core
+  `94d8908b05547be28425ba7c2d70dc91b51753ea`: all 18 supported scenarios,
+  eight containment families and opposite controls, four simulants, workspace/copy,
+  credentials/RAM/snapshots, 20 repaired clones with disabled controls, MCP,
+  determinism and teardown. All nine acceptance steps passed.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.67 ms p50**, completion **3.88 ms**, cold first stdout **959.43 ms**.
+  **2.68 ms p50**, completion **3.78 ms**, cold first stdout **915.09 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
-  The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
+  The separate strict ten-commit comparison checked all three metrics and found
+  zero regressions (`build/completion-intel-shared-memory-macos-strict-performance.md`).
+- `build/completion-intel-shared-memory-arm-evidence/NVX-ACCEPTANCE.json`
+  records the same NVX/core pair on the owned four-CPU, 6 GiB nested ARM/KVM host.
+  All nine acceptance steps and all 18 supported ARM scenarios passed. Its
+  20 cold and 20 warm samples measured **165.73 ms** first stdout,
+  **210.10 ms** completion and **7462.49 ms** cold first stdout, with zero
+  regressions against the earlier independently measured ARM bootstrap baseline.
+  This is a bootstrap comparison; the ARM ten-commit gate remains outstanding.
+  Metadata and all step logs were exported and SHA-256 verified. Full RAM and
+  scratch remain inside the owned VM disk.
+- Fresh installed packages at that NVX/core pair passed doctor, empty-cache
+  first-use guest execution and all six real TypeScript SDK tools on both hosts.
+  Results are `build/completion-intel-shared-memory-typescript-live/result.json`
+  and `build/completion-intel-shared-memory-arm-typescript-live-result.json`.
+  Those are our own integrations; the separate-person requirement remains open.
 - `build/completion-guest-stream-offline.log`: **131 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
@@ -56,25 +74,23 @@ inspection/disassembly; that work is not part of the completion commits.
   status 37, idempotence, byte-exact 1 MiB copy, snapshot operations, quota denial,
   cancellation and an exec workload's forged instance marker. This is our own
   integration test; the separate-person acceptance requirement remains open.
-- The owned nested Ubuntu ARM host exposed `/dev/kvm` API 12 and admitted a real VM.
-  Native VP, GIC and register state compiled and real clock/TLS restore passed.
-  Its fresh clean-source battery passed all 18 scenarios, including 20 repaired
-  clones, disabled controls, MCP and teardown; image determinism also passed.
-  `build/completion-windows-bundle-arm-evidence/NVX-ACCEPTANCE.json` records an independent
-  full acceptance run at NVX `cac62c8dbc089604050163af242ad142bcf8bfca` and
-  core revision `32b120c1ac4aca1c264b30c69b83cc40d9e3d259`. Its
-  20-request cold/warm benchmark measured first stdout **184.07 ms p50**,
-  completion **234.01 ms** and cold first stdout **7673.97 ms** on the nested
-  four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
-  regressions against the earlier separately measured ARM baseline.
-  An earlier failed run encountered host disk exhaustion.
-- Hosted Intel's native build, clippy, docs and core tests passed. Its real guest
-  launch exposed Intel Hypervisor.framework rejecting POSIX shared-memory RAM. A
-  minimal native probe reproduces that failure and admits regular file mappings;
-  the corrected allocation path is being exercised. Windows native builds and doctor passed,
-  but scenario acceptance failed and the earlier cross-drive upload lost the logs.
-  Corrected repeats are being followed. Hosted Ubuntu x86 KVM admission succeeded; the hosted
-  ARM runners expose no usable `/dev/kvm`, so their runtime lane fails explicitly.
+- Native Windows now passes its corrected named-pipe listener regression at
+  NVX `3cf89c4` / core `beacdd8c6`; its full WHP runtime repeat remains in progress.
+- Intel's native probe rejects POSIX shared-memory RAM and admits regular-file
+  RAM. The corrected core `94d8908b0` native build and full HVF lane remain in
+  progress. VM admission alone is not full guest acceptance.
+- Native x86 KVM at NVX `b7e3058` / core `94d8908b0` passed the portable controls,
+  credentials, 20 repaired clones, MCP, scratch and SMP restore. Its next failure
+  was a missing real VP-binding profile record, corrected in core `219537904`.
+- A ten-repeat x86 scratch probe at core `94d8908b0` reproduced RAM digest
+  corruption on trial four before any restore. Core `42edd2f8c` then verified
+  each capture while the source worker was alive: trial five passed that check
+  but its RAM digest changed after source teardown. Both full failing artifacts
+  are retained. Guest-requested capture now publishes an independent RAM copy;
+  the focused source-overwrite regression, scoped core checks, 258 Rust tests
+  and final repository formatting pass. Its native stress repeat is pending.
+- Hosted ARM runners expose no usable `/dev/kvm`; their runtime lane fails
+  explicitly. Actual ARM runtime evidence comes from the owned nested host above.
 
 ## Fixes found by the repeated platform tests
 
