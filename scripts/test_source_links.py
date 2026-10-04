@@ -35,7 +35,7 @@ class SourceLinkTests(unittest.TestCase):
             root = Path(temporary)
             (root / "recipes").mkdir()
             (root / "outside").write_bytes(b"foreign file")
-            (root / "recipes/escape").symlink_to("../outside")
+            (root / "recipes/escape").symlink_to(Path("../outside"))
             with self.assertRaises(SourceError):
                 materialize_recipe_links(root, {})
 

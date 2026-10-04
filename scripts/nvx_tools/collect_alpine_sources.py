@@ -30,7 +30,12 @@ def materialize_recipe_links(output: Path, known: dict[str, str]) -> dict[str, s
     for path in sorted(root.rglob("*")):
         if not path.is_symlink():
             continue
-        target = path.resolve(strict=True)
+        try:
+            target = path.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise SourceError(
+                f"recipe symlink cannot be resolved: {path.relative_to(output)}"
+            ) from error
         if not target.is_file() or root not in target.parents:
             raise SourceError(
                 f"recipe symlink escapes its source tree: {path.relative_to(output)}"

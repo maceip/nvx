@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import os
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,12 +19,17 @@ def locked(path: Path) -> Generator[None]:
         if os.name == "nt":
             import msvcrt
 
-            lock.seek(0)
-            if not lock.read(1):
-                lock.write(b"\0")
-                lock.flush()
-            lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            # Windows locks are mandatory, including reads. Lock the byte before
+            # touching it; locking beyond EOF is supported and needs no sentinel.
+            while True:
+                lock.seek(0)
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                        raise
+                    time.sleep(0.01)
         else:
             import fcntl
 

@@ -68,6 +68,7 @@ jobs:
           name: whp-x86-guest
           path: build
       - name: Set up a Linux OCI converter in disposable WSL2
+        id: converter
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -126,6 +127,6 @@ jobs:
             openvmm/target/release/openvmm.exe
           if-no-files-found: warn
       - name: Stop the owned converter
-        if: always()
+        if: always() && steps.converter.outcome != 'skipped'
         shell: pwsh
         run: wsl --terminate NVX-Converter

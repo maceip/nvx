@@ -25,8 +25,8 @@ class HvfTests(unittest.TestCase):
             )
             self.assertEqual(args[:2], ["--machine", "microvm"])
             self.assertNotIn("--microvm-workload-identity", args)
-            self.assertNotIn("scratch:file:/scratch", args)
-            self.assertIn("custom:file:/layer,ro", args)
+            self.assertNotIn(f"scratch:file:{Path('/scratch')}", args)
+            self.assertIn(f"custom:file:{Path('/layer')},ro", args)
 
     def test_fixture_rejects_stale_source_or_archive_before_running_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -107,11 +107,11 @@ class HvfTests(unittest.TestCase):
             launch.openvmm_arguments("hvf"),
             [
                 "--virtio-blk",
-                "file:/distro,ro",
+                f"file:{Path('/distro')},ro",
                 "--virtio-blk",
-                "file:/custom,ro",
+                f"file:{Path('/custom')},ro",
                 "--virtio-blk",
-                "file:/scratch",
+                f"file:{Path('/scratch')}",
             ],
         )
         tokens = launch.kernel_command_line("", "hvf").split()

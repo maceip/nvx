@@ -51,7 +51,9 @@ class ImageTests(unittest.TestCase):
                 arguments: list[str], **options: object
             ) -> subprocess.CompletedProcess[bytes]:
                 if arguments[1] == "run":
-                    work = Path(arguments[arguments.index("-v") + 1].removesuffix(":/out"))
+                    work = Path(
+                        arguments[arguments.index("-v") + 1].removesuffix(":/out")
+                    )
                     (work / "custom.erofs").write_bytes(b"fixture root")
                     (work / "scratch.ext4").write_bytes(b"fixture scratch")
                     (work / "result.json").write_text(
@@ -103,6 +105,7 @@ class ImageTests(unittest.TestCase):
                 patch(
                     "nvx_tools.image.require_tool", return_value="/converter/docker.cmd"
                 ),
+                patch("nvx_tools.image.platform.machine", return_value="x86_64"),
                 patch("nvx_tools.image.subprocess.run", side_effect=run),
             ):
                 with self.assertRaisesRegex(

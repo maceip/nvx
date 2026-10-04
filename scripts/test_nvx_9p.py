@@ -334,6 +334,11 @@ class ReadWriteTests(ServerCase):
         self.assertEqual(payload[4 : 4 + _count], b"from-guest")
         rtype, _payload = client.unlinkat(1, "guest.txt")
         self.assertEqual(rtype, nvx_9p.R_UNLINKAT)
+        rtype, payload = client.read(42, 0, 64)
+        self.assertEqual(rtype, nvx_9p.R_READ)
+        self.assertEqual(payload[4:], b"from-guest")
+        rtype, _payload = client.clunk(42)
+        self.assertEqual(rtype, nvx_9p.R_CLUNK)
         self.assertFalse((self.root / "guest.txt").exists())
 
     def test_mkdir(self) -> None:

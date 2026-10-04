@@ -327,6 +327,50 @@ class Share:
             raise host_error(exc) from None
 
 
+def open_shared_file(path: str, flags: int, mode: int = 0o666) -> int:
+    """Keep guest open-file unlink/rename semantics on Windows, too."""
+    if os.name != "nt":
+        return os.open(path, flags, mode)
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    access_mode = flags & (os.O_WRONLY | os.O_RDWR)
+    access = 0x80000000 if access_mode == os.O_RDONLY else 0x40000000
+    if access_mode == os.O_RDWR:
+        access |= 0x80000000
+    if flags & os.O_CREAT:
+        disposition = 1 if flags & os.O_EXCL else (2 if flags & os.O_TRUNC else 4)
+    else:
+        disposition = 5 if flags & os.O_TRUNC else 3
+    # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE. The path has
+    # already passed the share's containment and read-only checks.
+    handle = create_file(path, access, 0x7, None, disposition, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(
+            handle, access_mode | (flags & os.O_APPEND) | os.O_BINARY | os.O_NOINHERIT
+        )
+    except BaseException:
+        kernel32.CloseHandle(handle)
+        raise
+
+
 class OpenFile:
     def __init__(self, path: str, fd: int | None, append: bool) -> None:
         self.path = path
@@ -556,7 +600,7 @@ class Connection:
                         raw_flags |= os.O_APPEND
                 else:
                     raw_flags = os.O_RDWR
-                raw = os.open(path, raw_flags)
+                raw = open_shared_file(path, raw_flags)
                 if flags & O_TRUNC:
                     os.ftruncate(raw, 0)
                 fd = raw
@@ -592,7 +636,7 @@ class Connection:
         if flags & O_APPEND:
             raw_flags |= os.O_APPEND
         try:
-            raw = os.open(path, raw_flags, 0o666 & (mode | 0o600))
+            raw = open_shared_file(path, raw_flags, 0o666 & (mode | 0o600))
             if os.name == "nt":
                 os.chmod(path, mode & 0o777)
             else:
@@ -782,7 +826,7 @@ class Connection:
                     follow_symlinks=False,
                 )
             if valid & S_SIZE:
-                raw = os.open(path, os.O_WRONLY)
+                raw = open_shared_file(path, os.O_WRONLY)
                 try:
                     os.ftruncate(raw, size)
                 finally:

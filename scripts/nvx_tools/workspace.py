@@ -6,7 +6,7 @@ import os
 import shutil
 import stat
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .common import ScriptError
 from .sandbox import SandboxMount
@@ -22,10 +22,23 @@ def unpack_outputs(archive: Path, destination: Path) -> None:
     seen: set[str] = set()
     with tarfile.open(archive, mode="r|") as incoming:
         for member in incoming:
-            path = Path(member.name)
-            if path.is_absolute() or ".." in path.parts or "\\" in member.name:
+            path = PurePosixPath(member.name)
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or "\\" in member.name
+                or "\0" in member.name
+                or ":" in member.name
+                or (
+                    os.name == "nt"
+                    and any(
+                        PureWindowsPath(part).is_reserved() or part.endswith((".", " "))
+                        for part in path.parts
+                    )
+                )
+            ):
                 raise ScriptError("output archive contains an unsafe path")
-            relative = str(path)
+            relative = str(path).casefold() if os.name == "nt" else str(path)
             if relative in seen or not (member.isdir() or member.isfile()):
                 raise ScriptError(
                     "output archive contains duplicate or special entries"
@@ -35,7 +48,7 @@ def unpack_outputs(archive: Path, destination: Path) -> None:
             total += member.size
             if count > MAX_OUTPUT_FILES or not 0 <= total <= MAX_OUTPUT_BYTES:
                 raise ScriptError("output archive exceeds collection limits")
-            target = destination / path
+            target = destination.joinpath(*path.parts)
             if member.isdir():
                 target.mkdir(mode=0o700, parents=True, exist_ok=True)
             else:

@@ -235,7 +235,11 @@ def _metadata(path: Path, member: tarfile.TarInfo, enabled: bool) -> None:
                     value.encode("utf-8", "surrogateescape"),
                     follow_symlinks=False,
                 )
-    os.utime(path, (0, 0), follow_symlinks=False)
+    if path.is_symlink() and os.utime not in os.supports_follow_symlinks:
+        if enabled:
+            raise ScriptError("symlink metadata requires the Linux OCI converter")
+        return
+    os.utime(path, (0, 0), follow_symlinks=not path.is_symlink())
 
 
 class ImageCache:
@@ -413,7 +417,12 @@ class ImageCache:
                 *(layer["digest"] for layer in removed["layers"]),
             }
             for value in candidates - used:
-                self.blob(value).unlink(missing_ok=True)
+                blob = self.blob(value)
+                if os.name == "nt" and blob.exists():
+                    # NT refuses removal of read-only files, even under a writable
+                    # directory. Only unreferenced, verified cache blobs reach here.
+                    os.chmod(blob, 0o600)
+                blob.unlink(missing_ok=True)
 
 
 def _atomic(path: Path, value: object) -> None:

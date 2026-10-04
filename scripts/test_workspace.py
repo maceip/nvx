@@ -13,7 +13,15 @@ class WorkspaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for index, name in enumerate(
-                ("../escape", "/absolute", "link", "duplicate")
+                (
+                    "../escape",
+                    "/absolute",
+                    "C:/escape",
+                    "C:escape",
+                    "file:stream",
+                    "link",
+                    "duplicate",
+                )
             ):
                 archive = root / f"{index}.tar"
                 with tarfile.open(archive, "w") as output:
