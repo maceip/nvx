@@ -31,28 +31,28 @@ The isolated clean completion checkout is `../nvx-completion`. The main checkout
 contains the same committed implementation plus preserved user work on snapshot
 inspection/disassembly; that work is not part of the completion commits.
 
-- `build/completion-windows-host-fixes-macos-proof/NVX-ACCEPTANCE.json` binds a full
-  accepted HVF repeat to NVX `887d9f5b85f6d2c641c067b573750ebd3a0ea128` and core
-  `32b120c1ac4aca1c264b30c69b83cc40d9e3d259`: all 18 scenarios, eight containment
+- `build/completion-listener-rebind-macos-proof/NVX-ACCEPTANCE.json` binds a full
+  accepted HVF repeat to NVX `f7da06e387d715c51d4a13413258857b17a51047` and core
+  `834dd05dc0b97fb307e408b5f983eab55afb46de`: all 18 scenarios, eight containment
   families and opposite controls, four simulants, workspace/copy, credentials/RAM/
   snapshots, 20 repaired clones with disabled controls, MCP, determinism and teardown.
 - That run measured 20 cold and 20 single-use pool requests: warm first stdout
-  **2.78 ms p50**, completion **4.34 ms**, cold first stdout **966.14 ms**.
+  **2.67 ms p50**, completion **3.88 ms**, cold first stdout **959.43 ms**.
   Pool preparation, admission hashes and refill are excluded from request latency.
   The 20%/1 ms bootstrap gate checked three metrics and found zero regressions.
-- `build/completion-capture-namespace-offline.log`: **130 offline tests**, ruff clean.
+- `build/completion-guest-stream-offline.log`: **131 offline tests**, ruff clean.
   Strict macOS/Linux/Windows pyright passed. Real delayed-ready transport and pool
   teardown tests cover the startup/refill bugs found during this repeat.
 - Core `5c1f378cb` fixes the x86 root-control command-line failure. The two affected
   crates passed check, all-target clippy, docs and **179 Rust tests**, including
   explicit root authorization and rejection controls; repository formatting passed.
-- `build/completion-capture-namespace-root-offline.log` in the main checkout: **138 tests**
+- `build/completion-guest-stream-root-offline.log` in the main checkout: **139 tests**
   passed, including preserved snapshot/disassembly work. Its 11 doctor checks passed
   and its rebuilt guest printed `NVX-HOST-METADATA-ROOT-GUEST-OK`. The separately installed
   current development archive also passed all 11 doctor checks and a real first-use
   OCI guest with an empty image cache.
-- `build/completion-capture-namespace-typescript-live/result.json` records all six tools through
-  the installed TypeScript SDK against a real HVF guest: both output streams,
+- `build/completion-guest-stream-typescript-live/result.json` records all six tools through
+  the installed TypeScript SDK against a real HVF guest with an empty image cache: both output streams,
   status 37, idempotence, byte-exact 1 MiB copy, snapshot operations, quota denial,
   cancellation and an exec workload's forged instance marker. This is our own
   integration test; the separate-person acceptance requirement remains open.
@@ -68,8 +68,10 @@ inspection/disassembly; that work is not part of the completion commits.
   four-CPU, 6 GiB host. All three matching-platform comparisons passed with zero
   regressions against the earlier separately measured ARM baseline.
   An earlier failed run encountered host disk exhaustion.
-- Hosted Intel's native build, clippy, docs and core tests passed; its first timed
-  guest probe timed out without guest logs. Windows native builds and doctor passed,
+- Hosted Intel's native build, clippy, docs and core tests passed. Its real guest
+  launch exposed Intel Hypervisor.framework rejecting POSIX shared-memory RAM. A
+  minimal native probe reproduces that failure and admits regular file mappings;
+  the corrected allocation path is being exercised. Windows native builds and doctor passed,
   but scenario acceptance failed and the earlier cross-drive upload lost the logs.
   Corrected repeats are being followed. Hosted Ubuntu x86 KVM admission succeeded; the hosted
   ARM runners expose no usable `/dev/kvm`, so their runtime lane fails explicitly.
@@ -122,6 +124,15 @@ inspection/disassembly; that work is not part of the completion commits.
   ten mutated attachment fields. Check, clippy, docs, **257 Rust tests** and final
   repository formatting pass. The native Windows lane also executes its named-pipe
   listener regression before saving a newly built core.
+- Intel's native memory probe independently admits anonymous and regular file
+  mappings but reproduces `HV_ERROR` for POSIX shared memory. Intel guest RAM now
+  uses an unlinked private regular file while retaining descriptor sharing and
+  snapshot transfer. The existing workspace tempfile crate supplies the secure
+  file; no new package or lockfile dependency was introduced. Scoped check,
+  native and Intel cross-compilation, clippy, docs, all **10 memory tests** and
+  final repository formatting pass. The expanded tests also found Darwin's
+  advisory decommit preserving old bytes; replacing the anonymous range now
+  passes both existing zero-page tests. Native Intel memory tests run in CI.
 - Intel HVF is admitted by the x86 microVM frontend, fixed network IRQ and snapshot
   contract. The three affected core crates pass check, all-target clippy, docs and
   **267 Rust tests**, plus Intel cross-compilation and final repository formatting.
@@ -152,6 +163,11 @@ inspection/disassembly; that work is not part of the completion commits.
   or replace an instance ID. Exec retains its known owned ID. A live TypeScript
   check found the leaked stderr marker; stream, forged-marker and private-file
   regressions cover the correction.
+- A fresh installed SDK run found OCI preparation diagnostics entering guest
+  stderr. Private-metadata MCP launches now keep successful host preparation out
+  of both guest streams; failures retain a bounded actionable diagnostic. The
+  installed TypeScript SDK's empty-cache six-tool repeat passes, including
+  separate streams, status 37, idempotence, file copy, quotas and cancellation.
 - Windows proof logs and the image cache share the checkout drive so failed gates
   can upload their evidence. Gate errors include bounded, credential-redacted
   diagnostics. A source-keyed cache retains the verified native core binary after

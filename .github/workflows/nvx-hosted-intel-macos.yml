@@ -85,9 +85,9 @@ jobs:
         if: steps.core-cache.outputs.cache-hit != 'true'
         working-directory: openvmm
         run: |
-          cargo clippy --all-targets -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
-          cargo doc --no-deps -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
-          cargo test -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
+          cargo clippy --all-targets -p sparse_mmap -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
+          cargo doc --no-deps -p sparse_mmap -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
+          cargo test -p sparse_mmap -p virt_hvf -p virt -p trycopy -p openvmm_hypervisors -p openvmm_resources -p openvmm_entry -p openvmm_defs -p openvmm_helpers
       - uses: actions/cache/save@v4
         if: steps.build-core.conclusion == 'success' && steps.check-core.conclusion == 'success' && steps.core-cache.outputs.cache-hit != 'true'
         with:

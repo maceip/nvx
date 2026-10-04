@@ -31,7 +31,7 @@ static void regions(void *p, size_t n) {
   }
 }
 int main(void) {
-  const size_t n = 32 * 1024 * 1024, half = n / 2;
+  const size_t n = 256 * 1024 * 1024, half = n / 2;
   void *p = mmap(NULL, n, PROT_NONE, MAP_ANON | MAP_PRIVATE, -1, 0);
   if (p == MAP_FAILED)
     return 2;
@@ -64,6 +64,19 @@ int main(void) {
   if (!b)
     hv_vm_unmap(half, half);
 
+  if (ftruncate(fileno(f), (off_t)n))
+    return 10;
+  void *file_ram =
+      mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(f), 0);
+  if (file_ram == MAP_FAILED)
+    return 11;
+  regions(file_ram, n);
+  hv_return_t file_status = hv_vm_map(
+      file_ram, 0, n, HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC);
+  printf("regular file memory %x\n", file_status);
+  if (!file_status)
+    hv_vm_unmap(0, n);
+
   char name[64];
   snprintf(name, sizeof(name), "/nvx-hvf-probe-%ld", (long)getpid());
   int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -83,8 +96,15 @@ int main(void) {
     hv_vm_unmap(0, n);
   hv_vm_destroy();
   munmap(shared, n);
+  munmap(file_ram, n);
   close(fd);
   munmap(p, n);
   fclose(f);
-  return a || b || shared_status;
+#if defined(__x86_64__)
+  /* Keep the unsupported backing as an explicit opposite control. */
+  int shared_control_failed = shared_status == 0;
+#else
+  int shared_control_failed = shared_status != 0;
+#endif
+  return a || b || file_status || shared_control_failed;
 }
