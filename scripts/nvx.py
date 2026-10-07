@@ -1928,6 +1928,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     snapshot_verify.add_argument("snapshot_dir", type=Path)
     snapshot_verify.set_defaults(handler=command_snapshot_verify)
+    from nvx_tools.execdiff import configure_parser as configure_execdiff_parser
+
+    configure_execdiff_parser(
+        subparsers.add_parser(
+            "execdiff",
+            help="compare executable images in snapshot memory",
+        )
+    )
     from nvx_tools.containment import configure_parser as configure_containment_parser
 
     configure_containment_parser(

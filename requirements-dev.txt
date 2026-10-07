@@ -1,4 +1,5 @@
 -r requirements-signing.txt
+capstone==5.0.9
 pyright[nodejs]==1.1.411
 ruff==0.15.22
 tomli==2.2.1; python_version < "3.11"

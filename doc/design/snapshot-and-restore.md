@@ -4,7 +4,7 @@
 
 ## Tier contract
 
-Version-5 sandbox snapshots encode the tier, restore policy, and a consumed
+Version-6 sandbox snapshots encode the tier, restore policy, and a consumed
 configuration-section bitmask. The validator accepts only these combinations:
 
 | Tier | Restore policy | Scratch | Consumed sections | Intended author and sharing scope |
@@ -257,12 +257,14 @@ The manifest is authoritative for:
 Snapshot paths and repeated fields are bounded. Restore rejects truncated,
 oversized, malformed, wrong-type, path-escaping, symlinked, incompatible,
 missing, extra, or reordered state before guest execution. New snapshots use
-version 5. It does not store or validate embedded checksums for `state.bin` or
-`memory.bin`; a same-length change to either payload is therefore outside the
-validation contract. Paired scratch is checked because it must match captured
-filesystem state. Versions 2 through 4 remain readable; versions 2 and 3 cannot
-describe sandbox blocks, and version 4 predates tier metadata. Legacy version-2
-checksum fields are accepted without re-hashing either payload. Snapshot
+version 6. Version 6 stores SHA-256 digests of `state.bin` and `memory.bin` and
+restore re-hashes both payloads, so a same-length change is rejected. Versions
+3 through 5 do not carry those digests, and a same-length change to either
+payload is outside their validation contract. Paired scratch is checked because
+it must match captured filesystem state. Versions 2 through 5 remain readable;
+versions 2 and 3 cannot describe sandbox blocks, version 4 predates tier
+metadata, and version 5 records tier metadata without payload digests. Legacy
+version-2 checksum fields are accepted without re-hashing either payload. Snapshot
 directories rely on host access control, while
 authenticated export or transport belongs outside the default local artifact
 format.
