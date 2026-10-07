@@ -2,9 +2,12 @@ import contextlib
 import errno
 import io
 import json
+import os
+import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import cast
@@ -297,3 +300,80 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn("getpriority", doc["syscalls"])
         self.assertNotIn("mount", doc["syscalls"])
         self.assertNotIn("bpf", doc["syscalls"])
+
+    @unittest.skipUnless(
+        os.name == "posix" and shutil.which("cc"), "requires C compiler"
+    )
+    def test_agent_timeout_after_child_exits_with_inherited_output(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1] / "guest/common/nvx-managed-agent.c"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "linux").mkdir()
+            (root / "linux/fs.h").write_text("#define FIFREEZE 0xc0045877\n")
+            setpriv = root / "setpriv"
+            setpriv.write_text('#!/bin/sh\nshift 9\nexec "$@"\n')
+            setpriv.chmod(0o700)
+            harness = root / "timeout.c"
+            harness.write_text(
+                r"""
+#include <unistd.h>
+#include <fcntl.h>
+#ifndef __linux__
+static int test_pipe2(int fds[2], int flags)
+{
+    if (pipe(fds)) return -1;
+    if (fcntl(fds[0], F_SETFD, flags) || fcntl(fds[1], F_SETFD, flags)) return -1;
+    return 0;
+}
+#define pipe2 test_pipe2
+#endif
+#define main nvx_agent_main
+#include SOURCE
+#undef main
+int main(void)
+{
+    int channel[2];
+    unsigned char outer[OUTER_HEADER_LEN], app[APP_HEADER_LEN + 7];
+    struct control_session session = {0};
+    struct agent_config config = {.rootfs = "-", .uid = "65534", .gid = "65534",
+                                  .user = "nobody", .home = "/tmp", .direct = 1};
+    char *argv[] = {"/bin/sh", "-c", "sleep 2 &", NULL};
+    if (pipe(channel)) return 2;
+    session.fd = channel[1];
+    if (run_exec(&session, &config, 1, 200, argv)) return 3;
+    close(channel[1]);
+    if (read_exact(channel[0], outer, sizeof(outer)) ||
+        read_u32(outer + 40) != sizeof(app) ||
+        read_exact(channel[0], app, sizeof(app))) return 4;
+    close(channel[0]);
+    return app[5] == APP_EXIT && read_u32(app + 16) == 124 &&
+           memcmp(app + APP_HEADER_LEN, "timeout", 7) == 0 ? 0 : 5;
+}
+""".replace("SOURCE", json.dumps(str(source)))
+            )
+            compiled = subprocess.run(
+                [
+                    "cc",
+                    "-std=gnu11",
+                    "-I",
+                    str(root),
+                    str(harness),
+                    "-o",
+                    str(root / "timeout"),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            started = time.monotonic()
+            result = subprocess.run(
+                [str(root / "timeout")],
+                env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                capture_output=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertLess(time.monotonic() - started, 1.5)

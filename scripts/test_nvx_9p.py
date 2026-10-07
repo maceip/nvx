@@ -14,7 +14,11 @@ import sys
 import tempfile
 import threading
 import unittest
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from pathlib import Path
+from typing import cast
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 from nvx_tools import nvx_9p  # noqa: E402
@@ -340,6 +344,231 @@ class ReadWriteTests(ServerCase):
         rtype, _payload = client.clunk(42)
         self.assertEqual(rtype, nvx_9p.R_CLUNK)
         self.assertFalse((self.root / "guest.txt").exists())
+
+    def test_directory_swap_cannot_escape_on_open(self) -> None:
+        if os.name == "nt":
+            self.skipTest("POSIX symlink race")
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            (outside / "victim").write_bytes(b"outside")
+            (self.root / "sub" / "victim").write_bytes(b"inside")
+            client = self.start(read_write=True)
+            self.handshake(client)
+            self.assertEqual(client.walk(1, 43, "sub", "victim")[0], nvx_9p.R_WALK)
+            original_open = nvx_9p.open_shared_file
+            assert self.share is not None
+            original_parent = self.share.parent_fd
+            calls = 0
+
+            def swap() -> None:
+                (self.root / "sub").rename(self.root / "saved")
+                (self.root / "sub").symlink_to(outside, target_is_directory=True)
+
+            def open_swap(path: str, flags: int, mode: int = 0o666) -> int:
+                swap()
+                return original_open(path, flags, mode)
+
+            def parent_swap(path: str, follow_final: bool = False):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    swap()
+                return original_parent(path, follow_final=follow_final)
+
+            with (
+                patch.object(nvx_9p, "open_shared_file", side_effect=open_swap),
+                patch.object(self.share, "parent_fd", parent_swap),
+            ):
+                result = client.lopen(43, nvx_9p.O_TRUNC | 1)
+            self.assertEqual(result[0], nvx_9p.R_LERROR)
+            self.assertEqual((outside / "victim").read_bytes(), b"outside")
+
+    def test_directory_swap_cannot_escape_namespace_mutations(self) -> None:
+        if os.name != "posix":
+            self.skipTest("POSIX directory descriptors")
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            (outside / "victim").write_bytes(b"outside")
+            (outside / "src").write_bytes(b"outside-src")
+            outside_mode = stat.S_IMODE((outside / "victim").stat().st_mode)
+            client = self.start(read_write=True)
+            self.handshake(client)
+            assert self.share is not None
+            for index, operation in enumerate(
+                (
+                    "create",
+                    "unlink",
+                    "remove",
+                    "rename",
+                    "renameat",
+                    "link",
+                    "mkdir",
+                    "symlink",
+                    "setattr",
+                    "setattr-mode",
+                )
+            ):
+                with self.subTest(operation=operation):
+                    base = self.root / f"dir-{index}"
+                    base.mkdir()
+                    (base / "victim").write_bytes(b"inside")
+                    (base / "src").write_bytes(b"inside-src")
+                    fid = 50 + index * 2
+                    self.assertEqual(client.walk(1, fid, base.name)[0], nvx_9p.R_WALK)
+                    self.assertEqual(
+                        client.walk(fid, fid + 1, "victim")[0], nvx_9p.R_WALK
+                    )
+                    old_child = cast(
+                        Callable[[nvx_9p.Connection, nvx_9p.FidEntry, str], str],
+                        vars(nvx_9p.Connection)["_child"],
+                    )
+                    old_parent = self.share.parent_fd
+                    swapped = False
+
+                    def swap(base: Path = base, index: int = index) -> None:
+                        nonlocal swapped
+                        if not swapped:
+                            base.rename(self.root / f"saved-{index}")
+                            base.symlink_to(outside, target_is_directory=True)
+                            swapped = True
+
+                    def child(
+                        conn: nvx_9p.Connection,
+                        entry: nvx_9p.FidEntry,
+                        name: str,
+                        original: Callable[
+                            [nvx_9p.Connection, nvx_9p.FidEntry, str], str
+                        ] = old_child,
+                    ) -> str:
+                        result = original(conn, entry, name)
+                        swap()
+                        return result
+
+                    def parent(
+                        path: str,
+                        follow_final: bool = False,
+                        operation: str = operation,
+                        original: Callable[
+                            [str, bool], AbstractContextManager[tuple[int, str]]
+                        ] = old_parent,
+                    ) -> AbstractContextManager[tuple[int, str]]:
+                        if operation in ("remove", "setattr", "setattr-mode"):
+                            swap()
+                        return original(path, follow_final)
+
+                    with (
+                        patch.object(nvx_9p.Connection, "_child", child),
+                        patch.object(self.share, "parent_fd", parent),
+                    ):
+                        if operation == "create":
+                            reply = client.lcreate(fid, "victim")
+                        elif operation == "unlink":
+                            reply = client.unlinkat(fid, "victim")
+                        elif operation == "remove":
+                            reply = client.call(
+                                nvx_9p.T_REMOVE, struct.pack("<I", fid + 1)
+                            )
+                        elif operation == "rename":
+                            reply = client.call(
+                                nvx_9p.T_RENAME,
+                                struct.pack("<II", fid + 1, fid) + enc_str("src"),
+                            )
+                        elif operation == "renameat":
+                            reply = client.call(
+                                nvx_9p.T_RENAMEAT,
+                                struct.pack("<I", fid)
+                                + enc_str("victim")
+                                + struct.pack("<I", fid)
+                                + enc_str("src"),
+                            )
+                        elif operation == "link":
+                            reply = client.call(
+                                nvx_9p.T_LINK,
+                                struct.pack("<II", fid, fid + 1) + enc_str("src"),
+                            )
+                        elif operation == "mkdir":
+                            reply = client.mkdir(fid, "newdir")
+                        elif operation == "symlink":
+                            reply = client.call(
+                                nvx_9p.T_SYMLINK,
+                                struct.pack("<I", fid)
+                                + enc_str("newlink")
+                                + enc_str("victim")
+                                + struct.pack("<I", 0),
+                            )
+                        else:
+                            reply = client.call(
+                                nvx_9p.T_SETATTR,
+                                struct.pack(
+                                    "<IQIIIQQQQQ",
+                                    fid + 1,
+                                    nvx_9p.S_MODE
+                                    if operation == "setattr-mode"
+                                    else nvx_9p.S_SIZE,
+                                    0o777 if operation == "setattr-mode" else 0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                ),
+                            )
+                    self.assertTrue(swapped)
+                    self.assertEqual(reply[0], nvx_9p.R_LERROR)
+                    self.assertEqual((outside / "victim").read_bytes(), b"outside")
+                    self.assertEqual(
+                        stat.S_IMODE((outside / "victim").stat().st_mode), outside_mode
+                    )
+                    self.assertEqual((outside / "src").read_bytes(), b"outside-src")
+                    self.assertFalse((outside / "newdir").exists())
+                    self.assertFalse((outside / "newlink").exists())
+
+    def test_in_share_symlink_writable_and_outside_symlink_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            (outside / "victim").write_bytes(b"outside")
+            (self.root / "external").symlink_to(outside / "victim")
+            client = self.start(read_write=True)
+            self.handshake(client)
+            self.assertEqual(client.walk(1, 90, "inside-link")[0], nvx_9p.R_WALK)
+            self.assertEqual(client.lopen(90, nvx_9p.O_NOFOLLOW)[0], nvx_9p.R_LERROR)
+            self.assertEqual(client.lopen(90, 1)[0], nvx_9p.R_LOPEN)
+            self.assertEqual(client.write(90, b"safe")[0], nvx_9p.R_WRITE)
+            self.assertTrue((self.root / "hello.txt").read_bytes().startswith(b"safe"))
+            self.assertEqual(client.walk(1, 91, "external")[0], nvx_9p.R_WALK)
+            result = client.lopen(91, nvx_9p.O_TRUNC | 1)
+            self.assertEqual(result[0], nvx_9p.R_LERROR)
+            self.assertEqual((outside / "victim").read_bytes(), b"outside")
+
+    def test_chmod_unreadable_file_without_opening_it(self) -> None:
+        file = self.root / "no-access"
+        file.write_bytes(b"keep")
+        file.chmod(0)
+        try:
+            client = self.start(read_write=True)
+            self.handshake(client)
+            self.assertEqual(client.walk(1, 92, "no-access")[0], nvx_9p.R_WALK)
+            request = struct.pack(
+                "<IQIIIQQQQQ", 92, nvx_9p.S_MODE, 0o600, 0, 0, 0, 0, 0, 0, 0
+            )
+            assert self.share is not None
+            with patch.object(
+                self.share, "secure_open", side_effect=PermissionError("no read access")
+            ):
+                response, _ = client.call(nvx_9p.T_SETATTR, request)
+            self.assertEqual(response, nvx_9p.R_SETATTR)
+            self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+            self.assertEqual(file.read_bytes(), b"keep")
+        finally:
+            file.chmod(0o600)
+
+    def test_writable_share_rejects_missing_dirfd_support(self) -> None:
+        with patch.object(nvx_9p.os, "supports_dir_fd", set[object]()):
+            with self.assertRaises(nvx_9p.Error) as caught:
+                nvx_9p.Share(str(self.root), read_write=True)
+        self.assertEqual(caught.exception.linux_errno, nvx_9p.L_EOPNOTSUPP)
 
     def test_mkdir(self) -> None:
         client = self.start(read_write=True)

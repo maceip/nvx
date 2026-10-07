@@ -865,8 +865,18 @@ static int run_exec(
             stderr_open = 0;
         }
         if (stdout_result < 0 || stderr_result < 0) {
-            output_limited = stdout_result == -2 || stderr_result == -2;
+            output_limited |= stdout_result == -2 || stderr_result == -2;
             kill(-child, SIGKILL);
+            if (output_limited) {
+                if (stdout_open) {
+                    close(stdout_pipe[0]);
+                    stdout_open = 0;
+                }
+                if (stderr_open) {
+                    close(stderr_pipe[0]);
+                    stderr_open = 0;
+                }
+            }
         }
         if (!child_exited) {
             pid_t result = waitpid(child, &wait_status, WNOHANG);
@@ -876,10 +886,18 @@ static int run_exec(
                 kill(-child, SIGKILL);
             }
         }
-        if (!child_exited && timeout_ms != 0 &&
+        if (timeout_ms != 0 && !timed_out &&
             monotonic_milliseconds() - started >= timeout_ms) {
             timed_out = 1;
             kill(-child, SIGKILL);
+            if (stdout_open) {
+                close(stdout_pipe[0]);
+                stdout_open = 0;
+            }
+            if (stderr_open) {
+                close(stderr_pipe[0]);
+                stderr_open = 0;
+            }
         }
         if ((timed_out || output_limited) && !child_exited) {
             if (waitpid(child, &wait_status, 0) == child) {

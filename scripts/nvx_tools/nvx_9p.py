@@ -20,12 +20,18 @@ import stat
 import struct
 import sys
 import threading
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from typing import Any, TypedDict, cast
 
 VERSION = "9P2000.L"
 NOFID = 0xFFFFFFFF
 NOTAG = 0xFFFF
 MAX_MESSAGE = 256 * 1024
+HOST_NOFOLLOW = cast(int, getattr(os, "O_NOFOLLOW", 0))
+HOST_DIRECTORY = cast(int, getattr(os, "O_DIRECTORY", 0))
+HOST_FCHMOD = cast(Callable[[int, int], None], getattr(os, "fchmod", None))  # noqa: B009
+HOST_FCHOWN = cast(Callable[[int, int, int], None], getattr(os, "fchown", None))  # noqa: B009
 
 # Message types (9P2000.L).
 T_LERROR, R_LERROR = 6, 7
@@ -272,6 +278,139 @@ class Share:
         self.read_write = read_write
         self._lock = threading.Lock()
         self._fids: dict[int, FidEntry] = {}
+        self._root_fd: int | None = None
+        if read_write:
+            required = (
+                os.open,
+                os.mkdir,
+                os.unlink,
+                os.rmdir,
+                os.rename,
+                os.link,
+                os.symlink,
+                os.stat,
+                os.readlink,
+            )
+            if (
+                os.name != "posix"
+                or not hasattr(os, "O_NOFOLLOW")
+                or not hasattr(os, "O_DIRECTORY")
+                or any(fn not in os.supports_dir_fd for fn in required)
+            ):
+                raise Error(L_EOPNOTSUPP)
+            self._root_fd = os.open(
+                self.root, os.O_RDONLY | HOST_DIRECTORY | HOST_NOFOLLOW
+            )
+
+    def close(self) -> None:
+        if self._root_fd is not None:
+            os.close(self._root_fd)
+            self._root_fd = None
+
+    @contextmanager
+    def parent_fd(
+        self, path: str, follow_final: bool = False
+    ) -> Generator[tuple[int, str]]:
+        """Resolve below the pinned root; each component is opened without following links."""
+        if self._root_fd is None:
+            raise Error(L_EOPNOTSUPP)
+        relative = os.path.relpath(path, self.root)
+        if (
+            relative == ".."
+            or relative.startswith(".." + os.sep)
+            or os.path.isabs(relative)
+        ):
+            raise Error(L_EACCES)
+        pending = [] if relative == "." else relative.split(os.sep)
+        components: list[str] = []
+        fd = os.dup(self._root_fd)
+        links = 0
+        try:
+            while pending:
+                name = pending.pop(0)
+                if name in ("", "."):
+                    continue
+                if name == "..":
+                    if not components:
+                        raise Error(L_EACCES)
+                    components.pop()
+                    os.close(fd)
+                    fd = os.dup(self._root_fd)
+                    for part in components:
+                        next_fd = os.open(
+                            part,
+                            os.O_RDONLY | HOST_DIRECTORY | HOST_NOFOLLOW,
+                            dir_fd=fd,
+                        )
+                        os.close(fd)
+                        fd = next_fd
+                    continue
+                if not pending:
+                    if follow_final:
+                        try:
+                            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                        except FileNotFoundError:
+                            st = None
+                        if st is not None and stat.S_ISLNK(st.st_mode):
+                            links += 1
+                            if links > 40:
+                                raise Error(L_ELOOP)
+                            target = os.readlink(name, dir_fd=fd)
+                            if os.path.isabs(target):
+                                rel_target = os.path.relpath(target, self.root)
+                                if rel_target == ".." or rel_target.startswith(
+                                    ".." + os.sep
+                                ):
+                                    raise Error(L_EACCES)
+                                pending = rel_target.split(os.sep)
+                                components.clear()
+                                os.close(fd)
+                                fd = os.dup(self._root_fd)
+                            else:
+                                pending = target.split(os.sep)
+                            continue
+                    yield fd, name
+                    return
+                try:
+                    next_fd = os.open(
+                        name, os.O_RDONLY | HOST_DIRECTORY | HOST_NOFOLLOW, dir_fd=fd
+                    )
+                except OSError as exc:
+                    if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
+                        raise
+                    st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if not stat.S_ISLNK(st.st_mode):
+                        raise
+                    links += 1
+                    if links > 40:
+                        raise Error(L_ELOOP) from None
+                    target = os.readlink(name, dir_fd=fd)
+                    if os.path.isabs(target):
+                        rel_target = os.path.relpath(target, self.root)
+                        if rel_target == ".." or rel_target.startswith(".." + os.sep):
+                            raise Error(L_EACCES) from None
+                        pending = rel_target.split(os.sep) + pending
+                        components.clear()
+                        os.close(fd)
+                        fd = os.dup(self._root_fd)
+                    else:
+                        pending = target.split(os.sep) + pending
+                    continue
+                components.append(name)
+                os.close(fd)
+                fd = next_fd
+            yield fd, "."
+        except OSError as exc:
+            raise host_error(exc) from None
+        finally:
+            os.close(fd)
+
+    def secure_open(self, path: str, flags: int, mode: int = 0o666) -> int:
+        with self.parent_fd(path, follow_final=not (flags & os.O_EXCL)) as (fd, name):
+            try:
+                return os.open(name, flags | HOST_NOFOLLOW, mode, dir_fd=fd)
+            except OSError as exc:
+                raise host_error(exc) from None
 
     def contain(self, path: str) -> str:
         real = os.path.realpath(path)
@@ -316,12 +455,18 @@ class Share:
 
     def stat_path(self, path: str) -> os.stat_result:
         try:
+            if self.read_write:
+                with self.parent_fd(path, follow_final=True) as (fd, name):
+                    return os.stat(name, dir_fd=fd, follow_symlinks=False)
             return os.stat(path)
         except OSError as exc:
             raise host_error(exc) from None
 
     def lstat_path(self, path: str) -> os.stat_result:
         try:
+            if self.read_write:
+                with self.parent_fd(path) as (fd, name):
+                    return os.stat(name, dir_fd=fd, follow_symlinks=False)
             return os.lstat(path)
         except OSError as exc:
             raise host_error(exc) from None
@@ -573,8 +718,18 @@ class Connection:
         entry = self.share.fid_get(fid)
         if entry["file"] is not None:
             raise Error(L_EINVAL)
-        path = self.share.contain(entry["path"])
-        st = self.share.lstat_path(path)
+        path = entry["path"]
+        if self.share.read_write:
+            if flags & O_NOFOLLOW and stat.S_ISLNK(self.share.lstat_path(path).st_mode):
+                raise Error(L_ELOOP)
+            with self.share.parent_fd(path, follow_final=True) as (parent, name):
+                try:
+                    st = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                except OSError as exc:
+                    raise host_error(exc) from None
+        else:
+            path = self.share.contain(path)
+            st = self.share.lstat_path(path)
         is_dir = stat.S_ISDIR(st.st_mode)
         if (flags & O_DIRECTORY) and not is_dir:
             raise Error(L_ENOTDIR)
@@ -600,9 +755,17 @@ class Connection:
                         raw_flags |= os.O_APPEND
                 else:
                     raw_flags = os.O_RDWR
-                raw = open_shared_file(path, raw_flags)
-                if flags & O_TRUNC:
-                    os.ftruncate(raw, 0)
+                raw = (
+                    self.share.secure_open(path, raw_flags)
+                    if self.share.read_write
+                    else open_shared_file(path, raw_flags)
+                )
+                try:
+                    if flags & O_TRUNC:
+                        os.ftruncate(raw, 0)
+                except BaseException:
+                    os.close(raw)
+                    raise
                 fd = raw
             except OSError as exc:
                 raise host_error(exc) from None
@@ -622,12 +785,7 @@ class Connection:
         entry = self.share.fid_get(fid)
         if entry["file"] is not None:
             raise Error(L_EINVAL)
-        path = self.share.resolve(
-            os.path.relpath(entry["path"], self.share.root)
-            if entry["path"] != self.share.root
-            else ".",
-            name,
-        )
+        path = self._child(entry, name)
         access = flags & O_ACCMODE
         raw_flags = os.O_WRONLY if access == 1 else os.O_RDWR
         raw_flags |= os.O_CREAT | os.O_TRUNC
@@ -636,16 +794,17 @@ class Connection:
         if flags & O_APPEND:
             raw_flags |= os.O_APPEND
         try:
-            raw = open_shared_file(path, raw_flags, 0o666 & (mode | 0o600))
-            if os.name == "nt":
-                os.chmod(path, mode & 0o777)
-            else:
-                os.fchmod(raw, mode & 0o777)
+            raw = self.share.secure_open(path, raw_flags, 0o666 & (mode | 0o600))
+            try:
+                HOST_FCHMOD(raw, mode & 0o777)
+            except BaseException:
+                os.close(raw)
+                raise
         except OSError as exc:
             raise host_error(exc) from None
         entry["path"] = path
         entry["file"] = OpenFile(path, raw, bool(flags & O_APPEND))
-        st = self.share.stat_path(path)
+        st = os.fstat(raw)
         w = Writer()
         w.qid(qid_for(st))
         w.u32(self.msize)
@@ -654,23 +813,34 @@ class Connection:
     def _readdir_data(self, path: str, offset: int, count: int) -> bytes:
         # Stable byte-offset slicing over a name-sorted listing. Entry
         # offsets point past each entry so the client can resume.
+        entries: list[bytes] = []
+        fd = (
+            self.share.secure_open(path, os.O_RDONLY | HOST_DIRECTORY)
+            if self.share.read_write
+            else None
+        )
         try:
-            names = sorted(os.listdir(path))
+            names = sorted(os.listdir(fd if fd is not None else path))
+            for name in names:
+                try:
+                    st = (
+                        os.stat(name, dir_fd=fd, follow_symlinks=False)
+                        if fd is not None
+                        else self.share.lstat_path(os.path.join(path, name))
+                    )
+                except (Error, OSError):
+                    continue
+                item = Writer()
+                item.qid(qid_for(st))
+                item.u64(0)  # offset placeholder
+                item.u8(dirent_type(st))
+                item.string(name)
+                entries.append(item.bytes())
         except OSError as exc:
             raise host_error(exc) from None
-        entries: list[bytes] = []
-        for name in names:
-            full = os.path.join(path, name)
-            try:
-                st = self.share.lstat_path(full)
-            except Error:
-                continue
-            item = Writer()
-            item.qid(qid_for(st))
-            item.u64(0)  # offset placeholder
-            item.u8(dirent_type(st))
-            item.string(name)
-            entries.append(item.bytes())
+        finally:
+            if fd is not None:
+                os.close(fd)
         blob = bytearray()
         for raw in entries:
             off = len(blob) + len(raw)
@@ -757,10 +927,12 @@ class Connection:
         if entry["file"] is not None:
             entry["file"].close()
         try:
-            if os.path.isdir(entry["path"]) and not os.path.islink(entry["path"]):
-                os.rmdir(entry["path"])
-            else:
-                os.unlink(entry["path"])
+            with self.share.parent_fd(entry["path"]) as (fd, name):
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISDIR(st.st_mode):
+                    os.rmdir(name, dir_fd=fd)
+                else:
+                    os.unlink(name, dir_fd=fd)
         except OSError as exc:
             raise host_error(exc) from None
         return R_REMOVE, b""
@@ -794,7 +966,11 @@ class Connection:
         fid = r.u32()
         _mask = r.u64()
         entry = self.share.fid_get(fid)
-        path = self.share.contain(entry["path"])
+        path = (
+            entry["path"]
+            if self.share.read_write
+            else self.share.contain(entry["path"])
+        )
         st = self.share.stat_path(path)
         return R_GETATTR, self._getattr_body(st)
 
@@ -811,41 +987,56 @@ class Connection:
         _mtime_nsec = r.u64()
         self.share.check_write()
         entry = self.share.fid_get(fid)
-        path = self.share.contain(entry["path"])
+        if not valid & (S_MODE | S_UID | S_GID | S_SIZE | S_ATIME | S_MTIME):
+            return R_SETATTR, b""
+        if valid == S_MODE:
+            if (
+                os.chmod not in os.supports_dir_fd
+                or os.chmod not in os.supports_follow_symlinks
+            ):
+                raise Error(L_EOPNOTSUPP)
+            try:
+                with self.share.parent_fd(entry["path"], follow_final=True) as (
+                    fd,
+                    name,
+                ):
+                    os.chmod(name, mode & 0o7777, dir_fd=fd, follow_symlinks=False)
+            except (OSError, ValueError) as exc:
+                raise host_error(exc) from None
+            return R_SETATTR, b""
+        raw = self.share.secure_open(
+            entry["path"], os.O_WRONLY if valid & S_SIZE else os.O_RDONLY
+        )
         try:
+            current = os.fstat(raw)
+            if stat.S_ISLNK(current.st_mode):
+                raise Error(L_ELOOP)
             if valid & S_MODE:
-                os.chmod(path, mode & 0o7777, follow_symlinks=False)
+                HOST_FCHMOD(raw, mode & 0o7777)
             if valid & (S_UID | S_GID):
-                _current = os.stat(path, follow_symlinks=False)
-                if os.name == "nt":
-                    raise Error(L_EPERM)
-                os.chown(
-                    path,
-                    _uid if valid & S_UID else _current.st_uid,
-                    _gid if valid & S_GID else _current.st_gid,
-                    follow_symlinks=False,
+                HOST_FCHOWN(
+                    raw,
+                    _uid if valid & S_UID else current.st_uid,
+                    _gid if valid & S_GID else current.st_gid,
                 )
             if valid & S_SIZE:
-                raw = open_shared_file(path, os.O_WRONLY)
-                try:
-                    os.ftruncate(raw, size)
-                finally:
-                    os.close(raw)
+                os.ftruncate(raw, size)
             if valid & (S_ATIME | S_MTIME):
-                current_ns = os.stat(path, follow_symlinks=False)
                 atime = (
                     atime_sec * 1_000_000_000
                     if valid & S_ATIME
-                    else current_ns.st_atime_ns
+                    else current.st_atime_ns
                 )
                 mtime = (
                     mtime_sec * 1_000_000_000
                     if valid & S_MTIME
-                    else current_ns.st_mtime_ns
+                    else current.st_mtime_ns
                 )
-                os.utime(path, ns=(atime, mtime), follow_symlinks=False)
-        except OSError as exc:
+                os.utime(raw, ns=(atime, mtime))
+        except (OSError, ValueError) as exc:
             raise host_error(exc) from None
+        finally:
+            os.close(raw)
         return R_SETATTR, b""
 
     def on_statfs(self, r: Reader) -> tuple[int, bytes]:
@@ -865,7 +1056,14 @@ class Connection:
                     255,
                 ]
             else:
-                fs = os.statvfs(entry["path"])
+                if self.share.read_write:
+                    fd = self.share.secure_open(entry["path"], os.O_RDONLY)
+                    try:
+                        fs = os.fstatvfs(fd)
+                    finally:
+                        os.close(fd)
+                else:
+                    fs = os.statvfs(entry["path"])
                 values = [
                     fs.f_bsize,
                     fs.f_blocks,
@@ -890,7 +1088,11 @@ class Connection:
         fid = r.u32()
         entry = self.share.fid_get(fid)
         try:
-            target = os.readlink(entry["path"])
+            if self.share.read_write:
+                with self.share.parent_fd(entry["path"]) as (fd, name):
+                    target = os.readlink(name, dir_fd=fd)
+            else:
+                target = os.readlink(entry["path"])
         except OSError as exc:
             raise host_error(exc) from None
         w = Writer()
@@ -905,6 +1107,10 @@ class Connection:
         if "/" in name or "\0" in name or name in ("", ".", ".."):
             raise Error(L_EINVAL)
         base = entry["path"]
+        if self.share.read_write:
+            fd = self.share.secure_open(base, os.O_RDONLY | HOST_DIRECTORY)
+            os.close(fd)
+            return os.path.join(base, name)
         try:
             if not stat.S_ISDIR(os.stat(base).st_mode):
                 raise Error(L_ENOTDIR)
@@ -923,8 +1129,9 @@ class Connection:
         entry = self.share.fid_get(fid)
         path = self._child(entry, name)
         try:
-            os.symlink(target, path)
-            st = self.share.lstat_path(path)
+            with self.share.parent_fd(path) as (fd, leaf):
+                os.symlink(target, leaf, dir_fd=fd)
+                st = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
         except OSError as exc:
             raise host_error(exc) from None
         w = Writer()
@@ -946,7 +1153,9 @@ class Connection:
             entry["file"].close()
             entry["file"] = None
         try:
-            os.rename(entry["path"], dest)
+            with self.share.parent_fd(entry["path"]) as (src_fd, src):
+                with self.share.parent_fd(dest) as (dst_fd, dst):
+                    os.rename(src, dst, src_dir_fd=src_fd, dst_dir_fd=dst_fd)
         except OSError as exc:
             raise host_error(exc) from None
         entry["path"] = dest
@@ -961,7 +1170,15 @@ class Connection:
         newdir = self.share.fid_get(dirfid)
         dest = self._child(newdir, name)
         try:
-            os.link(self.share.contain(target["path"]), dest)
+            with self.share.parent_fd(target["path"]) as (src_fd, src):
+                with self.share.parent_fd(dest) as (dst_fd, dst):
+                    os.link(
+                        src,
+                        dst,
+                        src_dir_fd=src_fd,
+                        dst_dir_fd=dst_fd,
+                        follow_symlinks=False,
+                    )
         except OSError as exc:
             raise host_error(exc) from None
         return R_LINK, b""
@@ -975,8 +1192,9 @@ class Connection:
         entry = self.share.fid_get(dfid)
         path = self._child(entry, name)
         try:
-            os.mkdir(path, mode & 0o777)
-            st = self.share.stat_path(path)
+            with self.share.parent_fd(path) as (fd, leaf):
+                os.mkdir(leaf, mode & 0o777, dir_fd=fd)
+                st = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
         except OSError as exc:
             raise host_error(exc) from None
         w = Writer()
@@ -994,7 +1212,9 @@ class Connection:
         src = self._child(olddir, oldname)
         dest = self._child(newdir, newname)
         try:
-            os.rename(src, dest)
+            with self.share.parent_fd(src) as (src_fd, src_name):
+                with self.share.parent_fd(dest) as (dst_fd, dst_name):
+                    os.rename(src_name, dst_name, src_dir_fd=src_fd, dst_dir_fd=dst_fd)
         except OSError as exc:
             raise host_error(exc) from None
         return R_RENAMEAT, b""
@@ -1007,10 +1227,11 @@ class Connection:
         entry = self.share.fid_get(dirfid)
         path = self._child(entry, name)
         try:
-            if flags & 0x200:  # AT_REMOVEDIR
-                os.rmdir(path)
-            else:
-                os.unlink(path)
+            with self.share.parent_fd(path) as (fd, leaf):
+                if flags & 0x200:  # AT_REMOVEDIR
+                    os.rmdir(leaf, dir_fd=fd)
+                else:
+                    os.unlink(leaf, dir_fd=fd)
         except OSError as exc:
             raise host_error(exc) from None
         return R_UNLINKAT, b""
@@ -1074,6 +1295,10 @@ class Server(socketserver.ThreadingTCPServer):
     def __init__(self, share: Share, address: tuple[str, int]) -> None:
         self.share = share
         super().__init__(address, Handler)
+
+    def server_close(self) -> None:
+        super().server_close()
+        self.share.close()
 
 
 def serve(
