@@ -1166,3 +1166,80 @@ jobs:
         uses: ./.github/actions/persist-performance-results
         with:
           branch: dev
+
+  attested-build:
+    name: Attested Linux/KVM development build
+    needs: [required-status-check, artifacts]
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/dev' &&
+        needs.required-status-check.result == 'success'
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - name: Download verified guest artifacts
+        if: needs.artifacts.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: guest-artifacts
+          path: build
+      - name: Build guest on documentation-only pushes
+        if: needs.artifacts.result == 'skipped'
+        uses: ./.github/actions/build-guest-artifacts
+      - name: Build pinned OpenVMM
+        uses: ./.github/actions/build-openvmm
+        with:
+          ssh-key: ${{ secrets.OPENVMM_DEPLOY_KEY }}
+          backend: kvm
+          binary-path: openvmm/target/release/openvmm
+      - name: Archive executable and guest with source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/vmlinux
+          test -s build/initramfs.cpio.gz
+          test -x openvmm/target/release/openvmm
+          mkdir -p dist
+          printf '%s\n' "$GITHUB_SHA" > dist/NVX_REVISION
+          git -C openvmm rev-parse HEAD > dist/OPENVMM_REVISION
+          archive="nvx-${GITHUB_SHA}-linux-kvm.tar.gz"
+          tar -czf "dist/$archive" \
+            dist/NVX_REVISION dist/OPENVMM_REVISION \
+            build/openvmm.provenance.json build/vmlinux.provenance.json \
+            build/initramfs.provenance.json build/vmlinux \
+            build/initramfs.cpio.gz openvmm/target/release/openvmm
+          (cd dist && sha256sum "$archive" > "$archive.sha256")
+      - name: Attest build archive
+        id: attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/nvx-${{ github.sha }}-linux-kvm.tar.gz
+      - name: Include offline attestation bundle
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
+        run: cp "$BUNDLE" "dist/nvx-${GITHUB_SHA}-linux-kvm.tar.gz.sigstore.jsonl"
+      - name: Publish attested run artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nvx-linux-kvm-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            dist/nvx-${{ github.sha }}-linux-kvm.tar.gz
+            dist/nvx-${{ github.sha }}-linux-kvm.tar.gz.sha256
+            dist/nvx-${{ github.sha }}-linux-kvm.tar.gz.sigstore.jsonl

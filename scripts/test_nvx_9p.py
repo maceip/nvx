@@ -154,6 +154,8 @@ class ServerCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def start(self, read_write: bool = False) -> Client:
+        if read_write and os.name != "posix":
+            self.skipTest("writable shares require POSIX directory descriptors")
         self.share = nvx_9p.Share(str(self.root), read_write=read_write)
         self.server = nvx_9p.Server(self.share, ("127.0.0.1", 0))
         self.thread = threading.Thread(
@@ -409,6 +411,11 @@ class ReadWriteTests(ServerCase):
                 )
             ):
                 with self.subTest(operation=operation):
+                    if operation == "setattr-mode" and (
+                        os.chmod not in os.supports_dir_fd
+                        or os.chmod not in os.supports_follow_symlinks
+                    ):
+                        continue
                     base = self.root / f"dir-{index}"
                     base.mkdir()
                     (base / "victim").write_bytes(b"inside")
@@ -557,12 +564,20 @@ class ReadWriteTests(ServerCase):
             with patch.object(
                 self.share, "secure_open", side_effect=PermissionError("no read access")
             ):
-                response, _ = client.call(nvx_9p.T_SETATTR, request)
-            self.assertEqual(response, nvx_9p.R_SETATTR)
-            self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
-            self.assertEqual(file.read_bytes(), b"keep")
+                response, payload = client.call(nvx_9p.T_SETATTR, request)
+            if (
+                os.chmod in os.supports_dir_fd
+                and os.chmod in os.supports_follow_symlinks
+            ):
+                self.assertEqual(response, nvx_9p.R_SETATTR)
+                self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+            else:
+                self.assertEqual(response, nvx_9p.R_LERROR)
+                self.assertEqual(rlerror_code(payload), nvx_9p.L_EOPNOTSUPP)
+                self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0)
         finally:
             file.chmod(0o600)
+        self.assertEqual(file.read_bytes(), b"keep")
 
     def test_writable_share_rejects_missing_dirfd_support(self) -> None:
         with patch.object(nvx_9p.os, "supports_dir_fd", set[object]()):
